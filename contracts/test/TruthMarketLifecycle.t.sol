@@ -207,7 +207,11 @@ contract TruthMarketLifecycleTest is Test {
         _withdrawAll(no);
         market.withdrawTreasury();
 
-        // Conservation: contract balance is zero (withdrawTreasury sweeps any dust).
+        // Sweep any rounding-dust into the treasury after the grace window.
+        vm.warp(block.timestamp + market.DUST_SWEEP_GRACE() + 1);
+        market.forceSweepDust(type(uint32).max);
+        market.withdrawTreasury();
+
         assertEq(token.balanceOf(address(market)), 0);
         assertEq(market.creatorAccrued(), 0);
     }
@@ -723,7 +727,7 @@ contract TruthMarketLifecycleTest is Test {
 
         // Right after resolve — grace not yet elapsed.
         vm.expectRevert(TruthMarket.DeadlineNotPassed.selector);
-        market.forceSweepDust();
+        market.forceSweepDust(type(uint32).max);
     }
 
     function test_ForceSweepDustPreservesUnclaimedVoterRefunds() public {
@@ -750,7 +754,7 @@ contract TruthMarketLifecycleTest is Test {
 
         uint256 balanceBefore = token.balanceOf(address(market));
         uint256 treasuryBefore = market.treasuryAccrued();
-        market.forceSweepDust();
+        market.forceSweepDust(type(uint32).max);
 
         // No voter has withdrawn yet — all payouts are still unclaimed, so the sweep
         // should at most route the rounding remainder. Treasury accrual after sweep
@@ -766,6 +770,101 @@ contract TruthMarketLifecycleTest is Test {
         market.withdrawTreasury();
         // Contract reaches 0 (nothing stuck — voter inactivity + force sweep covers everything).
         assertEq(token.balanceOf(address(market)), 0);
+    }
+
+    function test_RevertsConstructorOnTooShortPeriod() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.votingPeriod = 30; // 30 seconds, below MIN_PERIOD (60)
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_RevertsConstructorOnEmptyTagString() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        string[] memory tags = new string[](2);
+        tags[0] = "ok";
+        tags[1] = ""; // empty
+        p.tags = tags;
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_SetTreasuryRejectedAfterResolve() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 50, 1);
+        _commitAll(vs);
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(123, AUDIT_HASH);
+        _revealAll(vs);
+        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        market.resolve();
+
+        address newTreasury = makeAddr("newTreasury");
+        vm.prank(admin);
+        vm.expectRevert(TruthMarket.WrongPhase.selector);
+        market.setTreasury(newTreasury);
+    }
+
+    function test_SetTreasuryAllowedDuringVotingAndReveal() public {
+        market = _deployMarket(1, 7, 1);
+        address newTreasury1 = makeAddr("newTreasury1");
+        vm.prank(admin);
+        market.setTreasury(newTreasury1);
+        assertEq(market.treasury(), newTreasury1);
+
+        // Move into reveal phase.
+        V[] memory vs = _makeVoters(7, 10 ether, 50, 1);
+        _commitAll(vs);
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(123, AUDIT_HASH);
+
+        address newTreasury2 = makeAddr("newTreasury2");
+        vm.prank(admin);
+        market.setTreasury(newTreasury2);
+        assertEq(market.treasury(), newTreasury2);
+    }
+
+    function test_RevokeStakeFloorsClaimerCutAtOneWei() public {
+        // Tiny-stake demo only — minStake protects production deploys, but the rounding
+        // path still needs a guarantee for 1-wei claimer cuts.
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.minStake = 1; // allow 1-wei stakes purely to exercise the rounding floor
+        market = new TruthMarket(p);
+        V[] memory vs = _makeVoters(7, 1, 100, 1); // stake = 1 wei each
+        _commitAll(vs);
+
+        address attacker = makeAddr("attacker");
+        uint256 before_ = token.balanceOf(attacker);
+        vm.prank(attacker);
+        market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
+        // Claimer floor: gets 1 wei (not 0). Pool gets 0.
+        assertEq(token.balanceOf(attacker), before_ + 1);
+        assertEq(market.revokedSlashAccrued(), 0);
+    }
+
+    function test_ForceSweepDustPaginates() public {
+        market = _deployMarket(3, 20, 2);
+        V[] memory vs = _makeVoters(20, 100 ether, 100, 1); // all YES
+        _commitAll(vs);
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(0xBEEF, AUDIT_HASH);
+        _revealAll(vs);
+        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        market.resolve();
+        _withdrawAll(vs);
+
+        vm.warp(block.timestamp + market.DUST_SWEEP_GRACE() + 1);
+
+        // Process in two batches: 7, then everything remaining.
+        market.forceSweepDust(7);
+        assertEq(market.sweepCursor(), 7);
+        market.forceSweepDust(type(uint32).max);
+        assertEq(market.sweepCursor(), 20);
+        // Re-callable — restarts and finalises again.
+        market.forceSweepDust(type(uint32).max);
     }
 
     function test_DoubleRevokeReverts() public {

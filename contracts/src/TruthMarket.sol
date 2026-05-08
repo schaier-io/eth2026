@@ -72,6 +72,9 @@ contract TruthMarket is ReentrancyGuard {
     /// @notice Time after `revealDeadline` before residual dust may be force-swept to
     ///         treasury. Long enough that any voter has had ample time to withdraw.
     uint64 public constant DUST_SWEEP_GRACE = 30 days;
+    /// @notice Minimum permitted value for each phase period. Prevents a misconfigured
+    ///         deploy from setting unusable single-second windows.
+    uint64 public constant MIN_PERIOD = 1 minutes;
 
     // ---------- Types ----------
 
@@ -162,7 +165,7 @@ contract TruthMarket is ReentrancyGuard {
         uint96 jurorNoStake;
         uint96 jurorYesRisked;
         uint96 jurorNoRisked;
-        uint96 distributablePool;
+        uint256 distributablePool;
         uint96 revokedSlashAccrued;
         uint256 treasuryAccrued;
         uint256 creatorAccrued;
@@ -244,7 +247,10 @@ contract TruthMarket is ReentrancyGuard {
     uint96 public revealedNoStake;
     uint96 public revealedYesRisked;
     uint96 public revealedNoRisked;
-    uint96 public distributablePool;
+    /// @notice Pool distributed to winning revealers. Stored as uint256 so the slashed
+    ///         total can never silently revert at the boundary even under pathological
+    ///         flows where many revoked stakes accrue alongside missed/lost risked stake.
+    uint256 public distributablePool;
     /// @notice Half of every revoked stake accumulates here during the voting phase.
     ///         At resolve, it joins the distributable pool on a Yes/No outcome, or
     ///         routes to the claim creator on Invalid.
@@ -268,6 +274,15 @@ contract TruthMarket is ReentrancyGuard {
     ///         the total number of addresses that ever committed.
     uint32 public revokedCount;
 
+    /// @notice `forceSweepDust` walks `_activeCommitters` from this cursor; persisted
+    ///         across calls so very large pools can be processed in batches without
+    ///         exceeding the block gas limit. When `>=` the active count, the prior
+    ///         sweep is finalized and the next call restarts from index 0.
+    uint32 public sweepCursor;
+    /// @notice Running sum of unclaimed voter payouts collected during the current
+    ///         in-progress dust sweep. Reset to 0 whenever a fresh sweep begins.
+    uint256 public sweepUnclaimed;
+
     // ---------- Events ----------
 
     event MarketStarted(
@@ -289,7 +304,7 @@ contract TruthMarket is ReentrancyGuard {
     event JuryCommitted(uint256 randomness, address[] jurors, bytes32 auditHash);
     event VoteRevealed(address indexed voter, uint8 vote, uint96 stake, uint8 conviction, uint96 riskedStake);
     event Resolved(
-        Outcome outcome, uint32 winningJuryCount, uint96 slashedRiskedStake, uint256 fee, uint96 distributablePool
+        Outcome outcome, uint32 winningJuryCount, uint256 slashedRiskedStake, uint256 fee, uint256 distributablePool
     );
     event Withdrawn(address indexed voter, uint256 payout);
     event TreasuryUpdated(address indexed treasury);
@@ -334,7 +349,9 @@ contract TruthMarket is ReentrancyGuard {
         if (address(p.stakeToken) == address(0) || p.treasury == address(0)) revert BadParams();
         if (p.admin == address(0) || p.juryCommitter == address(0) || p.creator == address(0)) revert BadParams();
         if (p.ipfsHash.length == 0) revert BadParams();
-        if (p.votingPeriod == 0 || p.adminTimeout == 0 || p.revealPeriod == 0) revert BadParams();
+        if (p.votingPeriod < MIN_PERIOD || p.adminTimeout < MIN_PERIOD || p.revealPeriod < MIN_PERIOD) {
+            revert BadParams();
+        }
         if (p.protocolFeePercent > MAX_PROTOCOL_FEE_PERCENT) revert BadParams();
         if (p.minStake == 0) revert BadParams();
         if (p.jurySize == 0 || p.jurySize > MAX_JURY_SIZE) revert BadParams();
@@ -347,6 +364,9 @@ contract TruthMarket is ReentrancyGuard {
         if (bytes(p.name).length == 0) revert BadParams();
         if (bytes(p.description).length == 0) revert BadParams();
         if (p.tags.length > MAX_TAGS) revert BadParams();
+        for (uint256 i = 0; i < p.tags.length; i++) {
+            if (bytes(p.tags[i]).length == 0) revert BadParams();
+        }
 
         stakeToken = p.stakeToken;
         treasury = p.treasury;
@@ -495,8 +515,11 @@ contract TruthMarket is ReentrancyGuard {
         totalRiskedStake -= risked;
 
         // 50/50 split — claimer gets the floor half, the pool gets the ceiling half so
-        // an odd-wei stake still rounds in the protocol's favour.
+        // an odd-wei stake still rounds in the protocol's favour. Floor the claimer cut
+        // at 1 wei when the stake is non-zero, otherwise a 1-wei stake hands the claimer
+        // nothing and removes their incentive to call the function.
         uint96 claimerCut = stake / 2;
+        if (claimerCut == 0 && stake > 0) claimerCut = 1;
         uint96 pooledCut = stake - claimerCut;
         revokedSlashAccrued += pooledCut;
 
@@ -594,7 +617,7 @@ contract TruthMarket is ReentrancyGuard {
         outcome = out;
         phase = Phase.Resolved;
 
-        uint96 slashedRiskedStake;
+        uint256 slashedRiskedStake;
         uint256 fee;
         if (out != Outcome.Invalid) {
             (slashedRiskedStake, fee) = _settleSlashedPool(out);
@@ -628,19 +651,13 @@ contract TruthMarket is ReentrancyGuard {
         emit Withdrawn(msg.sender, payout);
     }
 
-    /// @notice Pull all treasury-bound funds. Permissionless — funds always go to the
-    ///         configured `treasury`. Once every voter has withdrawn, also sweeps any
-    ///         rounding dust left in the contract, but never touches funds already
-    ///         accrued for the claim creator. Idempotent: returns silently when there is
-    ///         nothing to sweep.
+    /// @notice Pull treasury-accrued funds. Permissionless — funds always go to the
+    ///         configured `treasury`. Idempotent: returns silently when nothing has
+    ///         accrued. Rounding-dust collection is exclusively handled by
+    ///         `forceSweepDust` after the dust-sweep grace window — keeping this surface
+    ///         minimal avoids the convenience-branch ambiguity.
     function withdrawTreasury() external nonReentrant {
-        uint256 amount;
-        if (phase == Phase.Resolved && withdrawnCount == commitCount) {
-            uint256 balance = stakeToken.balanceOf(address(this));
-            amount = balance > creatorAccrued ? balance - creatorAccrued : 0;
-        } else {
-            amount = treasuryAccrued;
-        }
+        uint256 amount = treasuryAccrued;
         treasuryAccrued = 0;
         if (amount == 0) return;
         stakeToken.safeTransfer(treasury, amount);
@@ -648,27 +665,47 @@ contract TruthMarket is ReentrancyGuard {
     }
 
     /// @notice Sweep rounding-dust to the treasury after the dust-sweep grace window.
-    ///         Iterates active commits to compute the sum of voter payouts that haven't
-    ///         been claimed yet; treats anything in the contract beyond
-    ///         `(unclaimed + treasuryAccrued + creatorAccrued)` as dust and accrues it
-    ///         to the treasury. Voter refunds remain claimable indefinitely — this
-    ///         only recovers what is genuinely orphaned.
-    function forceSweepDust() external nonReentrant {
+    ///         Paginated: each call processes up to `maxIters` active commits starting
+    ///         from `sweepCursor`. The accumulated unclaimed payout total persists in
+    ///         storage across calls so very large pools can be processed in batches.
+    ///         Once the cursor reaches the end of the active list the call also
+    ///         finalises by routing any residual contract balance (beyond
+    ///         `unclaimed + treasuryAccrued + creatorAccrued`) into `treasuryAccrued`.
+    ///         If the balance shifts mid-sweep (a voter withdraws between batches),
+    ///         the next call restarts the sweep from index 0.
+    function forceSweepDust(uint32 maxIters) external nonReentrant {
         if (phase != Phase.Resolved) revert WrongPhase();
         if (block.timestamp < uint256(revealDeadline) + DUST_SWEEP_GRACE) revert DeadlineNotPassed();
+        if (maxIters == 0) revert BadParams();
 
-        address[] memory active = _activeCommitters;
-        uint256 unclaimed;
-        for (uint256 i = 0; i < active.length; i++) {
-            Commit storage k = commits[active[i]];
-            if (k.withdrawn) continue;
-            unclaimed += _payoutFor(k, _isJuror[active[i]]);
+        uint32 n = uint32(_activeCommitters.length);
+        uint32 cursor = sweepCursor;
+
+        // A previous sweep already finished; restart fresh from 0.
+        if (cursor >= n) {
+            cursor = 0;
+            sweepUnclaimed = 0;
         }
 
-        uint256 reserved = unclaimed + creatorAccrued + treasuryAccrued;
-        uint256 balance = stakeToken.balanceOf(address(this));
-        if (balance > reserved) {
-            treasuryAccrued += balance - reserved;
+        // Clamp to `n` while avoiding cursor + maxIters overflow when maxIters is large.
+        uint32 remaining = n - cursor;
+        uint32 end = maxIters >= remaining ? n : cursor + maxIters;
+
+        uint256 acc = sweepUnclaimed;
+        for (uint32 i = cursor; i < end; i++) {
+            Commit storage k = commits[_activeCommitters[i]];
+            if (k.withdrawn) continue;
+            acc += _payoutFor(k, _isJuror[_activeCommitters[i]]);
+        }
+        sweepCursor = end;
+        sweepUnclaimed = acc;
+
+        if (end == n) {
+            uint256 reserved = acc + creatorAccrued + treasuryAccrued;
+            uint256 balance = stakeToken.balanceOf(address(this));
+            if (balance > reserved) {
+                treasuryAccrued += balance - reserved;
+            }
         }
     }
 
@@ -794,7 +831,10 @@ contract TruthMarket is ReentrancyGuard {
 
     // ---------- Admin ----------
 
+    /// @notice Rotate the treasury address. Locked once `phase == Resolved` to prevent
+    ///         admin from rerouting fees that have already accrued.
     function setTreasury(address _treasury) external onlyAdmin {
+        if (phase == Phase.Resolved) revert WrongPhase();
         if (_treasury == address(0)) revert BadParams();
         treasury = _treasury;
         emit TreasuryUpdated(_treasury);
@@ -889,22 +929,18 @@ contract TruthMarket is ReentrancyGuard {
         return (Outcome.Invalid, 0);
     }
 
-    function _settleSlashedPool(Outcome out) internal returns (uint96 slashedRiskedStake, uint256 fee) {
-        uint96 losingRisked = out == Outcome.Yes ? revealedNoRisked : revealedYesRisked;
-        uint96 missedRisked = totalRiskedStake - revealedYesRisked - revealedNoRisked;
+    function _settleSlashedPool(Outcome out) internal returns (uint256 slashedRiskedStake, uint256 fee) {
+        uint256 losingRisked = out == Outcome.Yes ? revealedNoRisked : revealedYesRisked;
+        uint256 missedRisked = uint256(totalRiskedStake) - revealedYesRisked - revealedNoRisked;
         (, uint96 jurorExtra) = _jurorNoRevealAccounting();
-        uint96 revokedHalf = revokedSlashAccrued;
+        uint256 revokedHalf = revokedSlashAccrued;
         revokedSlashAccrued = 0;
-        // forge-lint: disable-next-line(unsafe-typecast)
-        slashedRiskedStake = uint96(
-            uint256(losingRisked) + uint256(missedRisked) + uint256(jurorExtra) + uint256(revokedHalf)
-        );
+        slashedRiskedStake = losingRisked + missedRisked + uint256(jurorExtra) + revokedHalf;
 
         if (slashedRiskedStake > 0) {
-            fee = (uint256(slashedRiskedStake) * protocolFeePercent) / 100;
+            fee = (slashedRiskedStake * protocolFeePercent) / 100;
             if (fee > 0) treasuryAccrued += fee;
-            // forge-lint: disable-next-line(unsafe-typecast)
-            distributablePool = slashedRiskedStake - uint96(fee);
+            distributablePool = slashedRiskedStake - fee;
         }
     }
 

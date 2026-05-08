@@ -21,6 +21,10 @@ Sending 100% of the stake to the caller would let a voter recover their stake wi
 - Self-revocation is blocked. Without that block, a voter could call `revokeStake` on themselves to recover their full stake before the slash mechanics could apply, defeating both the loss-on-wrong-vote and the juror-non-reveal penalties.
 - Revoked commits cannot reveal and cannot withdraw. Aggregate `totalCommittedStake` and `totalRiskedStake` are decremented by the revoked entry's amounts; subsequent payout math treats the slot as if the voter were never there for purposes of slash/reward, while the address remains in `_committers` (the jury draw might still pick them, in which case they appear as an absent juror).
 
+**Known interaction with the juror-non-reveal penalty**
+
+A selected juror who realises mid-voting that they cannot reveal in time has a strictly cheaper exit through revoke than through silent non-reveal. Sketch: the juror feeds their own nonce to a sock-puppet address, which calls `revokeStake` and recovers 50% of stake (the other 50% goes to the slash pool). The protocol still slashes them — 50% of stake is materially more than the typical 1× `riskedStake` slash a non-juror loser absorbs (~20% at typical conviction) — but it is materially less than the **100% full-stake slash** a non-revealing juror would otherwise face. This is consistent with the design intent (any nonce leak is punished, including a deliberate self-leak), but operators should be aware that a known-unreliable juror set may use this path. The recommended mitigations are off-chain: pick jurors who are committed to revealing, and treat any pre-deadline revoke against a juror address as an early signal of trouble.
+
 **Considered Alternatives**
 
 - Burn the leaked stake entirely (send to zero or only the treasury) instead of paying any to the claimer: rejected because removing the personal incentive lets the leaker freely publish — they have nothing to gain from extracting it themselves but also nothing to lose from sharing. The 50/50 split keeps the claimer motivated.
