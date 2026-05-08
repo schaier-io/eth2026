@@ -33,7 +33,7 @@ contract TruthMarketLifecycleTest is Test {
     uint64 internal constant REVEAL_PERIOD = 1 days;
     uint8 internal constant FEE_PERCENT = 5;
     uint96 internal constant MIN_STAKE = 1 ether;
-    uint96 internal constant DEFAULT_BALANCE = 1_000 ether;
+    uint96 internal constant DEFAULT_BALANCE = 1000 ether;
 
     struct V {
         address addr;
@@ -93,13 +93,7 @@ contract TruthMarketLifecycleTest is Test {
             address a = address(uint160(uint256(keccak256(abi.encode("voter", i)))));
             vm.deal(a, 1 ether); // gas only; not strictly needed in test, but harmless
             assertTrue(token.transfer(a, DEFAULT_BALANCE));
-            vs[i] = V({
-                addr: a,
-                nonce: keccak256(abi.encode("nonce", i)),
-                stake: stake,
-                conv: conv,
-                vote: vote
-            });
+            vs[i] = V({ addr: a, nonce: keccak256(abi.encode("nonce", i)), stake: stake, conv: conv, vote: vote });
         }
     }
 
@@ -112,7 +106,9 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function _commitAll(V[] memory vs) internal {
-        for (uint256 i = 0; i < vs.length; i++) _commit(vs[i]);
+        for (uint256 i = 0; i < vs.length; i++) {
+            _commit(vs[i]);
+        }
     }
 
     function _reveal(V memory v) internal {
@@ -121,7 +117,9 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function _revealAll(V[] memory vs) internal {
-        for (uint256 i = 0; i < vs.length; i++) _reveal(vs[i]);
+        for (uint256 i = 0; i < vs.length; i++) {
+            _reveal(vs[i]);
+        }
     }
 
     function _withdrawAll(V[] memory vs) internal {
@@ -132,6 +130,21 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     // ---------- Tests ----------
+
+    function test_CommitHashBindsChainIdAndContractDomain() public {
+        market = _deployMarket(1, 7, 1);
+        address voter = makeAddr("domainVoter");
+        bytes32 nonce = keccak256("domain-nonce");
+
+        bytes32 expected = keccak256(abi.encode(uint8(1), nonce, voter, block.chainid, address(market)));
+        assertEq(market.commitHashOf(1, nonce, voter), expected);
+
+        uint256 originalChainId = block.chainid;
+        vm.chainId(originalChainId + 1);
+        bytes32 otherChain = market.commitHashOf(1, nonce, voter);
+        assertEq(otherChain, keccak256(abi.encode(uint8(1), nonce, voter, block.chainid, address(market))));
+        assertTrue(otherChain != expected);
+    }
 
     function test_FullLifecycleSingleJurorYesOutcome() public {
         // jurySize=1 with the 15% rule needs minCommits >= 7. All commit + reveal yes.
@@ -175,13 +188,7 @@ contract TruthMarketLifecycleTest is Test {
         for (uint256 i = 0; i < 5; i++) {
             address a = address(uint160(uint256(keccak256(abi.encode("noVoter", i)))));
             assertTrue(token.transfer(a, DEFAULT_BALANCE));
-            no[i] = V({
-                addr: a,
-                nonce: keccak256(abi.encode("noNonce", i)),
-                stake: 80 ether,
-                conv: 100,
-                vote: 2
-            });
+            no[i] = V({ addr: a, nonce: keccak256(abi.encode("noNonce", i)), stake: 80 ether, conv: 100, vote: 2 });
         }
 
         _commitAll(yes);
@@ -500,7 +507,9 @@ contract TruthMarketLifecycleTest is Test {
     function test_RevertsConstructorWhenTooManyTags() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         string[] memory tags = new string[](6);
-        for (uint256 i = 0; i < 6; i++) tags[i] = "tag";
+        for (uint256 i = 0; i < 6; i++) {
+            tags[i] = "tag";
+        }
         p.tags = tags;
         vm.expectRevert(TruthMarket.BadParams.selector);
         new TruthMarket(p);
@@ -556,7 +565,9 @@ contract TruthMarketLifecycleTest is Test {
         market.commitJury(0xC0FFEE, AUDIT_HASH);
 
         // Reveal everyone except the revoked voter (they cannot reveal).
-        for (uint256 i = 1; i < vs.length; i++) _reveal(vs[i]);
+        for (uint256 i = 1; i < vs.length; i++) {
+            _reveal(vs[i]);
+        }
 
         vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
         market.resolve();
@@ -677,7 +688,9 @@ contract TruthMarketLifecycleTest is Test {
         vm.prank(juryCommitter);
         market.commitJury(123, AUDIT_HASH);
         // Reveal everyone except the revoked voter.
-        for (uint256 i = 1; i < vs.length; i++) _reveal(vs[i]);
+        for (uint256 i = 1; i < vs.length; i++) {
+            _reveal(vs[i]);
+        }
         vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
         market.resolve();
 
@@ -859,6 +872,37 @@ contract TruthMarketLifecycleTest is Test {
         assertEq(market.revokedSlashAccrued(), 0);
     }
 
+    function test_ResolveHandlesSlashedPoolAboveUint96() public {
+        market = _deployMarket(1, 7, 1);
+        uint96 hugeStake = type(uint96).max / 4;
+        V[] memory vs = new V[](7);
+        for (uint256 i = 0; i < vs.length; i++) {
+            address a = address(uint160(uint256(keccak256(abi.encode("hugeVoter", i)))));
+            token.mint(a, hugeStake);
+            vs[i] = V({ addr: a, nonce: keccak256(abi.encode("hugeNonce", i)), stake: hugeStake, conv: 100, vote: 1 });
+        }
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(0xC0FFEE, AUDIT_HASH);
+
+        address juror = market.getJury()[0];
+        for (uint256 i = 0; i < vs.length; i++) {
+            if (vs[i].addr == juror) {
+                _reveal(vs[i]);
+                break;
+            }
+        }
+
+        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        market.resolve();
+
+        assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Yes));
+        assertTrue(market.distributablePool() > type(uint96).max);
+        assertTrue(market.totalRiskedStake() > type(uint96).max);
+    }
+
     function test_ForceSweepDustPaginates() public {
         market = _deployMarket(3, 20, 2);
         V[] memory vs = _makeVoters(20, 100 ether, 100, 1); // all YES
@@ -873,6 +917,7 @@ contract TruthMarketLifecycleTest is Test {
 
         vm.warp(block.timestamp + market.DUST_SWEEP_GRACE() + 1);
 
+        assertEq(market.MAX_DUST_SWEEP_ITERS(), 200);
         // Process in two batches: 7, then everything remaining.
         market.forceSweepDust(7);
         assertEq(market.sweepCursor(), 7);

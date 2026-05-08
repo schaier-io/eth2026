@@ -62,7 +62,7 @@ If an agent does have similar skills available, it may use them, but repo files 
 The Solidity contract is aligned with the current PRD model:
 
 - conviction stored on committed positions as a whole percent (0–100), determines risked stake;
-- commitment hash binds vote, nonce, voter address, and contract address;
+- commitment hash binds vote, nonce, voter address, chain id, and contract address;
 - partial slashing on losing voters and non-revealing non-jurors (1× risked stake);
 - count-based jury outcome (each selected juror = 1 vote, [ADR 0006](./docs/adr/0006-count-based-jury-voting.md));
 - selected jurors who fail to reveal forfeit their full stake (~5× the normal slash);
@@ -71,4 +71,3 @@ The Solidity contract is aligned with the current PRD model:
 - on-chain claim metadata (name, description, ≤5 tags) stored at deployment;
 - nonce-leak revocation (`revokeStake`) callable in voting phase only — see [ADR 0007](./docs/adr/0007-nonce-leak-revocation.md);
 - no fact-checker/oracle wording in contract or events.
-

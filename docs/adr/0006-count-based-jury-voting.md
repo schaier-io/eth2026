@@ -19,8 +19,15 @@ A randomly selected juror who skips reveal damages the resolution process and is
 
 The extra (above the normal 1× `riskedStake`) joins the distributable pool on a Yes/No outcome (so honest revealing winners absorb it) or accrues to the claim creator when the market resolves Invalid.
 
+**Reveal Quorum**
+
+`minRevealedJurors` is intentionally a deployment-time market parameter. The contract enforces that it is non-zero and no greater than `jurySize`; it does not force a strict majority quorum. This is a liveness trade-off: some demo or low-stakes markets may prefer resolution from a smaller number of selected juror reveals instead of frequent Invalid outcomes, while higher-stakes markets can set `minRevealedJurors` to a majority or to the full odd jury size.
+
+The claim/rules document should disclose the chosen reveal quorum before voters stake. A low quorum is not a contract bug, but it is a market-quality choice that affects how representative the resolved belief is.
+
 **Implications**
 
 - Jury composition matters more than juror wealth. Stake/conviction tune economic exposure but do not bias the YES/NO decision.
 - Jury size should be configured odd so a full-reveal jury cannot tie. Even-count partial reveals can still tie → Invalid.
+- Reveal quorum is configurable for liveness; strict-majority or full-jury quorum should be chosen for higher-stakes markets.
 - A juror who knows they cannot reveal in time should ideally not commit; once selected, skipping reveal is the most expensive failure mode in the protocol.

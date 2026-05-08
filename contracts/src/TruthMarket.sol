@@ -80,6 +80,8 @@ contract TruthMarket is ReentrancyGuard {
     /// @notice Minimum permitted value for each phase period. Prevents a misconfigured
     ///         deploy from setting unusable single-second windows.
     uint64 public constant MIN_PERIOD = 1 minutes;
+    /// @notice Upper bound on active commits processed by one `forceSweepDust` call.
+    uint32 public constant MAX_DUST_SWEEP_ITERS = 200;
 
     // ---------- Types ----------
 
@@ -152,7 +154,7 @@ contract TruthMarket is ReentrancyGuard {
         Phase phase;
         Outcome outcome;
         uint32 commitCount;
-        uint32 revokedCount;          // commitCount delta vs the original committers
+        uint32 revokedCount; // commitCount delta vs the original committers
         uint32 revealedYesCount;
         uint32 revealedNoCount;
         uint32 revealedTotalCount;
@@ -160,18 +162,18 @@ contract TruthMarket is ReentrancyGuard {
         uint32 juryYesCount;
         uint32 juryNoCount;
         uint32 jurorRevealCount;
-        uint96 totalCommittedStake;
-        uint96 totalRiskedStake;
-        uint96 revealedYesStake;
-        uint96 revealedNoStake;
-        uint96 revealedYesRisked;
-        uint96 revealedNoRisked;
-        uint96 jurorYesStake;
-        uint96 jurorNoStake;
-        uint96 jurorYesRisked;
-        uint96 jurorNoRisked;
+        uint256 totalCommittedStake;
+        uint256 totalRiskedStake;
+        uint256 revealedYesStake;
+        uint256 revealedNoStake;
+        uint256 revealedYesRisked;
+        uint256 revealedNoRisked;
+        uint256 jurorYesStake;
+        uint256 jurorNoStake;
+        uint256 jurorYesRisked;
+        uint256 jurorNoRisked;
         uint256 distributablePool;
-        uint96 revokedSlashAccrued;
+        uint256 revokedSlashAccrued;
         uint256 treasuryAccrued;
         uint256 creatorAccrued;
     }
@@ -246,20 +248,20 @@ contract TruthMarket is ReentrancyGuard {
     uint32 public juryYesCount;
     /// @notice Number of jurors who revealed NO. Each juror contributes weight 1.
     uint32 public juryNoCount;
-    uint96 public totalCommittedStake;
-    uint96 public totalRiskedStake;
-    uint96 public revealedYesStake;
-    uint96 public revealedNoStake;
-    uint96 public revealedYesRisked;
-    uint96 public revealedNoRisked;
-    /// @notice Pool distributed to winning revealers. Stored as uint256 so the slashed
-    ///         total can never silently revert at the boundary even under pathological
-    ///         flows where many revoked stakes accrue alongside missed/lost risked stake.
+    uint256 public totalCommittedStake;
+    uint256 public totalRiskedStake;
+    uint256 public revealedYesStake;
+    uint256 public revealedNoStake;
+    uint256 public revealedYesRisked;
+    uint256 public revealedNoRisked;
+    /// @notice Pool distributed to winning revealers. Stake aggregates are uint256 so
+    ///         settlement cannot brick at the boundary when active risked stake and
+    ///         revoked slash accrual are both large.
     uint256 public distributablePool;
     /// @notice Half of every revoked stake accumulates here during the voting phase.
     ///         At resolve, it joins the distributable pool on a Yes/No outcome, or
     ///         routes to the claim creator on Invalid.
-    uint96 public revokedSlashAccrued;
+    uint256 public revokedSlashAccrued;
     uint256 public totalYesRewardWeight;
     uint256 public totalNoRewardWeight;
     uint256 public randomness;
@@ -303,9 +305,7 @@ contract TruthMarket is ReentrancyGuard {
         uint32 minRevealedJurors,
         uint96 minStake
     );
-    event VoteCommitted(
-        address indexed voter, bytes32 commitHash, uint96 stake, uint8 conviction, uint96 riskedStake
-    );
+    event VoteCommitted(address indexed voter, bytes32 commitHash, uint96 stake, uint8 conviction, uint96 riskedStake);
     event JuryCommitted(uint256 randomness, address[] jurors, bytes32 auditHash);
     event VoteRevealed(address indexed voter, uint8 vote, uint96 stake, uint8 conviction, uint96 riskedStake);
     event Resolved(
@@ -423,10 +423,10 @@ contract TruthMarket is ReentrancyGuard {
     // ---------- Commit (hidden vote + stake + conviction) ----------
 
     /// @notice Commit a hidden YES/NO belief with stake and conviction.
-    ///         commitHash = keccak256(abi.encode(vote, nonce, voter, address(this))).
-    ///         The voter and contract address are bound into the hash so that copying
-    ///         someone else's hash yields a useless commit (the copier can't reveal it),
-    ///         and so that nonces are not correlated across markets.
+    ///         commitHash = keccak256(abi.encode(vote, nonce, voter, block.chainid, address(this))).
+    ///         The voter, chain id, and contract address are bound into the hash so that
+    ///         copying someone else's hash yields a useless commit (the copier can't
+    ///         reveal it), and so that nonces are not correlated across markets or chains.
     ///         Each wallet may commit at most once.
     ///         The actual received balance is what gets recorded; the `stake` argument
     ///         is just the spend authorization. This is an inbound sanity check, not
@@ -607,7 +607,7 @@ contract TruthMarket is ReentrancyGuard {
 
         if (phase == Phase.Voting) {
             if (block.timestamp < juryCommitDeadline) revert DeadlineNotPassed();
-            uint96 revokedHalf = revokedSlashAccrued;
+            uint256 revokedHalf = revokedSlashAccrued;
             revokedSlashAccrued = 0;
             creatorAccrued += revokedHalf;
             outcome = Outcome.Invalid;
@@ -638,16 +638,14 @@ contract TruthMarket is ReentrancyGuard {
             // Jury was drawn but outcome Invalid: slash each non-revealing juror's full
             // stake and route the revoked-slash half to the creator. Every other voter
             // is refunded. The event reports this separately from protocol fees.
-            uint96 jurorPenalty = _accrueNonRevealingJurorPenaltyToCreator();
-            uint96 revokedHalf = revokedSlashAccrued;
+            uint256 jurorPenalty = _accrueNonRevealingJurorPenaltyToCreator();
+            uint256 revokedHalf = revokedSlashAccrued;
             revokedSlashAccrued = 0;
             creatorAccrued += revokedHalf;
-            creatorAccruedAmount = uint256(jurorPenalty) + uint256(revokedHalf);
+            creatorAccruedAmount = jurorPenalty + revokedHalf;
         }
 
-        emit Resolved(
-            out, winningJuryCount, slashedRiskedStake, protocolFee, creatorAccruedAmount, distributablePool
-        );
+        emit Resolved(out, winningJuryCount, slashedRiskedStake, protocolFee, creatorAccruedAmount, distributablePool);
     }
 
     // ---------- Withdraw ----------
@@ -662,6 +660,7 @@ contract TruthMarket is ReentrancyGuard {
         uint256 payout = _payoutFor(k, _isJuror[msg.sender]);
         k.withdrawn = true;
         withdrawnCount++;
+        _resetDustSweep();
         if (payout > 0) stakeToken.safeTransfer(msg.sender, payout);
         emit Withdrawn(msg.sender, payout);
     }
@@ -695,6 +694,7 @@ contract TruthMarket is ReentrancyGuard {
 
         uint32 n = uint32(_activeCommitters.length);
         uint32 cursor = sweepCursor;
+        uint32 limit = maxIters > MAX_DUST_SWEEP_ITERS ? MAX_DUST_SWEEP_ITERS : maxIters;
 
         // A previous sweep already finished; restart fresh from 0.
         if (cursor >= n) {
@@ -702,9 +702,9 @@ contract TruthMarket is ReentrancyGuard {
             sweepUnclaimed = 0;
         }
 
-        // Clamp to `n` while avoiding cursor + maxIters overflow when maxIters is large.
+        // Clamp to `n` while respecting the bounded page size.
         uint32 remaining = n - cursor;
-        uint32 end = maxIters >= remaining ? n : cursor + maxIters;
+        uint32 end = limit >= remaining ? n : cursor + limit;
 
         uint256 acc = sweepUnclaimed;
         for (uint32 i = cursor; i < end; i++) {
@@ -857,62 +857,57 @@ contract TruthMarket is ReentrancyGuard {
 
     // ---------- Internals ----------
 
-    /// @dev Virtual Fisher-Yates sampler. Picks `k = min(jurySize, activeCount)` unique
-    ///      indices into `_activeCommitters` using `seed` as the entropy source. Memory
-    ///      cost is O(k) regardless of `n` — only positions touched by a swap are
-    ///      tracked, in a small linear-probe table sized 2k. No O(n) initialisation.
+    /// @dev Floyd sampler. Picks `k = min(jurySize, activeCount)` unique indices into
+    ///      `_activeCommitters` using `seed` as the entropy source. Memory cost is O(k)
+    ///      regardless of `n`; work is bounded by one membership scan per selected
+    ///      juror. This avoids both O(n) Fisher-Yates initialization and the previous
+    ///      sparse-swap table's repeated lookup/update scans.
     function _drawJury(uint256 seed) internal {
         uint256 n = _activeCommitters.length;
         uint256 k = jurySize > n ? n : jurySize;
         if (k == 0) return;
 
-        // Sparse swap table: positions whose virtual value differs from the identity.
-        uint256 cap = 2 * k;
-        uint256[] memory swapKeys = new uint256[](cap);
-        uint256[] memory swapVals = new uint256[](cap);
-        uint256 swapLen = 0;
-
-        for (uint256 i = 0; i < k; i++) {
-            uint256 r = i + (uint256(keccak256(abi.encode(seed, i))) % (n - i));
-
-            // Value at virtual position r (default = r if not yet swapped).
-            uint256 chosen = r;
-            for (uint256 s = 0; s < swapLen; s++) {
-                if (swapKeys[s] == r) {
-                    chosen = swapVals[s];
+        uint256[] memory selected = new uint256[](k);
+        uint256 selectedLen;
+        for (uint256 j = n - k; j < n; j++) {
+            uint256 candidate = _uniformRandom(seed, j, j + 1);
+            bool seen;
+            for (uint256 s = 0; s < selectedLen; s++) {
+                if (selected[s] == candidate) {
+                    seen = true;
                     break;
                 }
             }
 
-            // Value at virtual position i (default = i).
-            uint256 atI = i;
-            for (uint256 s = 0; s < swapLen; s++) {
-                if (swapKeys[s] == i) {
-                    atI = swapVals[s];
-                    break;
-                }
-            }
-
-            // Position r now carries what used to be at position i (so future picks see
-            // it). swap[i] is never read again because i won't reappear as a future r.
-            bool found;
-            for (uint256 s = 0; s < swapLen; s++) {
-                if (swapKeys[s] == r) {
-                    swapVals[s] = atI;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                swapKeys[swapLen] = r;
-                swapVals[swapLen] = atI;
-                swapLen++;
-            }
+            uint256 chosen = seen ? j : candidate;
+            selected[selectedLen] = chosen;
+            selectedLen++;
 
             address juror = _activeCommitters[chosen];
             _jury.push(juror);
             _isJuror[juror] = true;
         }
+    }
+
+    /// @dev Uniform random integer in [0, upper). Uses rejection sampling to remove
+    ///      modulo bias before Floyd's sampler consumes the bounded draw. With the
+    ///      protocol's uint32-sized committer pool, rejection probability is below
+    ///      2^-224, but the loop keeps the distribution exact.
+    function _uniformRandom(uint256 seed, uint256 domain, uint256 upper) internal pure returns (uint256) {
+        if (upper == 0) revert BadParams();
+
+        uint256 threshold;
+        unchecked {
+            threshold = (0 - upper) % upper;
+        }
+
+        uint256 attempt;
+        while (true) {
+            uint256 x = uint256(keccak256(abi.encode(seed, domain, attempt)));
+            if (x >= threshold) return x % upper;
+            attempt++;
+        }
+        revert BadParams();
     }
 
     function _recordReveal(Commit storage k, uint8 vote, bool juror) internal {
@@ -946,11 +941,11 @@ contract TruthMarket is ReentrancyGuard {
 
     function _settleSlashedPool(Outcome out) internal returns (uint256 slashedRiskedStake, uint256 protocolFee) {
         uint256 losingRisked = out == Outcome.Yes ? revealedNoRisked : revealedYesRisked;
-        uint256 missedRisked = uint256(totalRiskedStake) - revealedYesRisked - revealedNoRisked;
-        (, uint96 jurorExtra) = _jurorNoRevealAccounting();
+        uint256 missedRisked = totalRiskedStake - revealedYesRisked - revealedNoRisked;
+        (, uint256 jurorExtra) = _jurorNoRevealAccounting();
         uint256 revokedHalf = revokedSlashAccrued;
         revokedSlashAccrued = 0;
-        slashedRiskedStake = losingRisked + missedRisked + uint256(jurorExtra) + revokedHalf;
+        slashedRiskedStake = losingRisked + missedRisked + jurorExtra + revokedHalf;
 
         if (slashedRiskedStake > 0) {
             protocolFee = (slashedRiskedStake * protocolFeePercent) / 100;
@@ -959,7 +954,7 @@ contract TruthMarket is ReentrancyGuard {
         }
     }
 
-    function _accrueNonRevealingJurorPenaltyToCreator() internal returns (uint96 totalPenalty) {
+    function _accrueNonRevealingJurorPenaltyToCreator() internal returns (uint256 totalPenalty) {
         (totalPenalty,) = _jurorNoRevealAccounting();
         if (totalPenalty > 0) {
             creatorAccrued += totalPenalty;
@@ -970,7 +965,7 @@ contract TruthMarket is ReentrancyGuard {
     ///      penalty = full `stake` (conviction ignored for jurors).
     ///      extra   = stake - riskedStake (the slash beyond what's already counted in
     ///                missedRisked).
-    function _jurorNoRevealAccounting() internal view returns (uint96 totalPenalty, uint96 totalExtra) {
+    function _jurorNoRevealAccounting() internal view returns (uint256 totalPenalty, uint256 totalExtra) {
         address[] memory jury = _jury;
         for (uint256 i = 0; i < jury.length; i++) {
             Commit storage k = commits[jury[i]];
@@ -1003,11 +998,16 @@ contract TruthMarket is ReentrancyGuard {
     }
 
     function _commitHash(uint8 vote, bytes32 nonce, address voter) internal view returns (bytes32) {
-        return keccak256(abi.encode(vote, nonce, voter, address(this)));
+        return keccak256(abi.encode(vote, nonce, voter, block.chainid, address(this)));
     }
 
     function _riskedStake(uint96 stake, uint8 conviction) internal pure returns (uint96) {
         // forge-lint: disable-next-line(unsafe-typecast)
         return uint96((uint256(stake) * conviction) / 100);
+    }
+
+    function _resetDustSweep() internal {
+        sweepCursor = 0;
+        sweepUnclaimed = 0;
     }
 }

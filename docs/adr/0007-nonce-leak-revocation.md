@@ -2,7 +2,7 @@
 
 Status: accepted
 
-A voter's commit hash is opened by the tuple `(vote, nonce, voter, address(this))`. The nonce is the only secret a voter holds during the voting phase. If a voter publishes or shares that nonce, the integrity of their committed vote breaks down — a third party knowing the nonce can predict and front-run the reveal, or worse, lobby the voter to reveal a particular way.
+A voter's commit hash is opened by the tuple `(vote, nonce, voter, block.chainid, address(this))`. The nonce is the only secret a voter holds during the voting phase. Chain id and contract address are included as the commitment domain so a reveal on one chain or market contract cannot open a same-nonce commitment somewhere else. If a voter publishes or shares that nonce in the voting phase for the same domain, the integrity of their committed vote breaks down — a third party knowing the nonce can predict and front-run the reveal, or worse, lobby the voter to reveal a particular way.
 
 The contract therefore exposes `revokeStake(voter, vote, nonce)` during the voting phase only. Anyone who can produce a valid `(vote, nonce)` for `voter`'s commit can call it. The voter's stake is split 50/50: half pays the claimer immediately, the other half accrues to `revokedSlashAccrued` and routes through the slash-pool plumbing at resolve (distributable pool on Yes/No, creator on Invalid).
 
@@ -19,7 +19,7 @@ Sending 100% of the stake to the caller would let a voter recover their stake wi
 **Constraints**
 
 - Self-revocation is blocked. Without that block, a voter could call `revokeStake` on themselves to recover their full stake before the slash mechanics could apply, defeating both the loss-on-wrong-vote and the juror-non-reveal penalties.
-- Revoked commits cannot reveal and cannot withdraw. Aggregate `totalCommittedStake` and `totalRiskedStake` are decremented by the revoked entry's amounts; subsequent payout math treats the slot as if the voter were never there for purposes of slash/reward, while the address remains in `_committers` (the jury draw might still pick them, in which case they appear as an absent juror).
+- Revoked commits cannot reveal and cannot withdraw. Aggregate `totalCommittedStake` and `totalRiskedStake` are decremented by the revoked entry's amounts; subsequent payout math treats the slot as if the voter were never there for purposes of slash/reward. The address is removed from the active committer list so the jury draw cannot select a revoked position.
 
 **Known interaction with the juror-non-reveal penalty**
 

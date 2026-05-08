@@ -56,6 +56,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - The product is a random-jury belief-resolution market, not a fact-checking oracle.
 - Claim metadata (name, description, up to 5 tags) is stored on-chain at deployment so the claim is self-describing without a separate fetch. The Swarm/IPFS rules document remains the authoritative long-form reference.
 - Voters may have a leaked nonce penalised during the voting phase: anyone who can produce a valid (vote, nonce) for another voter's commit can call `revokeStake`. The voter's stake is split 50/50 — half to the claimer, half to the slashed-stake pool (which routes to the distributable pool on Yes/No or to the creator on Invalid). After the voting deadline this is no longer callable. See [ADR 0007](./adr/0007-nonce-leak-revocation.md).
+- Commitments are domain-separated by vote, nonce, voter address, chain id, and contract address so reveals cannot be replayed across chains or market contracts when a voter reuses a nonce.
 - Self-revocation is blocked so it cannot be used as an early-exit bypass of the slash mechanics.
 - The protocol does not decide external truth. It resolves outcomes from selected juror reveals.
 - Swarm stores immutable claim/rules documents.
@@ -63,7 +64,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - Votes use classic commit-reveal to preserve voter sovereignty.
 - Operator-encrypted votes are rejected for the hackathon design because they make the operator a privileged reveal service.
 - SpaceComputer randomness is the core sponsor integration and selects the resolving jury from committed voters.
-- The hackathon version can use an off-chain service to fetch randomness and post selected jurors, but the selection must be replayable.
+- The hackathon version uses a trusted off-chain `juryCommitter` to fetch SpaceComputer randomness and post it with an audit hash. The contract draws the jury on-chain from that posted randomness; the selection must be replayable, but the randomness proof is not verified on-chain in this scope.
 - Juror resolution is count-based: each selected juror contributes 1 vote, regardless of stake or conviction (see [ADR 0006](./adr/0006-count-based-jury-voting.md)).
 - Conviction controls the portion of stake at risk.
 - Conviction affects reward upside (winners' share of the slashed pool is weighted by their own risked stake) but does not affect the YES/NO outcome.
@@ -75,6 +76,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - Selected jurors who fail to reveal forfeit their full stake (~5× a typical normal slash); the extra above the normal 1× risked portion joins the distributable pool on a Yes/No outcome or accrues to the claim creator on Invalid.
 - Winning voters receive stake back plus a share of slashed stake, weighted by their own risked stake.
 - Jury size is constrained to be odd (≤ 100). Even-count partial reveals can still tie → Invalid.
+- Minimum revealed jurors is a deployment-time market parameter. The contract permits low quorums as an intentional liveness trade-off, and the chosen quorum should be disclosed in the immutable claim/rules document.
 - The token story for the hackathon is limited to staking and protocol fee/revenue share.
 - Governance, claim-creation token requirements, and complex emissions are deferred.
 - ENS is optional and should be pursued only if it can be live and functional.
@@ -84,7 +86,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 ## Implementation Modules
 
 - **Market lifecycle contract:** owns claim creation, voting phase transitions, jury commitment, reveal, resolution, payout, and treasury fee transfer.
-- **Commitment module:** owns commitment hash construction and verification, including vote, nonce, stake, conviction, voter, and claim id so commitments cannot be replayed or copied across contexts.
+- **Commitment module:** owns commitment hash construction and verification, including vote, nonce, voter, chain id, and contract address so commitments cannot be replayed or copied across contexts. Stake and conviction are recorded at commit time rather than hidden inside the hash.
 - **Conviction accounting module:** owns risked stake, refundable stake, slashed-pool accounting (including the juror full-stake penalty extras), winner reward weights, and payout math.
 - **Jury voting module:** owns count-based outcome resolution from selected juror reveals (`juryYesCount`/`juryNoCount`), tie-to-Invalid behavior, and the minimum-revealed-jurors gate.
 - **Jury selection service:** fetches SpaceComputer randomness, reads committed voters, deterministically selects jurors, persists/references the randomness audit artifact, and submits selected jurors on-chain.

@@ -6,7 +6,7 @@ The Solidity core matches the current random-jury belief-resolution model:
 
 - product language no longer frames the contract as a fact-checker or truth oracle;
 - claim metadata (`name`, `description`, up to `MAX_TAGS = 5` tags) is stored on-chain at deployment alongside the Swarm/IPFS rules pointer;
-- commitments bind vote, nonce, voter address, and contract address inside the hash; stake/conviction are stored in contract state at commit time and are not part of the hash;
+- commitments bind vote, nonce, voter address, chain id, and contract address inside the hash; stake/conviction are stored in contract state at commit time and are not part of the hash;
 - voting-phase `revokeStake(voter, vote, nonce)` lets a third party claim a voter's full stake when their nonce leaks (see [ADR 0007](./adr/0007-nonce-leak-revocation.md)); self-revocation is blocked, and revocation is gated to the voting phase only;
 - conviction is stored as a whole percent (0–100) and determines the risked portion of stake for the normal slash and the reward weight;
 - losers and non-revealing non-jurors lose only their risked stake;
@@ -14,10 +14,15 @@ The Solidity core matches the current random-jury belief-resolution model:
 - selected jurors who fail to reveal forfeit their full stake — at typical conviction this is roughly 5× the normal slash;
 - the extra above the normal 1× risked slash joins the distributable pool on a Yes/No outcome or accrues to the claim creator on Invalid;
 - winner upside is distributed by risked stake;
-- treasury collects protocol fees via `withdrawTreasury`; Invalid-path juror penalties accrue to the claim creator via `withdrawCreator`; dust may be swept to treasury after the grace window;
+- treasury collects protocol fees via `withdrawTreasury`; Invalid-path juror penalties accrue to the claim creator via `withdrawCreator`; dust may be swept to treasury after the grace window via bounded pagination;
 - the old evidence event has been removed from the core contract.
 
 Market parameters are locked at deployment (no separate setup tx); admin and jury committer are constructor-passed immutables (intended to become hardcoded constants once the production addresses are finalized).
+
+Two audit-noted behaviors are intentional for the hackathon scope:
+
+- `juryCommitter` is trusted to post the SpaceComputer cTRNG value and an audit hash. The jury draw is on-chain and replayable, but the posted randomness is not yet verified on-chain; see [ADR 0005](./adr/0005-spacecomputer-first-sponsor-strategy.md).
+- `minRevealedJurors` is configurable and may be below strict majority. This is a liveness/market-quality parameter disclosed in the claim rules, not a hardcoded security invariant; see [ADR 0006](./adr/0006-count-based-jury-voting.md).
 
 The code intentionally remains one contract for hackathon speed, but the internals are separated around commitment, reveal accounting, jury outcome, settlement, and payout.
 
@@ -37,7 +42,9 @@ The code intentionally remains one contract for hackathon speed, but the interna
 - selected juror non-revealer at low conviction still loses full stake (covered);
 - no selected juror reveals → Invalid outcome, non-revealing jurors slashed full stake to the claim creator;
 - tied selected juror counts on partial reveal → Invalid outcome, non-revealing jurors slashed full stake to the claim creator, revealing voters refunded;
-- small-stake/low-conviction commits that would round risked stake to zero revert.
+- small-stake/low-conviction commits that would round risked stake to zero revert;
+- extreme aggregate stake/revocation pools settle without `uint96` boundary reverts;
+- paginated dust sweeping preserves unclaimed voter payouts.
 
 ### 2. Jury Selection Service Boundary
 
@@ -45,7 +52,7 @@ The code intentionally remains one contract for hackathon speed, but the interna
 
 **Dependency category:** true external for SpaceComputer; mock at boundary.
 
-**Recommended interface:** one service operation should close voting if needed, fetch randomness, select jurors from `getCommitters`, persist a replayable audit artifact, and submit `commitJury`.
+**Recommended interface:** one service operation should close voting if needed, fetch randomness, persist a replayable audit artifact, and submit `commitJury`. For hackathon scope this service is trusted not to grind seeds. Production hardening should bind `commitJury` to a verifiable SpaceComputer proof or attestation.
 
 ### 3. Swarm Claim Rules Boundary
 
