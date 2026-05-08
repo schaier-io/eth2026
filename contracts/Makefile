@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: help install update build test test-gas coverage fmt fmt-check snapshot clean anvil deploy-counter deploy-token deploy-market verify-counter
+.PHONY: help install update build test test-gas coverage fmt fmt-check snapshot clean anvil deploy-token deploy-market
 
 help:
 	@echo "Targets:"
@@ -18,7 +18,6 @@ help:
 	@echo "  anvil-down      - stop background anvil (bin/anvil-down)"
 	@echo "  new-key         - generate fresh keypair (bin/new-key)"
 	@echo "  new-key-write   - generate keypair AND write to .env"
-	@echo "  deploy-counter NETWORK=anvil  - deploy Counter"
 	@echo "  deploy-token   NETWORK=anvil  - deploy ExampleToken"
 	@echo "  deploy-market  NETWORK=anvil  - deploy TruthMarket"
 	@echo "  clean           - remove build artifacts"
@@ -69,14 +68,14 @@ new-key:
 new-key-write:
 	./bin/new-key --write
 
-deploy-counter:
-	$(FORGE) script script/Counter.s.sol:CounterScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv
-
 deploy-token:
 	$(FORGE) script script/ExampleToken.s.sol:ExampleTokenScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv
 
 deploy-market:
 	$(FORGE) script script/TruthMarket.s.sol:TruthMarketScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv
+
+simulate:
+	$(FORGE) script script/Simulate.s.sol --sig 'lifecycle()' -vv
 
 clean:
 	$(FORGE) clean

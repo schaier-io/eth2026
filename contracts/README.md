@@ -16,25 +16,23 @@ contracts/
 ├── foundry.toml          # solc/optimizer/RPC config
 ├── remappings.txt        # @openzeppelin/contracts/* → lib/...
 ├── Makefile              # common commands
+├── sim.sh                # scenario runner for script/Simulate.s.sol
 ├── .env.example          # copy to .env, fill in
 ├── bin/                  # CLI helpers (bash)
 │   ├── new-key           # generate keypair (--write to save to .env)
 │   ├── anvil-up          # start anvil in background
 │   ├── anvil-down        # stop background anvil
-│   ├── deploy            # deploy {counter|token|market} [network]
-│   └── counter           # {read|inc|inc-by N|set N} [network]
+│   └── deploy            # deploy {token|market} [network]
 ├── src/
 │   ├── TruthMarket.sol   # random-jury belief-resolution market
-│   ├── Counter.sol       # minimal example w/ events + custom errors
-│   └── ExampleToken.sol  # ERC20 + Burnable + Permit + Ownable cap
+│   └── ExampleToken.sol  # ERC20 stake-token fixture (Burnable+Permit+Ownable cap)
 ├── test/
 │   ├── TruthMarketLifecycle.t.sol
-│   ├── Counter.t.sol
 │   └── ExampleToken.t.sol
 ├── script/
-│   ├── TruthMarket.s.sol
-│   ├── Counter.s.sol
-│   └── ExampleToken.s.sol
+│   ├── TruthMarket.s.sol # production deploy
+│   ├── ExampleToken.s.sol# stake-token deploy (test/sim setups)
+│   └── Simulate.s.sol    # local end-to-end scenarios (no broadcast)
 └── lib/
     ├── forge-std/
     └── openzeppelin-contracts/
@@ -75,17 +73,26 @@ Everything you need lives in `bin/`. They source `.env` automatically, resolve d
 
 ```sh
 bin/anvil-up                       # start anvil in background (writes .anvil.pid)
-bin/deploy counter                 # deploy Counter to anvil
+bin/deploy token                   # deploy ExampleToken to anvil
 bin/deploy market                  # deploy TruthMarket to anvil
-bin/counter read                   # → 0
-bin/counter inc                    # → 1
-bin/counter inc-by 5               # → 6
-bin/counter set 100                # → 100
-bin/deploy token                   # deploy ExampleToken
 bin/anvil-down                     # stop background anvil
 ```
 
-Same scripts work against any configured network: `bin/deploy counter sepolia`, `bin/counter read sepolia`, etc.
+Same scripts work against any configured network: `bin/deploy market sepolia`, etc.
+
+### Local end-to-end simulation
+
+`script/Simulate.s.sol` runs full market scenarios in-process — no anvil, no broadcast. Use the `sim.sh` runner or call `forge script` directly:
+
+```sh
+./sim.sh                           # default: lifecycle (Yes outcome)
+./sim.sh lifecycle
+./sim.sh invalid-no-jury           # admin missed deadline → full refunds
+./sim.sh invalid-too-few-reveals   # non-revealing jurors slashed full stake
+./sim.sh tie-invalid               # 2-2 partial reveal → Invalid
+./sim.sh random 0xDEADBEEF         # seeded random votes/stakes/reveals
+./sim.sh all                       # all scenarios back to back
+```
 
 ### Generating keys
 
@@ -99,15 +106,14 @@ bin/new-key --mnemonic             # 12-word HD wallet
 
 ```sh
 # deploy
-make deploy-counter NETWORK=anvil
 make deploy-token   NETWORK=anvil
 make deploy-market  NETWORK=anvil
 
 # read state
-cast call <counter_addr> "number()(uint256)" --rpc-url anvil
+cast call <market_addr> "outcome()(uint8)" --rpc-url anvil
 
 # write state
-cast send <counter_addr> "increment()" \
+cast send <market_addr> "resolve()" \
   --rpc-url anvil \
   --private-key $PRIVATE_KEY
 
@@ -137,12 +143,12 @@ anvil --fork-url $MAINNET_RPC_URL --fork-block-number 19000000
 | `make fmt` / `fmt-check` | format / check formatting                 |
 | `make snapshot`          | gas snapshot to `.gas-snapshot`           |
 | `make anvil`             | local node on `:8545`                     |
-| `make deploy-counter`    | deploy `Counter` (default `NETWORK=anvil`)|
-| `make deploy-token`      | deploy `ExampleToken`                     |
+| `make deploy-token`      | deploy `ExampleToken` (default `NETWORK=anvil`) |
 | `make deploy-market`     | deploy `TruthMarket`                      |
+| `make simulate`          | run the lifecycle scenario in-process     |
 | `make clean`             | remove build artifacts                    |
 
-Override the RPC: `make deploy-counter NETWORK=sepolia`.
+Override the RPC: `make deploy-market NETWORK=sepolia`.
 
 ## Deploying to a testnet/mainnet
 
@@ -150,7 +156,7 @@ Override the RPC: `make deploy-counter NETWORK=sepolia`.
 2. Verify on Etherscan in one shot:
 
 ```sh
-forge script script/Counter.s.sol:CounterScript \
+forge script script/TruthMarket.s.sol:TruthMarketScript \
   --rpc-url sepolia \
   --broadcast \
   --verify \
