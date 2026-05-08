@@ -104,6 +104,7 @@ const state = {
   wallet: null,
   currentPosition: null,
   revealed: false,
+  createImageData: null,
 };
 
 const els = {
@@ -122,6 +123,8 @@ const els = {
   createForm: document.getElementById("createForm"),
   createQuestion: document.getElementById("createQuestion"),
   createDescription: document.getElementById("createDescription"),
+  createImage: document.getElementById("createImage"),
+  createImagePreview: document.getElementById("createImagePreview"),
   createUpMeaning: document.getElementById("createUpMeaning"),
   createDownMeaning: document.getElementById("createDownMeaning"),
   createSymbol: document.getElementById("createSymbol"),
@@ -133,6 +136,7 @@ const els = {
   dashboardBack: document.getElementById("dashboardBack"),
   newPositionButton: document.getElementById("newPositionButton"),
   stakeSymbol: document.getElementById("stakeSymbol"),
+  stakeMedia: document.getElementById("stakeMedia"),
   stakePhase: document.getElementById("stakePhase"),
   stakeTitle: document.getElementById("stakeTitle"),
   stakeDescription: document.getElementById("stakeDescription"),
@@ -315,7 +319,11 @@ function renderMarketCards() {
   for (const market of markets) {
     const article = document.createElement("article");
     article.className = "market-card";
+    const media = market.image
+      ? `<img class="market-image" src="${market.image}" alt="Reference artifact for ${market.title}" />`
+      : `<div class="market-image empty-media"><span>${market.symbol}</span></div>`;
     article.innerHTML = `
+      ${media}
       <div class="market-card-top">
         <span class="market-avatar">${market.symbol}</span>
         <span class="phase-pill">${market.uiStage}</span>
@@ -345,6 +353,13 @@ function renderMarketCards() {
 
 function renderStakeScreen() {
   const market = selectedMarket();
+  if (market.image) {
+    els.stakeMedia.hidden = false;
+    els.stakeMedia.innerHTML = `<img src="${market.image}" alt="Reference artifact for ${market.title}" />`;
+  } else {
+    els.stakeMedia.hidden = true;
+    els.stakeMedia.innerHTML = "";
+  }
   els.stakeSymbol.textContent = market.symbol;
   els.stakePhase.textContent = market.phase;
   els.stakeTitle.textContent = market.title;
@@ -462,6 +477,31 @@ function render() {
   renderDashboard();
 }
 
+function handleCreateImage(event) {
+  const file = event.target.files?.[0];
+  state.createImageData = null;
+  els.createImagePreview.hidden = true;
+  els.createImagePreview.innerHTML = "";
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    setStatus(els.createStatus, "Upload an image file.", "error");
+    event.target.value = "";
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.addEventListener("load", () => {
+    state.createImageData = String(reader.result);
+    els.createImagePreview.hidden = false;
+    els.createImagePreview.innerHTML = `<img src="${state.createImageData}" alt="Uploaded market artifact preview" />`;
+    setStatus(els.createStatus, "");
+  });
+  reader.addEventListener("error", () => {
+    setStatus(els.createStatus, "Could not read image.", "error");
+  });
+  reader.readAsDataURL(file);
+}
+
 function symbolFromQuestion(question) {
   const words = question
     .replace(/[^a-zA-Z0-9 ]/g, " ")
@@ -518,6 +558,7 @@ function handleCreateMarket(event) {
     timeLeft: votingWindow,
     deadlineLabel: `Voting closes in ${votingWindow}`,
     upPercent: 50,
+    image: state.createImageData,
     upMeaning,
     downMeaning,
     randomness: "Pending",
@@ -531,6 +572,9 @@ function handleCreateMarket(event) {
   state.currentPosition = null;
   state.revealed = false;
   event.target.reset();
+  state.createImageData = null;
+  els.createImagePreview.hidden = true;
+  els.createImagePreview.innerHTML = "";
   els.createJurySize.value = "5";
   els.createMinRevealed.value = "3";
   els.createVotingWindow.value = "12h";
@@ -631,6 +675,7 @@ els.chooseDown.addEventListener("click", () => {
 });
 els.convictionInput.addEventListener("input", renderRiskPreview);
 els.stakeInput.addEventListener("input", renderRiskPreview);
+els.createImage.addEventListener("change", handleCreateImage);
 els.createForm.addEventListener("submit", handleCreateMarket);
 els.stakeForm.addEventListener("submit", handleCommit);
 els.revealButton.addEventListener("click", handleReveal);

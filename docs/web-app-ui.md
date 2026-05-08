@@ -47,7 +47,7 @@ The contract still encodes vote values as `1` and `2`; the app maps those values
 
 4. Create market
    - Keep as a secondary but first-class flow, not hidden in developer settings.
-   - Claim title, description, Up meaning, Down meaning, voting window, jury size, and minimum revealed jurors.
+   - Claim title, description, optional image/reference artifact, Up meaning, Down meaning, voting window, jury size, and minimum revealed jurors.
    - Upload claim/rules document to Swarm before deploying/recording the market.
    - After creation, send the creator directly to the focused staking step for the new market.
 

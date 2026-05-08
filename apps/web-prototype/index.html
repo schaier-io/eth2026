@@ -65,6 +65,12 @@
                   <textarea id="createDescription" rows="3" placeholder="What should voters know before committing?" required></textarea>
                 </label>
 
+                <label class="field">
+                  <span>Image or reference artifact</span>
+                  <input id="createImage" type="file" accept="image/*" />
+                </label>
+                <div id="createImagePreview" class="image-preview" hidden></div>
+
                 <div class="meaning-grid">
                   <label class="field meaning-field">
                     <span>Up means</span>
@@ -117,6 +123,8 @@
             <button id="backToFeed" class="ghost-button" type="button">Back to markets</button>
 
             <article class="stake-card">
+              <div id="stakeMedia" class="stake-media" hidden></div>
+
               <div class="market-summary">
                 <span id="stakeSymbol" class="market-avatar">TM</span>
                 <div>
