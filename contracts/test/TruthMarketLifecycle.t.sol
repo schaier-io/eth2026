@@ -504,24 +504,74 @@ contract TruthMarketLifecycleTest is Test {
 
     // ---------- Nonce-leak revocation tests ----------
 
-    function test_RevokeStakeTransfersFullStakeToClaimer() public {
+    function test_RevokeStakeSplitsHalfToClaimerHalfToPool() public {
         market = _deployMarket(1, 7, 1);
         V[] memory vs = _makeVoters(7, 80 ether, 5_000, 1);
         _commitAll(vs);
 
-        // Attacker (any non-voter address) learned vs[0]'s nonce and revokes their stake.
+        // Attacker (non-voter) learned vs[0]'s nonce and revokes their stake.
         address attacker = makeAddr("attacker");
         uint256 attackerBefore = token.balanceOf(attacker);
 
         vm.prank(attacker);
         market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
 
-        // Attacker now holds the revoked voter's full 80-ether stake.
-        assertEq(token.balanceOf(attacker), attackerBefore + 80 ether);
-        // Aggregates dropped by the revoked stake.
+        // Claimer takes half (40 ether); the other half waits in revokedSlashAccrued.
+        assertEq(token.balanceOf(attacker), attackerBefore + 40 ether);
+        assertEq(market.revokedSlashAccrued(), 40 ether);
+        // Aggregates drop by the full revoked stake.
         assertEq(market.totalCommittedStake(), 6 * 80 ether);
-        // Risked dropped by the revoked risked stake (= 80 * 50% = 40).
         assertEq(market.totalRiskedStake(), 6 * 40 ether);
+    }
+
+    function test_RevokeStakeAccrualJoinsDistributablePoolOnYes() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(8, 80 ether, 5_000, 1); // 8 voters so 1 revoke still leaves >= 7
+        _commitAll(vs);
+
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
+        assertEq(market.revokedSlashAccrued(), 40 ether);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(0xC0FFEE, AUDIT_HASH);
+
+        // Reveal everyone except the revoked voter (they cannot reveal).
+        for (uint256 i = 1; i < vs.length; i++) _reveal(vs[i]);
+
+        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        market.resolve();
+
+        // Outcome Yes (only yes votes revealed). Slashed pool comes entirely from the
+        // revoked half (no losers, no missed reveals among remaining voters).
+        assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Yes));
+        // slashed = revokedHalf 40, fee 5% = 2, distributable = 38.
+        assertEq(market.treasuryAccrued(), 2 ether);
+        assertEq(market.distributablePool(), 38 ether);
+        assertEq(market.revokedSlashAccrued(), 0);
+    }
+
+    function test_RevokeStakeAccrualGoesToCreatorOnInvalid() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 80 ether, 5_000, 1);
+        _commitAll(vs);
+
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
+
+        // Skip jury commit so the market resolves Invalid via timeout.
+        vm.warp(block.timestamp + VOTING_PERIOD + ADMIN_TIMEOUT);
+        market.resolve();
+
+        assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Invalid));
+        assertEq(market.creatorAccrued(), 40 ether);
+        assertEq(market.revokedSlashAccrued(), 0);
+
+        market.withdrawCreator();
+        assertEq(token.balanceOf(creator), 40 ether);
     }
 
     function test_RevokeStakeRequiresValidNonce() public {
@@ -577,7 +627,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_RevokedCommitCannotReveal() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(7, 50 ether, 10_000, 1);
+        V[] memory vs = _makeVoters(8, 50 ether, 10_000, 1);
         _commitAll(vs);
 
         address attacker = makeAddr("attacker");
@@ -596,7 +646,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_RevokedCommitCannotWithdraw() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(7, 50 ether, 10_000, 1);
+        V[] memory vs = _makeVoters(8, 50 ether, 10_000, 1);
         _commitAll(vs);
 
         address attacker = makeAddr("attacker");

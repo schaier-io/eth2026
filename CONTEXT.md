@@ -57,7 +57,7 @@ The on-chain `name`, `description`, and up to five short `tags` stored at deploy
 _Avoid_: confusing this with the Swarm/IPFS claim/rules document, which is the authoritative long-form reference
 
 **Nonce-leak revocation**:
-The `revokeStake` mechanism. Anyone who can prove knowledge of another voter's nonce during the voting phase can claim that voter's full stake. Disabled after the voting deadline; voters cannot revoke themselves. The on-chain deterrent against publishing or sharing a nonce.
+The `revokeStake` mechanism. Anyone who can prove knowledge of another voter's nonce during the voting phase can claim half of that voter's stake; the other half accrues to the slashed-stake pool (distributable on Yes/No, creator on Invalid). Disabled after the voting deadline; voters cannot revoke themselves. The 50/50 split also blocks Sybil self-withdraw with no penalty.
 _Avoid_: "early withdrawal" — it is not a refund path for the original voter
 
 **SpaceComputer randomness**:

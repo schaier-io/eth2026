@@ -174,12 +174,7 @@ contract SimulateAnvilScript is Script {
         market.resolve();
         vm.stopBroadcast();
 
-        console2.log("Outcome:           ", _outcomeLabel(market.outcome()));
-        console2.log("juryYesCount:      ", market.juryYesCount());
-        console2.log("juryNoCount:       ", market.juryNoCount());
-        console2.log("Distributable pool:", market.distributablePool());
-        console2.log("Treasury accrued:  ", market.treasuryAccrued());
-        console2.log("Creator accrued:   ", market.creatorAccrued());
+        _printRevealStats(market);
 
         for (uint256 i = 0; i < 7; i++) {
             _withdraw(market, _voterPk(i), i);
@@ -191,6 +186,46 @@ contract SimulateAnvilScript is Script {
         vm.stopBroadcast();
 
         printBalances();
+    }
+
+    function _printRevealStats(TruthMarket market) internal view {
+        TruthMarket.RevealStats memory s = market.getRevealStats();
+        console2.log("Outcome:           ", _outcomeLabel(s.outcome));
+        console2.log("Active commits:    ", s.commitCount);
+        console2.log("Revoked:           ", s.revokedCount);
+        console2.log("Reveals total:     ", s.revealedTotalCount);
+        console2.log("  yes:             ", s.revealedYesCount);
+        console2.log("  no:              ", s.revealedNoCount);
+        console2.log("Jury draws:        ", s.juryDrawSize);
+        console2.log("Jury reveals:      ", s.jurorRevealCount);
+        console2.log("  yes:             ", s.juryYesCount);
+        console2.log("  no:              ", s.juryNoCount);
+        console2.log("Total committed:   ", s.totalCommittedStake);
+        console2.log("Total risked:      ", s.totalRiskedStake);
+        console2.log("Yes risked:        ", s.revealedYesRisked);
+        console2.log("No risked:         ", s.revealedNoRisked);
+        console2.log("Juror yes stake:   ", s.jurorYesStake);
+        console2.log("Juror no stake:    ", s.jurorNoStake);
+        console2.log("Distributable pool:", s.distributablePool);
+        console2.log("Revoked accrued:   ", s.revokedSlashAccrued);
+        console2.log("Treasury accrued:  ", s.treasuryAccrued);
+        console2.log("Creator accrued:   ", s.creatorAccrued);
+
+        TruthMarket.JurorVote[] memory jv = market.getJurorVotes();
+        for (uint256 i = 0; i < jv.length; i++) {
+            console2.log(
+                string.concat(
+                    "Juror ", vm.toString(i), " ", _voteLabel(jv[i].vote), " revealed=", jv[i].revealed ? "yes" : "no"
+                ),
+                jv[i].juror
+            );
+        }
+    }
+
+    function _voteLabel(uint8 v) internal pure returns (string memory) {
+        if (v == 1) return "YES";
+        if (v == 2) return "NO";
+        return "?";
     }
 
     function printBalances() public view {

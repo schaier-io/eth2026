@@ -18,12 +18,16 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 ///         `tags` so the claim is self-describing without a fetch.
 ///
 ///         Nonce-leak revocation (voting phase only): anyone who can produce a valid
-///         (vote, nonce) for another voter's commit may call `revokeStake(voter, ...)`
-///         and claim that voter's full stake. This is the on-chain deterrent against
-///         publishing/sharing a nonce — once leaked, anyone who learns it can take the
-///         stake. The function is gated to the voting phase: during or after reveal it
-///         is no longer callable. Voters cannot revoke themselves (would let them
-///         bypass the slash mechanics).
+///         (vote, nonce) for another voter's commit may call `revokeStake(voter, ...)`.
+///         The voter's stake is split 50/50: half pays the claimer immediately, half
+///         goes to the slashed-stake pool. This is the on-chain deterrent against
+///         publishing/sharing a nonce — once leaked, anyone who learns it can take
+///         half. The 50/50 split also penalises a Sybil "self-withdraw" path: a voter
+///         who tries to recover their stake via a sock-puppet revoker still loses 50%.
+///         The function is gated to the voting phase: during or after reveal it is no
+///         longer callable, and direct self-revocation by the voter address is blocked.
+///         The pooled half routes to the distributable pool on Yes/No, or to the
+///         claim creator on Invalid (matching the rest of the slash-pool routing).
 ///
 ///         Voting power: every selected juror counts as exactly 1 vote toward the
 ///         outcome. Stake and conviction do NOT influence the YES/NO decision.
@@ -100,6 +104,73 @@ contract TruthMarket is ReentrancyGuard {
         bool revoked;
     }
 
+    /// @dev Aggregated read-only view of the deployed configuration. Useful for UIs
+    ///      and indexers — every constructor field plus the on-chain caps in one call.
+    struct Config {
+        address stakeToken;
+        address treasury;
+        address admin;
+        address juryCommitter;
+        address creator;
+        string name;
+        string description;
+        string[] tags;
+        bytes ipfsHash;
+        uint64 votingDeadline;
+        uint64 juryCommitDeadline;
+        uint64 revealDeadline;
+        uint96 protocolFeeBps;
+        uint96 minStake;
+        uint32 jurySize;
+        uint32 minCommits;
+        uint32 minRevealedJurors;
+        uint32 maxJurySize;
+        uint256 maxJuryPercentage;
+        uint256 maxTags;
+        uint16 maxConvictionBps;
+        uint96 maxProtocolFeeBps;
+    }
+
+    /// @dev Snapshot of reveal-phase state. Combines counts, stake totals, and
+    ///      jury-only stake breakdowns for performance/quality metrics.
+    struct RevealStats {
+        Phase phase;
+        Outcome outcome;
+        uint32 commitCount;
+        uint32 revokedCount;          // commitCount delta vs the original committers
+        uint32 revealedYesCount;
+        uint32 revealedNoCount;
+        uint32 revealedTotalCount;
+        uint32 juryDrawSize;
+        uint32 juryYesCount;
+        uint32 juryNoCount;
+        uint32 jurorRevealCount;
+        uint96 totalCommittedStake;
+        uint96 totalRiskedStake;
+        uint96 revealedYesStake;
+        uint96 revealedNoStake;
+        uint96 revealedYesRisked;
+        uint96 revealedNoRisked;
+        uint96 jurorYesStake;
+        uint96 jurorNoStake;
+        uint96 jurorYesRisked;
+        uint96 jurorNoRisked;
+        uint96 distributablePool;
+        uint96 revokedSlashAccrued;
+        uint256 treasuryAccrued;
+        uint256 creatorAccrued;
+    }
+
+    /// @dev Per-juror vote view for transparency on jury behaviour.
+    struct JurorVote {
+        address juror;
+        bool revealed;
+        uint8 vote; // 0 = not revealed, 1 = YES, 2 = NO
+        uint96 stake;
+        uint96 riskedStake;
+        uint16 convictionBps;
+    }
+
     /// @dev Constructor params bundled to avoid stack-too-deep with the deployment config.
     struct InitParams {
         IERC20 stakeToken;
@@ -152,6 +223,10 @@ contract TruthMarket is ReentrancyGuard {
     uint32 public commitCount;
     uint32 public revealedJurorCount;
     uint32 public withdrawnCount;
+    /// @notice Total number of voters (juror or not) who revealed YES.
+    uint32 public revealedYesCount;
+    /// @notice Total number of voters (juror or not) who revealed NO.
+    uint32 public revealedNoCount;
     /// @notice Number of jurors who revealed YES. Each juror contributes weight 1.
     uint32 public juryYesCount;
     /// @notice Number of jurors who revealed NO. Each juror contributes weight 1.
@@ -163,6 +238,10 @@ contract TruthMarket is ReentrancyGuard {
     uint96 public revealedYesRisked;
     uint96 public revealedNoRisked;
     uint96 public distributablePool;
+    /// @notice Half of every revoked stake accumulates here during the voting phase.
+    ///         At resolve, it joins the distributable pool on a Yes/No outcome, or
+    ///         routes to the claim creator on Invalid.
+    uint96 public revokedSlashAccrued;
     uint256 public totalYesRewardWeight;
     uint256 public totalNoRewardWeight;
     uint256 public randomness;
@@ -204,7 +283,9 @@ contract TruthMarket is ReentrancyGuard {
     event TreasuryUpdated(address indexed treasury);
     event TreasuryWithdrawn(address indexed treasury, uint256 amount);
     event CreatorWithdrawn(address indexed creator, uint256 amount);
-    event StakeRevoked(address indexed voter, address indexed claimer, uint96 stake);
+    event StakeRevoked(
+        address indexed voter, address indexed claimer, uint96 stake, uint96 claimerCut, uint96 pooledCut
+    );
 
     // ---------- Errors ----------
 
@@ -349,13 +430,17 @@ contract TruthMarket is ReentrancyGuard {
     // ---------- Nonce-leak revocation (voting phase only) ----------
 
     /// @notice Slash a voter whose nonce has leaked. Anyone able to produce a valid
-    ///         (vote, nonce) pair for `voter` may call this during the voting phase to
-    ///         claim that voter's full stake. After the voting deadline (and during
-    ///         and after the reveal phase) this function is no longer callable.
-    ///         The mechanism is the on-chain deterrent against publishing/sharing a
-    ///         nonce: once it is known by a third party, that party can take the stake
-    ///         themselves. Voters cannot revoke their own commit (they would otherwise
-    ///         use it as an early withdrawal that bypasses slashing).
+    ///         (vote, nonce) pair for `voter` may call this during the voting phase.
+    ///         The voter's stake is split: half is paid to `msg.sender` immediately,
+    ///         the other half accumulates in `revokedSlashAccrued` and routes through
+    ///         the slash-pool plumbing at resolve (distributable pool on Yes/No, or
+    ///         creator-accrued on Invalid).
+    ///         The 50/50 split serves two purposes: (a) anyone with a leaked nonce
+    ///         is still strongly motivated to call this rather than sit on the secret,
+    ///         (b) a voter who tries to Sybil-revoke their own commit through a
+    ///         sock-puppet still loses 50% of stake instead of recovering it free.
+    ///         After the voting deadline (and during/after the reveal phase) this
+    ///         function is no longer callable, and direct self-revocation is blocked.
     /// @param voter The address whose commit is being revoked.
     /// @param vote  The voter's committed vote (1 = YES, 2 = NO).
     /// @param nonce The leaked nonce that opens the commit.
@@ -378,11 +463,18 @@ contract TruthMarket is ReentrancyGuard {
         k.stake = 0;
         k.riskedStake = 0;
 
+        commitCount--;
         totalCommittedStake -= stake;
         totalRiskedStake -= risked;
 
-        stakeToken.safeTransfer(msg.sender, stake);
-        emit StakeRevoked(voter, msg.sender, stake);
+        // 50/50 split — claimer gets the floor half, the pool gets the ceiling half so
+        // an odd-wei stake still rounds in the protocol's favour.
+        uint96 claimerCut = stake / 2;
+        uint96 pooledCut = stake - claimerCut;
+        revokedSlashAccrued += pooledCut;
+
+        stakeToken.safeTransfer(msg.sender, claimerCut);
+        emit StakeRevoked(voter, msg.sender, stake, claimerCut, pooledCut);
     }
 
     // ---------- Jury commit + on-chain selection ----------
@@ -452,9 +544,12 @@ contract TruthMarket is ReentrancyGuard {
 
         if (phase == Phase.Voting) {
             if (block.timestamp < juryCommitDeadline) revert DeadlineNotPassed();
+            uint96 revokedHalf = revokedSlashAccrued;
+            revokedSlashAccrued = 0;
+            creatorAccrued += revokedHalf;
             outcome = Outcome.Invalid;
             phase = Phase.Resolved;
-            emit Resolved(Outcome.Invalid, 0, 0, 0, 0);
+            emit Resolved(Outcome.Invalid, 0, 0, revokedHalf, 0);
             return;
         }
 
@@ -477,10 +572,13 @@ contract TruthMarket is ReentrancyGuard {
             (slashedRiskedStake, fee) = _settleSlashedPool(out);
         } else {
             // Jury was drawn but outcome Invalid: slash each non-revealing juror's full
-            // stake; the penalty accrues to the claim creator (every other voter is
-            // refunded). `fee` in the event is reused to surface the creator-bound total.
+            // stake and route the revoked-slash half to the creator. Every other voter
+            // is refunded. `fee` in the event surfaces the total creator-bound amount.
             uint96 jurorPenalty = _accrueNonRevealingJurorPenaltyToCreator();
-            fee = jurorPenalty;
+            uint96 revokedHalf = revokedSlashAccrued;
+            revokedSlashAccrued = 0;
+            creatorAccrued += revokedHalf;
+            fee = uint256(jurorPenalty) + uint256(revokedHalf);
         }
 
         emit Resolved(out, winningJuryCount, slashedRiskedStake, fee, distributablePool);
@@ -554,6 +652,95 @@ contract TruthMarket is ReentrancyGuard {
         return tags;
     }
 
+    /// @notice Aggregate read-only snapshot of the deployment configuration. Bundles
+    ///         every constructor input plus on-chain caps in one call.
+    function getConfig() external view returns (Config memory) {
+        return Config({
+            stakeToken: address(stakeToken),
+            treasury: treasury,
+            admin: admin,
+            juryCommitter: juryCommitter,
+            creator: creator,
+            name: name,
+            description: description,
+            tags: tags,
+            ipfsHash: ipfsHash,
+            votingDeadline: votingDeadline,
+            juryCommitDeadline: juryCommitDeadline,
+            revealDeadline: revealDeadline,
+            protocolFeeBps: protocolFeeBps,
+            minStake: minStake,
+            jurySize: jurySize,
+            minCommits: minCommits,
+            minRevealedJurors: minRevealedJurors,
+            maxJurySize: MAX_JURY_SIZE,
+            maxJuryPercentage: MAX_JURY_PERCENTAGE,
+            maxTags: MAX_TAGS,
+            maxConvictionBps: MAX_CONVICTION_BPS,
+            maxProtocolFeeBps: MAX_PROTOCOL_FEE_BPS
+        });
+    }
+
+    /// @notice Reveal-phase / post-reveal stats: vote counts, stake totals, jury-only
+    ///         stake-weighted aggregates. Safe to call at any phase; "post-reveal"
+    ///         consumers should generally wait until `phase == Resolved`.
+    function getRevealStats() external view returns (RevealStats memory s) {
+        s.phase = phase;
+        s.outcome = outcome;
+        s.commitCount = commitCount;
+        // _committers is the immutable original-committer list; the difference is
+        // the number of slots that have been revoked.
+        s.revokedCount = uint32(_committers.length) - commitCount;
+        s.revealedYesCount = revealedYesCount;
+        s.revealedNoCount = revealedNoCount;
+        s.revealedTotalCount = revealedYesCount + revealedNoCount;
+        s.juryDrawSize = uint32(_jury.length);
+        s.juryYesCount = juryYesCount;
+        s.juryNoCount = juryNoCount;
+        s.jurorRevealCount = revealedJurorCount;
+        s.totalCommittedStake = totalCommittedStake;
+        s.totalRiskedStake = totalRiskedStake;
+        s.revealedYesStake = revealedYesStake;
+        s.revealedNoStake = revealedNoStake;
+        s.revealedYesRisked = revealedYesRisked;
+        s.revealedNoRisked = revealedNoRisked;
+        s.distributablePool = distributablePool;
+        s.revokedSlashAccrued = revokedSlashAccrued;
+        s.treasuryAccrued = treasuryAccrued;
+        s.creatorAccrued = creatorAccrued;
+
+        address[] memory jury = _jury;
+        for (uint256 i = 0; i < jury.length; i++) {
+            Commit storage k = commits[jury[i]];
+            if (!k.revealed) continue;
+            if (k.revealedVote == 1) {
+                s.jurorYesStake += k.stake;
+                s.jurorYesRisked += k.riskedStake;
+            } else if (k.revealedVote == 2) {
+                s.jurorNoStake += k.stake;
+                s.jurorNoRisked += k.riskedStake;
+            }
+        }
+    }
+
+    /// @notice Per-juror snapshot — address, reveal status, vote, stake, conviction —
+    ///         in jury-draw order.
+    function getJurorVotes() external view returns (JurorVote[] memory votes) {
+        address[] memory jury = _jury;
+        votes = new JurorVote[](jury.length);
+        for (uint256 i = 0; i < jury.length; i++) {
+            Commit storage k = commits[jury[i]];
+            votes[i] = JurorVote({
+                juror: jury[i],
+                revealed: k.revealed,
+                vote: k.revealedVote,
+                stake: k.stake,
+                riskedStake: k.riskedStake,
+                convictionBps: k.convictionBps
+            });
+        }
+    }
+
     // ---------- Admin ----------
 
     function setTreasury(address _treasury) external onlyAdmin {
@@ -585,11 +772,13 @@ contract TruthMarket is ReentrancyGuard {
 
     function _recordReveal(Commit storage k, uint8 vote, bool juror) internal {
         if (vote == 1) {
+            revealedYesCount++;
             revealedYesStake += k.stake;
             revealedYesRisked += k.riskedStake;
             totalYesRewardWeight += k.riskedStake;
             if (juror) juryYesCount++;
         } else {
+            revealedNoCount++;
             revealedNoStake += k.stake;
             revealedNoRisked += k.riskedStake;
             totalNoRewardWeight += k.riskedStake;
@@ -614,8 +803,12 @@ contract TruthMarket is ReentrancyGuard {
         uint96 losingRisked = out == Outcome.Yes ? revealedNoRisked : revealedYesRisked;
         uint96 missedRisked = totalRiskedStake - revealedYesRisked - revealedNoRisked;
         (, uint96 jurorExtra) = _jurorNoRevealAccounting();
+        uint96 revokedHalf = revokedSlashAccrued;
+        revokedSlashAccrued = 0;
         // forge-lint: disable-next-line(unsafe-typecast)
-        slashedRiskedStake = uint96(uint256(losingRisked) + uint256(missedRisked) + uint256(jurorExtra));
+        slashedRiskedStake = uint96(
+            uint256(losingRisked) + uint256(missedRisked) + uint256(jurorExtra) + uint256(revokedHalf)
+        );
 
         if (slashedRiskedStake > 0) {
             fee = (uint256(slashedRiskedStake) * protocolFeeBps) / 10_000;

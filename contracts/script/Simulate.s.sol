@@ -284,13 +284,63 @@ contract SimulateScript is Script {
     }
 
     function _printResolved(TruthMarket market) internal view {
-        console2.log("Outcome:           ", _outcomeLabel(market.outcome()));
-        console2.log("Jury yes count:    ", market.juryYesCount());
-        console2.log("Jury no count:     ", market.juryNoCount());
-        console2.log("Distributable pool:", _ether(market.distributablePool()));
-        console2.log("Treasury accrued:  ", _ether(market.treasuryAccrued()));
-        console2.log("Creator accrued:   ", _ether(market.creatorAccrued()));
+        TruthMarket.RevealStats memory s = market.getRevealStats();
+        console2.log("Outcome:           ", _outcomeLabel(s.outcome));
         console2.log("");
+        console2.log("--- Reveal phase metrics ---");
+        console2.log("Commits (active):  ", s.commitCount);
+        console2.log("Revoked:           ", s.revokedCount);
+        console2.log("Reveals total:     ", s.revealedTotalCount);
+        console2.log("  yes:             ", s.revealedYesCount);
+        console2.log("  no:              ", s.revealedNoCount);
+        console2.log("Jury size drawn:   ", s.juryDrawSize);
+        console2.log("Jury reveals:      ", s.jurorRevealCount);
+        console2.log("  yes:             ", s.juryYesCount);
+        console2.log("  no:              ", s.juryNoCount);
+        console2.log("");
+        console2.log("--- Stake metrics ---");
+        console2.log("Total committed:   ", _ether(s.totalCommittedStake));
+        console2.log("Total risked:      ", _ether(s.totalRiskedStake));
+        console2.log("Revealed yes stake:", _ether(s.revealedYesStake));
+        console2.log("Revealed no stake: ", _ether(s.revealedNoStake));
+        console2.log("Yes risked:        ", _ether(s.revealedYesRisked));
+        console2.log("No risked:         ", _ether(s.revealedNoRisked));
+        console2.log("Juror yes stake:   ", _ether(s.jurorYesStake));
+        console2.log("Juror no stake:    ", _ether(s.jurorNoStake));
+        console2.log("Juror yes risked:  ", _ether(s.jurorYesRisked));
+        console2.log("Juror no risked:   ", _ether(s.jurorNoRisked));
+        console2.log("");
+        console2.log("--- Pools ---");
+        console2.log("Distributable pool:", _ether(s.distributablePool));
+        console2.log("Revoked accrued:   ", _ether(s.revokedSlashAccrued));
+        console2.log("Treasury accrued:  ", _ether(s.treasuryAccrued));
+        console2.log("Creator accrued:   ", _ether(s.creatorAccrued));
+        console2.log("");
+        console2.log("--- Per-juror ---");
+        TruthMarket.JurorVote[] memory jv = market.getJurorVotes();
+        for (uint256 i = 0; i < jv.length; i++) {
+            console2.log(
+                string.concat(
+                    "Juror ",
+                    _u(i),
+                    ": vote=",
+                    _voteLabel(jv[i].vote),
+                    " stake=",
+                    _ether(jv[i].stake),
+                    " conv=",
+                    _u(jv[i].convictionBps),
+                    "bps revealed=",
+                    jv[i].revealed ? "yes" : "no"
+                )
+            );
+        }
+        console2.log("");
+    }
+
+    function _voteLabel(uint8 v) internal pure returns (string memory) {
+        if (v == 1) return "YES";
+        if (v == 2) return "NO";
+        return "?";
     }
 
     function _withdrawAll(TruthMarket market, Voter[] memory voters) internal {
