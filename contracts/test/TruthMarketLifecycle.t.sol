@@ -159,8 +159,10 @@ contract TruthMarketLifecycleTest is Test {
         assertEq(token.balanceOf(address(market)), 0);
     }
 
-    function test_ResolvesInvalidWhenTooFewJurorsReveal() public {
-        // jurySize 2, minRevealedJurors 2. Only one reveals.
+    function test_ResolvesInvalidWhenTooFewJurorsReveal_SlashesNonRevealingJuror() public {
+        // jurySize 2, minRevealedJurors 2, only one reveals -> Invalid.
+        // Both voters use identical stake/conviction so the slash is symmetric whichever
+        // juror happens to be picked first.
         market = new TruthMarket(
             IERC20(address(token)),
             treasury,
@@ -175,18 +177,17 @@ contract TruthMarketLifecycleTest is Test {
         );
 
         _commit(alice, 1, ALICE_NONCE, 100 ether, 10_000);
-        _commit(bob, 2, BOB_NONCE, 60 ether, 10_000);
+        _commit(bob, 2, BOB_NONCE, 100 ether, 10_000);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(market.JURY_COMMITTER());
         market.commitJury(123, AUDIT_HASH);
 
         address[] memory jury = market.getJury();
-        // Only first juror reveals.
-        bytes32 nonce = jury[0] == alice ? ALICE_NONCE : BOB_NONCE;
-        uint8 vote = jury[0] == alice ? 1 : 2;
+        bytes32 revealerNonce = jury[0] == alice ? ALICE_NONCE : BOB_NONCE;
+        uint8 revealerVote = jury[0] == alice ? 1 : 2;
         vm.prank(jury[0]);
-        market.revealVote(vote, nonce);
+        market.revealVote(revealerVote, revealerNonce);
 
         vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
         market.resolve();
@@ -197,9 +198,65 @@ contract TruthMarketLifecycleTest is Test {
         market.withdraw();
         vm.prank(bob);
         market.withdraw();
-        // Invalid => full refund regardless of reveal status.
-        assertEq(token.balanceOf(alice), 1000 ether);
-        assertEq(token.balanceOf(bob), 1000 ether);
+
+        address revealer = jury[0];
+        address nonRevealer = jury[1];
+        // Revealer: full refund. Non-revealing juror: stake fully slashed (penalty
+        // capped at stake since 100% conviction).
+        assertEq(token.balanceOf(revealer), 1000 ether);
+        assertEq(token.balanceOf(nonRevealer), 900 ether);
+        assertEq(token.balanceOf(treasury), 100 ether);
+        assertEq(token.balanceOf(address(market)), 0);
+    }
+
+    function test_DoublePenaltyOnNonRevealingJurorAtValidOutcome() public {
+        // jurySize 4 (all voters jurors). One juror fails to reveal at 50% conviction
+        // so the doubled penalty hits its full ceiling (2 * risked == stake).
+        _commit(alice, 1, ALICE_NONCE, 100 ether, 10_000); // yes, risked 100
+        _commit(bob, 1, BOB_NONCE, 100 ether, 10_000); // yes, risked 100
+        _commit(carol, 2, CAROL_NONCE, 100 ether, 10_000); // no, risked 100
+        _commit(dave, 1, DAVE_NONCE, 80 ether, 5000); // yes, risked 40 — doesn't reveal
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(market.JURY_COMMITTER());
+        market.commitJury(0xBEEF, AUDIT_HASH);
+
+        vm.prank(alice);
+        market.revealVote(1, ALICE_NONCE);
+        vm.prank(bob);
+        market.revealVote(1, BOB_NONCE);
+        vm.prank(carol);
+        market.revealVote(2, CAROL_NONCE);
+
+        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        market.resolve();
+
+        assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Yes));
+
+        // Slashed pool: losers' risked (carol 100) + non-revealer base (dave 40)
+        //              + non-revealing juror extra (dave another 40) = 180 ether
+        // Fee 5% => 9 ether to treasury, distributable 171 ether.
+        assertEq(token.balanceOf(treasury), 9 ether);
+        assertEq(market.distributablePool(), 171 ether);
+
+        vm.prank(alice);
+        market.withdraw();
+        vm.prank(bob);
+        market.withdraw();
+        vm.prank(carol);
+        market.withdraw();
+        vm.prank(dave);
+        market.withdraw();
+
+        // Winner bonus = pool * risked / totalYesRewardWeight (200 ether of revealed yes)
+        // alice & bob each: 171 * 100 / 200 = 85.5 ether bonus
+        assertEq(token.balanceOf(alice), 1000 ether - 100 ether + 100 ether + 85.5 ether);
+        assertEq(token.balanceOf(bob), 1000 ether - 100 ether + 100 ether + 85.5 ether);
+        // Loser-revealed: stake - risked
+        assertEq(token.balanceOf(carol), 1000 ether - 100 ether);
+        // Non-revealing juror: stake - 2*risked
+        assertEq(token.balanceOf(dave), 1000 ether - 80 ether + (80 ether - 80 ether));
+        assertEq(token.balanceOf(address(market)), 0);
     }
 
     function test_RevertsCommitJuryWhenBelowMinCommits() public {

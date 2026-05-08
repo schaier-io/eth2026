@@ -279,6 +279,10 @@ contract TruthMarket is ReentrancyGuard {
     /// @notice Finalize the market. Anyone may call.
     ///         Resolves Invalid if the admin missed the jury-commit deadline, if too few
     ///         jurors revealed, or if jury weights tie.
+    ///         Selected jurors who fail to reveal lose 2x their risked stake (capped at
+    ///         their full stake — a 100%-conviction juror cannot lose more than they put in).
+    ///         The extra (above the normal risked-stake slash) joins the distributable pool
+    ///         on a Yes/No outcome, or is sent to the treasury on Invalid.
     function resolve() external nonReentrant {
         if (phase == Phase.Resolved) revert WrongPhase();
 
@@ -292,14 +296,14 @@ contract TruthMarket is ReentrancyGuard {
 
         if (block.timestamp < revealDeadline) revert DeadlineNotPassed();
 
+        Outcome out;
+        uint256 winningJuryWeight;
         if (revealedJurorCount < minRevealedJurors) {
-            outcome = Outcome.Invalid;
-            phase = Phase.Resolved;
-            emit Resolved(Outcome.Invalid, 0, 0, 0, 0);
-            return;
+            out = Outcome.Invalid;
+        } else {
+            (out, winningJuryWeight) = _juryOutcome();
         }
 
-        (Outcome out, uint256 winningJuryWeight) = _juryOutcome();
         outcome = out;
         phase = Phase.Resolved;
 
@@ -307,6 +311,11 @@ contract TruthMarket is ReentrancyGuard {
         uint256 fee;
         if (out != Outcome.Invalid) {
             (slashedRiskedStake, fee) = _settleSlashedPool(out);
+        } else {
+            // Jury was drawn but outcome Invalid: still slash non-revealing jurors, full
+            // doubled penalty goes to treasury (no winners to distribute to).
+            uint96 jurorPenalty = _slashNonRevealingJurorsToTreasury();
+            fee = jurorPenalty;
         }
 
         emit Resolved(out, winningJuryWeight, slashedRiskedStake, fee, distributablePool);
@@ -320,7 +329,7 @@ contract TruthMarket is ReentrancyGuard {
         if (k.hash == bytes32(0)) revert CommitNotFound();
         if (k.withdrawn) revert NothingToWithdraw();
 
-        uint256 payout = _payoutFor(k);
+        uint256 payout = _payoutFor(k, _isJuror[msg.sender]);
         k.withdrawn = true;
         if (payout > 0) stakeToken.safeTransfer(msg.sender, payout);
         emit Withdrawn(msg.sender, payout);
@@ -399,7 +408,9 @@ contract TruthMarket is ReentrancyGuard {
     function _settleSlashedPool(Outcome out) internal returns (uint96 slashedRiskedStake, uint256 fee) {
         uint96 losingRisked = out == Outcome.Yes ? revealedNoRisked : revealedYesRisked;
         uint96 missedRisked = totalRiskedStake - revealedYesRisked - revealedNoRisked;
-        slashedRiskedStake = losingRisked + missedRisked;
+        (, uint96 jurorExtra) = _jurorNoRevealAccounting();
+        // forge-lint: disable-next-line(unsafe-typecast)
+        slashedRiskedStake = uint96(uint256(losingRisked) + uint256(missedRisked) + uint256(jurorExtra));
 
         if (slashedRiskedStake > 0) {
             fee = (uint256(slashedRiskedStake) * protocolFeeBps) / 10_000;
@@ -409,7 +420,38 @@ contract TruthMarket is ReentrancyGuard {
         }
     }
 
-    function _payoutFor(Commit storage k) internal view returns (uint256) {
+    function _slashNonRevealingJurorsToTreasury() internal returns (uint96 totalPenalty) {
+        (totalPenalty,) = _jurorNoRevealAccounting();
+        if (totalPenalty > 0) {
+            stakeToken.safeTransfer(treasury, totalPenalty);
+        }
+    }
+
+    /// @dev Returns (totalPenalty, totalExtra) summed over jurors who failed to reveal.
+    ///      penalty = min(2 * riskedStake, stake); extra = penalty - riskedStake.
+    function _jurorNoRevealAccounting() internal view returns (uint96 totalPenalty, uint96 totalExtra) {
+        address[] memory jury = _jury;
+        for (uint256 i = 0; i < jury.length; i++) {
+            Commit storage k = commits[jury[i]];
+            if (!k.revealed) {
+                uint256 doubled = uint256(k.riskedStake) * 2;
+                uint256 capped = doubled > k.stake ? k.stake : doubled;
+                // forge-lint: disable-next-line(unsafe-typecast)
+                totalPenalty += uint96(capped);
+                // forge-lint: disable-next-line(unsafe-typecast)
+                totalExtra += uint96(capped - k.riskedStake);
+            }
+        }
+    }
+
+    function _payoutFor(Commit storage k, bool jurorAddr) internal view returns (uint256) {
+        // Selected juror who failed to reveal: lose 2x risked, capped at full stake.
+        // Applies on any post-jury-draw outcome (Yes/No/Invalid-via-reveal/tie).
+        if (jurorAddr && !k.revealed && randomness != 0) {
+            uint256 doubled = uint256(k.riskedStake) * 2;
+            uint256 penalty = doubled > k.stake ? k.stake : doubled;
+            return uint256(k.stake) - penalty;
+        }
         if (outcome == Outcome.Invalid) {
             return k.stake;
         }
