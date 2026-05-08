@@ -69,6 +69,9 @@ contract TruthMarket is ReentrancyGuard {
     uint256 public constant MAX_JURY_PERCENTAGE = 15;
     /// @notice Maximum number of claim tags storable on-chain.
     uint256 public constant MAX_TAGS = 5;
+    /// @notice Time after `revealDeadline` before residual dust may be force-swept to
+    ///         treasury. Long enough that any voter has had ample time to withdraw.
+    uint64 public constant DUST_SWEEP_GRACE = 30 days;
 
     // ---------- Types ----------
 
@@ -100,6 +103,7 @@ contract TruthMarket is ReentrancyGuard {
         bytes32 hash;
         uint96 stake;
         uint96 riskedStake;
+        uint32 committerIndex; // index into `_activeCommitters` (valid iff !revoked)
         uint8 conviction; // whole percent (0–100)
         uint8 revealedVote;
         bool revealed;
@@ -255,9 +259,14 @@ contract TruthMarket is ReentrancyGuard {
     bytes32 public juryAuditHash;
 
     mapping(address => Commit) public commits;
-    address[] private _committers;
+    /// @dev Active (non-revoked) committers. Jury draws from this list. Maintained as a
+    ///      swap-and-pop array so revoked entries are removed in O(1).
+    address[] private _activeCommitters;
     address[] private _jury;
     mapping(address => bool) private _isJuror;
+    /// @notice Cumulative count of revocations. Together with `commitCount` it equals
+    ///         the total number of addresses that ever committed.
+    uint32 public revokedCount;
 
     // ---------- Events ----------
 
@@ -415,17 +424,19 @@ contract TruthMarket is ReentrancyGuard {
         commitCount++;
         totalCommittedStake += actualStake;
         totalRiskedStake += riskedStake;
+        uint32 idx = uint32(_activeCommitters.length);
         commits[msg.sender] = Commit({
             hash: commitHash,
             stake: actualStake,
             riskedStake: riskedStake,
+            committerIndex: idx,
             conviction: conviction,
             revealedVote: 0,
             revealed: false,
             withdrawn: false,
             revoked: false
         });
-        _committers.push(msg.sender);
+        _activeCommitters.push(msg.sender);
 
         emit VoteCommitted(msg.sender, commitHash, actualStake, conviction, riskedStake);
     }
@@ -462,11 +473,24 @@ contract TruthMarket is ReentrancyGuard {
         uint96 stake = k.stake;
         uint96 risked = k.riskedStake;
 
+        // Swap-and-pop the revoked entry out of the active committers list so future
+        // jury draws never sample it. O(1).
+        uint32 idx = k.committerIndex;
+        uint32 lastIdx = uint32(_activeCommitters.length - 1);
+        if (idx != lastIdx) {
+            address last = _activeCommitters[lastIdx];
+            _activeCommitters[idx] = last;
+            commits[last].committerIndex = idx;
+        }
+        _activeCommitters.pop();
+
         k.revoked = true;
         k.stake = 0;
         k.riskedStake = 0;
+        k.committerIndex = 0;
 
         commitCount--;
+        revokedCount++;
         totalCommittedStake -= stake;
         totalRiskedStake -= risked;
 
@@ -483,7 +507,8 @@ contract TruthMarket is ReentrancyGuard {
     // ---------- Jury commit + on-chain selection ----------
 
     /// @notice Submit SpaceComputer cTRNG randomness plus an audit hash. The contract
-    ///         draws the resolving jury on-chain from `_committers` via Fisher-Yates.
+    ///         draws the resolving jury on-chain from the active (non-revoked)
+    ///         committer set via a virtual Fisher-Yates sampler with O(jurySize) memory.
     /// @param _randomness  cTRNG value used to drive the on-chain shuffle.
     /// @param auditHash    Hash of the externally persisted randomness/proof artifact.
     function commitJury(uint256 _randomness, bytes32 auditHash) external onlyJuryCommitter {
@@ -622,6 +647,31 @@ contract TruthMarket is ReentrancyGuard {
         emit TreasuryWithdrawn(treasury, amount);
     }
 
+    /// @notice Sweep rounding-dust to the treasury after the dust-sweep grace window.
+    ///         Iterates active commits to compute the sum of voter payouts that haven't
+    ///         been claimed yet; treats anything in the contract beyond
+    ///         `(unclaimed + treasuryAccrued + creatorAccrued)` as dust and accrues it
+    ///         to the treasury. Voter refunds remain claimable indefinitely — this
+    ///         only recovers what is genuinely orphaned.
+    function forceSweepDust() external nonReentrant {
+        if (phase != Phase.Resolved) revert WrongPhase();
+        if (block.timestamp < uint256(revealDeadline) + DUST_SWEEP_GRACE) revert DeadlineNotPassed();
+
+        address[] memory active = _activeCommitters;
+        uint256 unclaimed;
+        for (uint256 i = 0; i < active.length; i++) {
+            Commit storage k = commits[active[i]];
+            if (k.withdrawn) continue;
+            unclaimed += _payoutFor(k, _isJuror[active[i]]);
+        }
+
+        uint256 reserved = unclaimed + creatorAccrued + treasuryAccrued;
+        uint256 balance = stakeToken.balanceOf(address(this));
+        if (balance > reserved) {
+            treasuryAccrued += balance - reserved;
+        }
+    }
+
     /// @notice Pull the creator-bound juror penalty accrued on an Invalid outcome.
     ///         Permissionless — funds always go to the configured `creator`. Idempotent:
     ///         returns silently when nothing has accrued.
@@ -640,7 +690,7 @@ contract TruthMarket is ReentrancyGuard {
     }
 
     function getCommitters() external view returns (address[] memory) {
-        return _committers;
+        return _activeCommitters;
     }
 
     function isJuror(address who) external view returns (bool) {
@@ -691,9 +741,7 @@ contract TruthMarket is ReentrancyGuard {
         s.phase = phase;
         s.outcome = outcome;
         s.commitCount = commitCount;
-        // _committers is the immutable original-committer list; the difference is
-        // the number of slots that have been revoked.
-        s.revokedCount = uint32(_committers.length) - commitCount;
+        s.revokedCount = revokedCount;
         s.revealedYesCount = revealedYesCount;
         s.revealedNoCount = revealedNoCount;
         s.revealedTotalCount = revealedYesCount + revealedNoCount;
@@ -754,20 +802,59 @@ contract TruthMarket is ReentrancyGuard {
 
     // ---------- Internals ----------
 
+    /// @dev Virtual Fisher-Yates sampler. Picks `k = min(jurySize, activeCount)` unique
+    ///      indices into `_activeCommitters` using `seed` as the entropy source. Memory
+    ///      cost is O(k) regardless of `n` — only positions touched by a swap are
+    ///      tracked, in a small linear-probe table sized 2k. No O(n) initialisation.
     function _drawJury(uint256 seed) internal {
-        uint256 n = _committers.length;
+        uint256 n = _activeCommitters.length;
         uint256 k = jurySize > n ? n : jurySize;
         if (k == 0) return;
 
-        uint256[] memory idx = new uint256[](n);
-        for (uint256 i = 0; i < n; i++) {
-            idx[i] = i;
-        }
+        // Sparse swap table: positions whose virtual value differs from the identity.
+        uint256 cap = 2 * k;
+        uint256[] memory swapKeys = new uint256[](cap);
+        uint256[] memory swapVals = new uint256[](cap);
+        uint256 swapLen = 0;
 
         for (uint256 i = 0; i < k; i++) {
             uint256 r = i + (uint256(keccak256(abi.encode(seed, i))) % (n - i));
-            (idx[i], idx[r]) = (idx[r], idx[i]);
-            address juror = _committers[idx[i]];
+
+            // Value at virtual position r (default = r if not yet swapped).
+            uint256 chosen = r;
+            for (uint256 s = 0; s < swapLen; s++) {
+                if (swapKeys[s] == r) {
+                    chosen = swapVals[s];
+                    break;
+                }
+            }
+
+            // Value at virtual position i (default = i).
+            uint256 atI = i;
+            for (uint256 s = 0; s < swapLen; s++) {
+                if (swapKeys[s] == i) {
+                    atI = swapVals[s];
+                    break;
+                }
+            }
+
+            // Position r now carries what used to be at position i (so future picks see
+            // it). swap[i] is never read again because i won't reappear as a future r.
+            bool found;
+            for (uint256 s = 0; s < swapLen; s++) {
+                if (swapKeys[s] == r) {
+                    swapVals[s] = atI;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                swapKeys[swapLen] = r;
+                swapVals[swapLen] = atI;
+                swapLen++;
+            }
+
+            address juror = _activeCommitters[chosen];
             _jury.push(juror);
             _isJuror[juror] = true;
         }

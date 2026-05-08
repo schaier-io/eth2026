@@ -667,6 +667,107 @@ contract TruthMarketLifecycleTest is Test {
         market.withdraw();
     }
 
+    function test_RevokedVoterCannotBeDrawnAsJuror() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(8, 50 ether, 50, 1);
+        _commitAll(vs);
+
+        // Revoke vs[0] before jury draw.
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(0xC0FFEE, AUDIT_HASH);
+
+        address[] memory jury = market.getJury();
+        // Drawn jurors must come from the active (non-revoked) pool.
+        for (uint256 i = 0; i < jury.length; i++) {
+            assertTrue(jury[i] != vs[0].addr);
+        }
+    }
+
+    function test_JuryDrawHandlesLargeCommitterPool() public {
+        // Stress the virtual sampler with a wide pool. Memory is O(jurySize) so this
+        // shouldn't OOG even though `n` is large.
+        market = _deployMarket(7, 47, 4); // jurySize=7 -> minCommits>=47 (15% rule)
+        uint256 n = 200;
+        V[] memory vs = _makeVoters(n, 5 ether, 100, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(0xCAFE, AUDIT_HASH);
+
+        address[] memory jury = market.getJury();
+        assertEq(jury.length, 7);
+        // All distinct.
+        for (uint256 i = 0; i < jury.length; i++) {
+            for (uint256 j = i + 1; j < jury.length; j++) {
+                assertTrue(jury[i] != jury[j]);
+            }
+        }
+    }
+
+    function test_ForceSweepDustRevertsBeforeGrace() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 80 ether, 50, 1);
+        _commitAll(vs);
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(123, AUDIT_HASH);
+        _revealAll(vs);
+        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        market.resolve();
+
+        // Right after resolve — grace not yet elapsed.
+        vm.expectRevert(TruthMarket.DeadlineNotPassed.selector);
+        market.forceSweepDust();
+    }
+
+    function test_ForceSweepDustPreservesUnclaimedVoterRefunds() public {
+        // Voters lose their right to claim only by inaction; force-sweep must not raid
+        // an unclaimed payout.
+        market = _deployMarket(3, 20, 2);
+        V[] memory vs = _makeVoters(20, 100 ether, 100, 1); // all YES
+        _commitAll(vs);
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(0xBEEF, AUDIT_HASH);
+
+        // One juror skips reveal. Outcome will be Yes (no juror went NO).
+        address skipper = market.getJury()[0];
+        for (uint256 i = 0; i < vs.length; i++) {
+            if (vs[i].addr == skipper) continue;
+            _reveal(vs[i]);
+        }
+        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        market.resolve();
+
+        // Skip past the dust-sweep grace.
+        vm.warp(block.timestamp + market.DUST_SWEEP_GRACE() + 1);
+
+        uint256 balanceBefore = token.balanceOf(address(market));
+        uint256 treasuryBefore = market.treasuryAccrued();
+        market.forceSweepDust();
+
+        // No voter has withdrawn yet — all payouts are still unclaimed, so the sweep
+        // should at most route the rounding remainder. Treasury accrual after sweep
+        // <= dust upper bound.
+        uint256 swept = market.treasuryAccrued() - treasuryBefore;
+        // Upper bound on dust is at most distributablePool minus floor( pool * 1 / totalWinnerWeight).
+        // Easier check: contract balance after sweep == balance before - swept.
+        assertEq(token.balanceOf(address(market)), balanceBefore - swept);
+
+        // Now have everyone withdraw. They all succeed (their balances were preserved).
+        _withdrawAll(vs);
+        // Treasury can pull whatever was accrued.
+        market.withdrawTreasury();
+        // Contract reaches 0 (nothing stuck — voter inactivity + force sweep covers everything).
+        assertEq(token.balanceOf(address(market)), 0);
+    }
+
     function test_DoubleRevokeReverts() public {
         market = _deployMarket(1, 7, 1);
         V[] memory vs = _makeVoters(7, 50 ether, 100, 1);
