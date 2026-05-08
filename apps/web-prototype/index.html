@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TruthMarket Prototype</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#board" aria-label="TruthMarket market board">
+          <span class="brand-mark">TM</span>
+          <span>TruthMarket</span>
+        </a>
+        <nav class="topnav" aria-label="Primary">
+          <a href="#board">Markets</a>
+          <a href="#create">Create</a>
+          <a href="#vault">Reveal vault</a>
+        </nav>
+        <button id="walletButton" class="wallet-button" type="button">Connect wallet</button>
+      </header>
+
+      <main>
+        <section id="board" class="view is-active" aria-labelledby="boardTitle">
+          <div class="board-layout">
+            <aside class="market-list" aria-label="Active markets">
+              <div class="feed-hero">
+                <p class="eyebrow">Live claims</p>
+                <h1 id="boardTitle">What's moving?</h1>
+                <p>Commit Up or Down before the reveal window opens.</p>
+              </div>
+              <div class="feed-tabs" role="group" aria-label="Market filters">
+                <button class="feed-tab is-active" type="button">Trending</button>
+                <button class="feed-tab" type="button">New</button>
+                <button class="feed-tab" type="button">Reveal</button>
+              </div>
+              <div id="marketCards" class="market-cards"></div>
+            </aside>
+
+            <section class="market-terminal" aria-labelledby="marketTitle">
+              <div class="ticker-strip" aria-label="Market highlights">
+                <span>Random jury</span>
+                <span>Private commits</span>
+                <span>Up / Down</span>
+                <span>Reveal to settle</span>
+              </div>
+              <div class="terminal-header">
+                <div>
+                  <p id="marketPhase" class="phase-pill">Voting</p>
+                  <h2 id="marketTitle"></h2>
+                </div>
+                <a id="rulesLink" class="ghost-link" href="#" target="_blank" rel="noreferrer">Claim/rules</a>
+              </div>
+
+              <p id="marketDescription" class="market-description"></p>
+
+              <div class="stats-grid" aria-label="Market stats">
+                <div>
+                  <span>Committed stake</span>
+                  <strong id="statStake"></strong>
+                </div>
+                <div>
+                  <span>Committed positions</span>
+                  <strong id="statCommits"></strong>
+                </div>
+                <div>
+                  <span>Jury size</span>
+                  <strong id="statJury"></strong>
+                </div>
+                <div>
+                  <span>Reveal window</span>
+                  <strong id="statReveal"></strong>
+                </div>
+              </div>
+
+              <div class="rules-panel">
+                <div>
+                  <span class="direction-label up">Up means</span>
+                  <p id="upMeaning"></p>
+                </div>
+                <div>
+                  <span class="direction-label down">Down means</span>
+                  <p id="downMeaning"></p>
+                </div>
+              </div>
+
+              <div class="action-grid">
+                <section class="commit-panel" aria-labelledby="commitTitle">
+                  <div class="section-heading compact">
+                    <p class="eyebrow">Commit phase</p>
+                    <h3 id="commitTitle">Open a committed position</h3>
+                  </div>
+
+                  <div class="segmented" role="group" aria-label="Choose direction">
+                    <button id="chooseUp" class="segment is-selected up" type="button">Up</button>
+                    <button id="chooseDown" class="segment down" type="button">Down</button>
+                  </div>
+
+                  <label class="field">
+                    <span>Stake amount</span>
+                    <input id="stakeInput" type="number" min="10" step="1" inputmode="decimal" value="100" />
+                  </label>
+
+                  <label class="field">
+                    <span>Conviction <b id="convictionValue">25%</b></span>
+                    <input id="convictionInput" type="range" min="1" max="100" value="25" />
+                  </label>
+
+                  <div class="risk-preview" aria-live="polite">
+                    <div>
+                      <span>Risked stake</span>
+                      <strong id="riskedStake">25 TMT</strong>
+                    </div>
+                    <div>
+                      <span>Refund if wrong</span>
+                      <strong id="refundStake">75 TMT</strong>
+                    </div>
+                  </div>
+
+                  <label class="field">
+                    <span>Reveal-key passphrase</span>
+                    <input id="commitPassphrase" type="password" autocomplete="new-password" placeholder="Encrypt local reveal key" />
+                  </label>
+
+                  <button id="commitButton" class="primary-action" type="button">Commit position</button>
+                  <p id="commitStatus" class="inline-status" role="status"></p>
+                </section>
+
+                <section class="jury-panel" aria-labelledby="juryTitle">
+                  <div class="section-heading compact">
+                    <p class="eyebrow">SpaceComputer draw</p>
+                    <h3 id="juryTitle">Selected jury</h3>
+                  </div>
+                  <div class="randomness-box">
+                    <span>Randomness</span>
+                    <code id="randomnessValue"></code>
+                  </div>
+                  <div class="randomness-box">
+                    <span>Audit hash</span>
+                    <code id="auditHash"></code>
+                  </div>
+                  <ul id="juryList" class="jury-list"></ul>
+                </section>
+              </div>
+            </section>
+
+            <aside class="account-rail" aria-label="Account actions">
+              <section class="rail-card" id="vault">
+                <div class="section-heading compact">
+                  <p class="eyebrow">Reveal vault</p>
+                  <h3>Local secret</h3>
+                </div>
+                <p class="muted">Reveal keys stay encrypted in this browser. The operator only sees the commitment hash.</p>
+                <label class="field">
+                  <span>Passphrase</span>
+                  <input id="revealPassphrase" type="password" autocomplete="current-password" placeholder="Unlock reveal key" />
+                </label>
+                <button id="revealButton" class="secondary-action" type="button">Reveal position</button>
+                <p id="revealStatus" class="inline-status" role="status"></p>
+              </section>
+
+              <section class="rail-card">
+                <div class="section-heading compact">
+                  <p class="eyebrow">Settlement</p>
+                  <h3>Wallet result</h3>
+                </div>
+                <div id="settlementState" class="settlement-state"></div>
+                <button id="withdrawButton" class="secondary-action" type="button">Withdraw</button>
+              </section>
+
+              <section class="rail-card">
+                <div class="section-heading compact">
+                  <p class="eyebrow">Activity</p>
+                  <h3>Latest</h3>
+                </div>
+                <ol id="activityFeed" class="activity-feed"></ol>
+              </section>
+            </aside>
+          </div>
+        </section>
+
+        <section id="create" class="view create-view" aria-labelledby="createTitle">
+          <div class="create-shell">
+            <div class="section-heading">
+              <p class="eyebrow">New market</p>
+              <h1 id="createTitle">Create claim/rules document</h1>
+            </div>
+            <form class="create-form">
+              <label class="field">
+                <span>Claim title</span>
+                <input type="text" autocomplete="off" value="Will autonomous agents settle more support tickets than humans this week?" />
+              </label>
+              <label class="field">
+                <span>Description</span>
+                <textarea rows="4">A committed-position market for a measurable operational claim.</textarea>
+              </label>
+              <div class="two-col">
+                <label class="field">
+                  <span>Up means</span>
+                  <input type="text" value="The claim resolves upward under the immutable rules." />
+                </label>
+                <label class="field">
+                  <span>Down means</span>
+                  <input type="text" value="The claim resolves downward under the immutable rules." />
+                </label>
+              </div>
+              <div class="two-col">
+                <label class="field">
+                  <span>Jury size</span>
+                  <input type="number" min="3" step="2" value="7" />
+                </label>
+                <label class="field">
+                  <span>Minimum stake</span>
+                  <input type="number" min="1" value="10" />
+                </label>
+              </div>
+              <button class="primary-action" type="button">Upload to Swarm</button>
+            </form>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
