@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.28;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -749,7 +749,12 @@ contract TruthMarket is ReentrancyGuard {
         return _isJuror[who];
     }
 
+    /// @notice Helper: compute the commit hash for a given vote.
+    /// @dev    Reverts if `vote` isn't 1 or 2 — guards committers from accidentally
+    ///         producing unrevealable hashes (a hash committed with vote ∉ {1,2}
+    ///         can never satisfy `revealVote`'s vote check, self-griefing the stake).
     function commitHashOf(uint8 vote, bytes32 nonce, address voter) external view returns (bytes32) {
+        if (vote != 1 && vote != 2) revert InvalidReveal();
         return _commitHash(vote, nonce, voter);
     }
 
