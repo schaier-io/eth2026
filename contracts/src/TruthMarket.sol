@@ -12,6 +12,23 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 ///         committer posts SpaceComputer cTRNG randomness plus an audit hash; the
 ///         contract draws the resolving jury on-chain via Fisher-Yates from the set of
 ///         committed voters.
+///
+///         Voting power: every selected juror counts as exactly 1 vote toward the
+///         outcome. Stake and conviction do NOT influence the YES/NO decision.
+///
+///         Stake roles:
+///         - Slash: a voter on the losing side (or a non-revealing voter) forfeits
+///           their `riskedStake` (= stake × conviction).
+///         - Reward: winning revealers split the slashed pool in proportion to their
+///           own `riskedStake`.
+///         - Juror penalty: a selected juror who fails to reveal is slashed 5×
+///           riskedStake, capped at their full stake. The extra (above the normal 1×
+///           slash) joins the distributable pool on a Yes/No outcome, or accrues to
+///           the treasury on Invalid.
+///
+///         Tie behavior: ties on juror count resolve to Invalid. Ties are impossible
+///         when `minRevealedJurors == jurySize` (all jurors reveal, odd count); they
+///         remain possible whenever the revealed-juror count is even.
 contract TruthMarket is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -20,6 +37,10 @@ contract TruthMarket is ReentrancyGuard {
     uint16 public constant MAX_CONVICTION_BPS = 10_000;
     uint96 public constant MAX_PROTOCOL_FEE_BPS = 1000;
     uint32 public constant MAX_JURY_SIZE = 100;
+    /// @dev Multiplier on `riskedStake` for jurors who fail to reveal. The penalty is
+    ///      capped at the juror's full `stake`, so a 100%-conviction juror cannot lose
+    ///      more than they put in.
+    uint256 public constant NON_REVEAL_PENALTY_MULTIPLIER = 5;
 
     // ---------- Types ----------
 
@@ -97,6 +118,10 @@ contract TruthMarket is ReentrancyGuard {
     uint32 public commitCount;
     uint32 public revealedJurorCount;
     uint32 public withdrawnCount;
+    /// @notice Number of jurors who revealed YES. Each juror contributes weight 1.
+    uint32 public juryYesCount;
+    /// @notice Number of jurors who revealed NO. Each juror contributes weight 1.
+    uint32 public juryNoCount;
     uint96 public totalCommittedStake;
     uint96 public totalRiskedStake;
     uint96 public revealedYesStake;
@@ -104,8 +129,6 @@ contract TruthMarket is ReentrancyGuard {
     uint96 public revealedYesRisked;
     uint96 public revealedNoRisked;
     uint96 public distributablePool;
-    uint256 public juryYesWeight;
-    uint256 public juryNoWeight;
     uint256 public totalYesRewardWeight;
     uint256 public totalNoRewardWeight;
     uint256 public randomness;
@@ -135,7 +158,7 @@ contract TruthMarket is ReentrancyGuard {
     event JuryCommitted(uint256 randomness, address[] jurors, bytes32 auditHash);
     event VoteRevealed(address indexed voter, uint8 vote, uint96 stake, uint16 convictionBps, uint96 riskedStake);
     event Resolved(
-        Outcome outcome, uint256 winningJuryWeight, uint96 slashedRiskedStake, uint256 fee, uint96 distributablePool
+        Outcome outcome, uint32 winningJuryCount, uint96 slashedRiskedStake, uint256 fee, uint96 distributablePool
     );
     event Withdrawn(address indexed voter, uint256 payout);
     event TreasuryUpdated(address indexed treasury);
@@ -315,12 +338,15 @@ contract TruthMarket is ReentrancyGuard {
     // ---------- Resolve ----------
 
     /// @notice Finalize the market. Anyone may call.
+    ///         Outcome is decided by simple count of revealing jurors: each juror
+    ///         contributes 1 vote regardless of their stake or conviction.
     ///         Resolves Invalid if the admin missed the jury-commit deadline, if too few
-    ///         jurors revealed, or if jury weights tie.
-    ///         Selected jurors who fail to reveal lose 2x their risked stake (capped at
+    ///         jurors revealed, or if juror counts tie (only possible when an even number
+    ///         of jurors actually revealed).
+    ///         Selected jurors who fail to reveal lose 5x their risked stake (capped at
     ///         their full stake — a 100%-conviction juror cannot lose more than they put in).
-    ///         The extra (above the normal risked-stake slash) joins the distributable pool
-    ///         on a Yes/No outcome, or accrues to the treasury on Invalid.
+    ///         The extra (above the normal 1× risked-stake slash) joins the distributable
+    ///         pool on a Yes/No outcome, or accrues to the treasury on Invalid.
     function resolve() external nonReentrant {
         if (phase == Phase.Resolved) revert WrongPhase();
 
@@ -335,11 +361,11 @@ contract TruthMarket is ReentrancyGuard {
         if (block.timestamp < revealDeadline) revert DeadlineNotPassed();
 
         Outcome out;
-        uint256 winningJuryWeight;
+        uint32 winningJuryCount;
         if (revealedJurorCount < minRevealedJurors) {
             out = Outcome.Invalid;
         } else {
-            (out, winningJuryWeight) = _juryOutcome();
+            (out, winningJuryCount) = _juryOutcome();
         }
 
         outcome = out;
@@ -351,12 +377,12 @@ contract TruthMarket is ReentrancyGuard {
             (slashedRiskedStake, fee) = _settleSlashedPool(out);
         } else {
             // Jury was drawn but outcome Invalid: slash non-revealing jurors with the full
-            // doubled penalty; accrue to treasury (no winners to distribute to).
+            // 5× penalty; accrue to treasury (no winners to distribute to).
             uint96 jurorPenalty = _accrueNonRevealingJurorPenalty();
             fee = jurorPenalty;
         }
 
-        emit Resolved(out, winningJuryWeight, slashedRiskedStake, fee, distributablePool);
+        emit Resolved(out, winningJuryCount, slashedRiskedStake, fee, distributablePool);
     }
 
     // ---------- Withdraw ----------
@@ -445,24 +471,24 @@ contract TruthMarket is ReentrancyGuard {
             revealedYesStake += k.stake;
             revealedYesRisked += k.riskedStake;
             totalYesRewardWeight += k.riskedStake;
-            if (juror) juryYesWeight += _juryWeight(k.riskedStake);
+            if (juror) juryYesCount++;
         } else {
             revealedNoStake += k.stake;
             revealedNoRisked += k.riskedStake;
             totalNoRewardWeight += k.riskedStake;
-            if (juror) juryNoWeight += _juryWeight(k.riskedStake);
+            if (juror) juryNoCount++;
         }
     }
 
-    /// @dev Returns Invalid on weight tie. Note: an odd `jurySize` does not strictly
-    ///      prevent a tie because jury weight is `sqrt(riskedStake)` — distinct stake
-    ///      configurations can still produce equal aggregate weights.
-    function _juryOutcome() internal view returns (Outcome out, uint256 winningJuryWeight) {
-        if (juryYesWeight > juryNoWeight) {
-            return (Outcome.Yes, juryYesWeight);
+    /// @dev Returns Invalid on count tie. With odd `jurySize` and full juror reveal
+    ///      (`minRevealedJurors == jurySize`) ties are impossible. Partial reveals
+    ///      (even revealed-juror count) can still tie.
+    function _juryOutcome() internal view returns (Outcome out, uint32 winningJuryCount) {
+        if (juryYesCount > juryNoCount) {
+            return (Outcome.Yes, juryYesCount);
         }
-        if (juryNoWeight > juryYesWeight) {
-            return (Outcome.No, juryNoWeight);
+        if (juryNoCount > juryYesCount) {
+            return (Outcome.No, juryNoCount);
         }
         return (Outcome.Invalid, 0);
     }
@@ -490,14 +516,15 @@ contract TruthMarket is ReentrancyGuard {
     }
 
     /// @dev Returns (totalPenalty, totalExtra) summed over jurors who failed to reveal.
-    ///      penalty = min(2 * riskedStake, stake); extra = penalty - riskedStake.
+    ///      penalty = min(NON_REVEAL_PENALTY_MULTIPLIER × riskedStake, stake);
+    ///      extra   = penalty - riskedStake.
     function _jurorNoRevealAccounting() internal view returns (uint96 totalPenalty, uint96 totalExtra) {
         address[] memory jury = _jury;
         for (uint256 i = 0; i < jury.length; i++) {
             Commit storage k = commits[jury[i]];
             if (!k.revealed) {
-                uint256 doubled = uint256(k.riskedStake) * 2;
-                uint256 capped = doubled > k.stake ? k.stake : doubled;
+                uint256 multiplied = uint256(k.riskedStake) * NON_REVEAL_PENALTY_MULTIPLIER;
+                uint256 capped = multiplied > k.stake ? k.stake : multiplied;
                 // forge-lint: disable-next-line(unsafe-typecast)
                 totalPenalty += uint96(capped);
                 // forge-lint: disable-next-line(unsafe-typecast)
@@ -507,11 +534,11 @@ contract TruthMarket is ReentrancyGuard {
     }
 
     function _payoutFor(Commit storage k, bool jurorAddr) internal view returns (uint256) {
-        // Selected juror who failed to reveal: lose 2x risked, capped at full stake.
-        // Applies on any post-jury-draw outcome (Yes/No/Invalid-via-reveal/tie).
+        // Selected juror who failed to reveal: lose NON_REVEAL_PENALTY_MULTIPLIER × risked,
+        // capped at full stake. Applies on any post-jury-draw outcome.
         if (jurorAddr && !k.revealed && randomness != 0) {
-            uint256 doubled = uint256(k.riskedStake) * 2;
-            uint256 penalty = doubled > k.stake ? k.stake : doubled;
+            uint256 multiplied = uint256(k.riskedStake) * NON_REVEAL_PENALTY_MULTIPLIER;
+            uint256 penalty = multiplied > k.stake ? k.stake : multiplied;
             return uint256(k.stake) - penalty;
         }
         if (outcome == Outcome.Invalid) {
@@ -536,21 +563,5 @@ contract TruthMarket is ReentrancyGuard {
     function _riskedStake(uint96 stake, uint16 convictionBps) internal pure returns (uint96) {
         // forge-lint: disable-next-line(unsafe-typecast)
         return uint96((uint256(stake) * convictionBps) / MAX_CONVICTION_BPS);
-    }
-
-    function _juryWeight(uint96 riskedStake) internal pure returns (uint256) {
-        return _sqrt(riskedStake);
-    }
-
-    function _sqrt(uint256 x) internal pure returns (uint256) {
-        if (x == 0) return 0;
-
-        uint256 z = (x + 1) / 2;
-        uint256 y = x;
-        while (z < y) {
-            y = z;
-            z = (x / z + z) / 2;
-        }
-        return y;
     }
 }

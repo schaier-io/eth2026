@@ -223,16 +223,78 @@ contract TruthMarketLifecycleTest is Test {
         assertEq(token.balanceOf(address(market)), 0);
     }
 
-    function test_DoublePenaltyOnNonRevealingJurorAtValidOutcome() public {
-        // 5 voters, jurySize=5 -> all jurors. eve fails to reveal at 50% conviction so
-        // her doubled penalty hits the full-stake ceiling exactly.
+    function test_QuintuplePenaltyOnNonRevealingJurorAtValidOutcome() public {
+        // 5 voters, jurySize=5 -> all jurors. eve fails to reveal at 50% conviction; her
+        // 5×-risked penalty saturates at full stake. The cap is the same shape as 2×
+        // here (both saturate); the multiplier matters at lower convictions where the
+        // penalty stays below the cap (covered in test_QuintuplePenaltyBelowCap).
         market = _deployMarket(5, 5, 3);
 
         _commit(alice, 1, ALICE_NONCE, 100 ether, 10_000); // yes risked 100
         _commit(bob, 1, BOB_NONCE, 100 ether, 10_000); // yes risked 100
         _commit(carol, 1, CAROL_NONCE, 100 ether, 10_000); // yes risked 100
         _commit(dave, 2, DAVE_NONCE, 100 ether, 10_000); // no risked 100 (revealed loser)
-        _commit(eve, 2, EVE_NONCE, 80 ether, 5000); // no risked 40 (won't reveal)
+        _commit(eve, 2, EVE_NONCE, 80 ether, 5000); // no risked 40 (won't reveal, capped at 80)
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(0xBEEF, AUDIT_HASH);
+
+        vm.prank(alice);
+        market.revealVote(1, ALICE_NONCE);
+        vm.prank(bob);
+        market.revealVote(1, BOB_NONCE);
+        vm.prank(carol);
+        market.revealVote(1, CAROL_NONCE);
+        vm.prank(dave);
+        market.revealVote(2, DAVE_NONCE);
+
+        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        market.resolve();
+
+        // 3 yes vs 1 no jurors revealed -> Yes wins (count-based, ignores stakes).
+        assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Yes));
+        assertEq(market.juryYesCount(), 3);
+        assertEq(market.juryNoCount(), 1);
+
+        // slashed = dave 100 (loser) + eve 40 (missed base) + eve extra 40 (capped 5x) = 180
+        // fee = 9, distributable = 171
+        assertEq(market.treasuryAccrued(), 9 ether);
+        assertEq(market.distributablePool(), 171 ether);
+
+        vm.prank(alice);
+        market.withdraw();
+        vm.prank(bob);
+        market.withdraw();
+        vm.prank(carol);
+        market.withdraw();
+        vm.prank(dave);
+        market.withdraw();
+        vm.prank(eve);
+        market.withdraw();
+
+        // Each yes-revealer: 100 stake refund + 171 * 100 / 300 = 100 + 57 bonus.
+        assertEq(token.balanceOf(alice), 1000 ether - 100 ether + 100 ether + 57 ether);
+        assertEq(token.balanceOf(bob), 1000 ether - 100 ether + 100 ether + 57 ether);
+        assertEq(token.balanceOf(carol), 1000 ether - 100 ether + 100 ether + 57 ether);
+        assertEq(token.balanceOf(dave), 1000 ether - 100 ether);
+        assertEq(token.balanceOf(eve), 1000 ether - 80 ether);
+
+        market.withdrawTreasury();
+        assertEq(token.balanceOf(treasury), 9 ether);
+        assertEq(token.balanceOf(address(market)), 0);
+    }
+
+    function test_QuintuplePenaltyBelowCap() public {
+        // 5 voters, jurySize=5. eve commits at 10% conviction so 5x risked stays below
+        // her stake and the cap doesn't bite — the multiplier is observable.
+        market = _deployMarket(5, 5, 3);
+
+        _commit(alice, 1, ALICE_NONCE, 100 ether, 10_000); // yes risked 100
+        _commit(bob, 1, BOB_NONCE, 100 ether, 10_000); // yes risked 100
+        _commit(carol, 1, CAROL_NONCE, 100 ether, 10_000); // yes risked 100
+        _commit(dave, 2, DAVE_NONCE, 100 ether, 10_000); // no risked 100 (revealed loser)
+        _commit(eve, 2, EVE_NONCE, 100 ether, 1000); // no risked 10 (won't reveal)
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
@@ -251,34 +313,17 @@ contract TruthMarketLifecycleTest is Test {
         market.resolve();
 
         assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Yes));
-        // slashed = dave 100 (loser) + eve 40 (missed) + eve extra 40 (juror double) = 180
-        // fee = 9, distributable = 171
-        assertEq(market.treasuryAccrued(), 9 ether);
-        assertEq(market.distributablePool(), 171 ether);
 
-        vm.prank(alice);
-        market.withdraw();
-        vm.prank(bob);
-        market.withdraw();
-        vm.prank(carol);
-        market.withdraw();
-        vm.prank(dave);
-        market.withdraw();
+        // eve penalty = min(5*10, 100) = 50. extra = 40.
+        // slashed = dave 100 + eve 10 (missed base) + eve extra 40 = 150
+        // fee = 7.5, distributable = 142.5
+        assertEq(market.treasuryAccrued(), 7.5 ether);
+        assertEq(market.distributablePool(), 142.5 ether);
+
+        // eve non-revealing juror loses 5x risked = 50, keeps 50.
         vm.prank(eve);
         market.withdraw();
-
-        // Each yes-revealer: 100 + 171 * 100 / 300 = 100 + 57.
-        assertEq(token.balanceOf(alice), 1000 ether - 100 ether + 100 ether + 57 ether);
-        assertEq(token.balanceOf(bob), 1000 ether - 100 ether + 100 ether + 57 ether);
-        assertEq(token.balanceOf(carol), 1000 ether - 100 ether + 100 ether + 57 ether);
-        // dave loser-revealed: stake - risked = 0
-        assertEq(token.balanceOf(dave), 1000 ether - 100 ether);
-        // eve non-revealing juror: stake - 2*risked = 80 - 80 = 0
-        assertEq(token.balanceOf(eve), 1000 ether - 80 ether);
-
-        market.withdrawTreasury();
-        assertEq(token.balanceOf(treasury), 9 ether);
-        assertEq(token.balanceOf(address(market)), 0);
+        assertEq(token.balanceOf(eve), 1000 ether - 50 ether);
     }
 
     function test_RevertsCommitJuryWhenBelowMinCommits() public {
