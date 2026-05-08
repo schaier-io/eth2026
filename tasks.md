@@ -214,6 +214,8 @@ TruthMarket can become a venture because it monetizes belief-resolution markets 
 
 **Goal:** Add optional but visible identity and reputation if time allows.
 
+**Production Sybil boundary:** Future production markets must require identity-backed or eligibility-backed voter/jury entry before count-based jury voting is considered Sybil-resistant. The hackathon contract remains address-based for demo speed; see [ADR 0008](./docs/adr/0008-identity-required-for-sybil-resistance.md).
+
 **Use cases:**
 
 - Named voters or agents.

@@ -34,6 +34,9 @@ contract TruthMarketLifecycleTest is Test {
     uint8 internal constant FEE_PERCENT = 5;
     uint96 internal constant MIN_STAKE = 1 ether;
     uint96 internal constant DEFAULT_BALANCE = 1000 ether;
+    uint256 internal constant MAX_NAME_BYTES = 120;
+    uint256 internal constant MAX_DESCRIPTION_BYTES = 1000;
+    uint256 internal constant MAX_TAG_BYTES = 32;
 
     struct V {
         address addr;
@@ -127,6 +130,14 @@ contract TruthMarketLifecycleTest is Test {
             vm.prank(vs[i].addr);
             market.withdraw();
         }
+    }
+
+    function _stringOfLength(uint256 n) internal pure returns (string memory) {
+        bytes memory b = new bytes(n);
+        for (uint256 i = 0; i < n; i++) {
+            b[i] = bytes1(uint8(0x61));
+        }
+        return string(b);
     }
 
     // ---------- Tests ----------
@@ -488,6 +499,9 @@ contract TruthMarketLifecycleTest is Test {
         assertEq(tags.length, 2);
         assertEq(tags[0], "demo");
         assertEq(tags[1], "test");
+        assertEq(market.MAX_NAME_BYTES(), MAX_NAME_BYTES);
+        assertEq(market.MAX_DESCRIPTION_BYTES(), MAX_DESCRIPTION_BYTES);
+        assertEq(market.MAX_TAG_BYTES(), MAX_TAG_BYTES);
     }
 
     function test_RevertsConstructorOnEmptyName() public {
@@ -504,12 +518,35 @@ contract TruthMarketLifecycleTest is Test {
         new TruthMarket(p);
     }
 
+    function test_RevertsConstructorWhenNameTooLong() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.name = _stringOfLength(MAX_NAME_BYTES + 1);
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_RevertsConstructorWhenDescriptionTooLong() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.description = _stringOfLength(MAX_DESCRIPTION_BYTES + 1);
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
     function test_RevertsConstructorWhenTooManyTags() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         string[] memory tags = new string[](6);
         for (uint256 i = 0; i < 6; i++) {
             tags[i] = "tag";
         }
+        p.tags = tags;
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_RevertsConstructorWhenTagTooLong() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        string[] memory tags = new string[](1);
+        tags[0] = _stringOfLength(MAX_TAG_BYTES + 1);
         p.tags = tags;
         vm.expectRevert(TruthMarket.BadParams.selector);
         new TruthMarket(p);
@@ -815,43 +852,6 @@ contract TruthMarketLifecycleTest is Test {
         p.tags = tags;
         vm.expectRevert(TruthMarket.BadParams.selector);
         new TruthMarket(p);
-    }
-
-    function test_SetTreasuryRejectedAfterResolve() public {
-        market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(7, 10 ether, 50, 1);
-        _commitAll(vs);
-        vm.warp(block.timestamp + VOTING_PERIOD);
-        vm.prank(juryCommitter);
-        market.commitJury(123, AUDIT_HASH);
-        _revealAll(vs);
-        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
-        market.resolve();
-
-        address newTreasury = makeAddr("newTreasury");
-        vm.prank(admin);
-        vm.expectRevert(TruthMarket.WrongPhase.selector);
-        market.setTreasury(newTreasury);
-    }
-
-    function test_SetTreasuryAllowedDuringVotingAndReveal() public {
-        market = _deployMarket(1, 7, 1);
-        address newTreasury1 = makeAddr("newTreasury1");
-        vm.prank(admin);
-        market.setTreasury(newTreasury1);
-        assertEq(market.treasury(), newTreasury1);
-
-        // Move into reveal phase.
-        V[] memory vs = _makeVoters(7, 10 ether, 50, 1);
-        _commitAll(vs);
-        vm.warp(block.timestamp + VOTING_PERIOD);
-        vm.prank(juryCommitter);
-        market.commitJury(123, AUDIT_HASH);
-
-        address newTreasury2 = makeAddr("newTreasury2");
-        vm.prank(admin);
-        market.setTreasury(newTreasury2);
-        assertEq(market.treasury(), newTreasury2);
     }
 
     function test_RevokeStakeFloorsClaimerCutAtOneWei() public {

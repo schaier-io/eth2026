@@ -64,6 +64,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - Votes use classic commit-reveal to preserve voter sovereignty.
 - Operator-encrypted votes are rejected for the hackathon design because they make the operator a privileged reveal service.
 - SpaceComputer randomness is the core sponsor integration and selects the resolving jury from committed voters.
+- Future production markets must require identity-backed or eligibility-backed Sybil resistance before address entries are treated as valid jury candidates. The hackathon contract remains address-based and demo-grade; see [ADR 0008](./adr/0008-identity-required-for-sybil-resistance.md).
 - The hackathon version uses a trusted off-chain `juryCommitter` to fetch SpaceComputer randomness and post it with an audit hash. The contract draws the jury on-chain from that posted randomness; the selection must be replayable, but the randomness proof is not verified on-chain in this scope.
 - Juror resolution is count-based: each selected juror contributes 1 vote, regardless of stake or conviction (see [ADR 0006](./adr/0006-count-based-jury-voting.md)).
 - Conviction controls the portion of stake at risk.
@@ -92,7 +93,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - **Jury selection service:** fetches SpaceComputer randomness, reads committed voters, deterministically selects jurors, persists/references the randomness audit artifact, and submits selected jurors on-chain.
 - **Swarm claim document service:** creates, validates, uploads, fetches, and optionally verifies immutable claim/rules documents.
 - **Demo frontend:** presents immutable rules, stake/conviction controls, commit/reveal states, selected jurors, randomness audit data, and settlement results.
-- **Optional identity adapter:** resolves ENS names and records for creators, voters, or agents without making ENS required for market operation.
+- **Identity/eligibility adapter:** resolves ENS names, credentials, reputation, membership, or another eligibility source. For the hackathon it may be display-only; for production it must gate voter or jury eligibility to prevent address-splitting attacks.
 
 ## Testing Decisions
 

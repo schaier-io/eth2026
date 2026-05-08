@@ -21,6 +21,7 @@ Market parameters are locked at deployment (no separate setup tx); admin and jur
 
 Two audit-noted behaviors are intentional for the hackathon scope:
 
+- The current jury draw is address-based and therefore not Sybil-resistant. Future production markets must add identity-backed or eligibility-backed jury entry before one-juror-one-vote resolution is treated as robust; see [ADR 0008](./adr/0008-identity-required-for-sybil-resistance.md).
 - `juryCommitter` is trusted to post the SpaceComputer cTRNG value and an audit hash. The jury draw is on-chain and replayable, but the posted randomness is not yet verified on-chain; see [ADR 0005](./adr/0005-spacecomputer-first-sponsor-strategy.md).
 - `minRevealedJurors` is configurable and may be below strict majority. This is a liveness/market-quality parameter disclosed in the claim rules, not a hardcoded security invariant; see [ADR 0006](./adr/0006-count-based-jury-voting.md).
 

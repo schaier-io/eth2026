@@ -74,6 +74,12 @@ contract TruthMarket is ReentrancyGuard {
     uint256 public constant MAX_JURY_PERCENTAGE = 15;
     /// @notice Maximum number of claim tags storable on-chain.
     uint256 public constant MAX_TAGS = 5;
+    /// @notice Maximum bytes for the short on-chain claim name.
+    uint256 public constant MAX_NAME_BYTES = 120;
+    /// @notice Maximum bytes for the short on-chain claim description.
+    uint256 public constant MAX_DESCRIPTION_BYTES = 1000;
+    /// @notice Maximum bytes for each short on-chain claim tag.
+    uint256 public constant MAX_TAG_BYTES = 32;
     /// @notice Time after `revealDeadline` before residual dust may be force-swept to
     ///         treasury. Long enough that any voter has had ample time to withdraw.
     uint64 public constant DUST_SWEEP_GRACE = 30 days;
@@ -147,6 +153,9 @@ contract TruthMarket is ReentrancyGuard {
         uint32 maxJurySize;
         uint256 maxJuryPercentage;
         uint256 maxTags;
+        uint256 maxNameBytes;
+        uint256 maxDescriptionBytes;
+        uint256 maxTagBytes;
         uint8 maxConvictionPercent;
         uint8 maxProtocolFeePercent;
     }
@@ -215,6 +224,7 @@ contract TruthMarket is ReentrancyGuard {
     // ---------- Immutable deployment config ----------
 
     IERC20 public immutable stakeToken;
+    address public immutable treasury;
     /// @dev TODO: replace `admin` and `juryCommitter` with hardcoded constants once the
     ///      production addresses are finalized.
     address public immutable admin;
@@ -233,7 +243,6 @@ contract TruthMarket is ReentrancyGuard {
 
     // ---------- Mutable state ----------
 
-    address public treasury;
     Phase public phase;
     Outcome public outcome;
     string public name;
@@ -320,7 +329,6 @@ contract TruthMarket is ReentrancyGuard {
         uint256 distributablePool
     );
     event Withdrawn(address indexed voter, uint256 payout);
-    event TreasuryUpdated(address indexed treasury);
     event TreasuryWithdrawn(address indexed treasury, uint256 amount);
     event CreatorWithdrawn(address indexed creator, uint256 amount);
     event StakeRevoked(
@@ -345,11 +353,6 @@ contract TruthMarket is ReentrancyGuard {
     error CommitRevoked();
 
     // ---------- Modifiers ----------
-
-    modifier onlyAdmin() {
-        if (msg.sender != admin) revert NotAuthorized();
-        _;
-    }
 
     modifier onlyJuryCommitter() {
         if (msg.sender != juryCommitter) revert NotAuthorized();
@@ -377,11 +380,13 @@ contract TruthMarket is ReentrancyGuard {
         if (uint256(p.minCommits) * MAX_JURY_PERCENTAGE < uint256(p.jurySize) * 100) revert BadParams();
         if (p.minRevealedJurors == 0) revert BadParams();
         if (p.minRevealedJurors > p.jurySize) revert BadParams();
-        if (bytes(p.name).length == 0) revert BadParams();
-        if (bytes(p.description).length == 0) revert BadParams();
+        if (bytes(p.name).length == 0 || bytes(p.name).length > MAX_NAME_BYTES) revert BadParams();
+        if (bytes(p.description).length == 0 || bytes(p.description).length > MAX_DESCRIPTION_BYTES) {
+            revert BadParams();
+        }
         if (p.tags.length > MAX_TAGS) revert BadParams();
         for (uint256 i = 0; i < p.tags.length; i++) {
-            if (bytes(p.tags[i]).length == 0) revert BadParams();
+            if (bytes(p.tags[i]).length == 0 || bytes(p.tags[i]).length > MAX_TAG_BYTES) revert BadParams();
         }
 
         stakeToken = p.stakeToken;
@@ -792,6 +797,9 @@ contract TruthMarket is ReentrancyGuard {
             maxJurySize: MAX_JURY_SIZE,
             maxJuryPercentage: MAX_JURY_PERCENTAGE,
             maxTags: MAX_TAGS,
+            maxNameBytes: MAX_NAME_BYTES,
+            maxDescriptionBytes: MAX_DESCRIPTION_BYTES,
+            maxTagBytes: MAX_TAG_BYTES,
             maxConvictionPercent: MAX_CONVICTION_PERCENT,
             maxProtocolFeePercent: MAX_PROTOCOL_FEE_PERCENT
         });
@@ -853,17 +861,6 @@ contract TruthMarket is ReentrancyGuard {
                 conviction: k.conviction
             });
         }
-    }
-
-    // ---------- Admin ----------
-
-    /// @notice Rotate the treasury address. Locked once `phase == Resolved` to prevent
-    ///         admin from rerouting fees that have already accrued.
-    function setTreasury(address _treasury) external onlyAdmin {
-        if (phase == Phase.Resolved) revert WrongPhase();
-        if (_treasury == address(0)) revert BadParams();
-        treasury = _treasury;
-        emit TreasuryUpdated(_treasury);
     }
 
     // ---------- Internals ----------

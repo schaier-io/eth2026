@@ -19,14 +19,14 @@ contract TruthMarketScript is Script {
         string memory description = vm.envString("CLAIM_DESCRIPTION");
         string[] memory tags = _envTags();
         bytes memory ipfsHash = vm.envBytes("IPFS_HASH");
-        uint64 votingPeriod = uint64(vm.envUint("VOTING_PERIOD"));
-        uint64 adminTimeout = uint64(vm.envUint("ADMIN_TIMEOUT"));
-        uint64 revealPeriod = uint64(vm.envUint("REVEAL_PERIOD"));
-        uint8 protocolFeePercent = uint8(vm.envUint("PROTOCOL_FEE_PERCENT"));
-        uint96 minStake = uint96(vm.envUint("MIN_STAKE"));
-        uint32 jurySize = uint32(vm.envUint("JURY_SIZE"));
-        uint32 minCommits = uint32(vm.envUint("MIN_COMMITS"));
-        uint32 minRevealedJurors = uint32(vm.envUint("MIN_REVEALED_JURORS"));
+        uint64 votingPeriod = _envUint64("VOTING_PERIOD");
+        uint64 adminTimeout = _envUint64("ADMIN_TIMEOUT");
+        uint64 revealPeriod = _envUint64("REVEAL_PERIOD");
+        uint8 protocolFeePercent = _envUint8("PROTOCOL_FEE_PERCENT");
+        uint96 minStake = _envUint96("MIN_STAKE");
+        uint32 jurySize = _envUint32("JURY_SIZE");
+        uint32 minCommits = _envUint32("MIN_COMMITS");
+        uint32 minRevealedJurors = _envUint32("MIN_REVEALED_JURORS");
 
         vm.startBroadcast(pk);
         market = new TruthMarket(
@@ -76,6 +76,34 @@ contract TruthMarketScript is Script {
 
     function readEnvString(string calldata key) external view returns (string memory) {
         return vm.envString(key);
+    }
+
+    function _envUint8(string memory key) internal view returns (uint8) {
+        uint256 value = vm.envUint(key);
+        require(value <= type(uint8).max, string.concat(key, " too large"));
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint8(value);
+    }
+
+    function _envUint32(string memory key) internal view returns (uint32) {
+        uint256 value = vm.envUint(key);
+        require(value <= type(uint32).max, string.concat(key, " too large"));
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint32(value);
+    }
+
+    function _envUint64(string memory key) internal view returns (uint64) {
+        uint256 value = vm.envUint(key);
+        require(value <= type(uint64).max, string.concat(key, " too large"));
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint64(value);
+    }
+
+    function _envUint96(string memory key) internal view returns (uint96) {
+        uint256 value = vm.envUint(key);
+        require(value <= type(uint96).max, string.concat(key, " too large"));
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint96(value);
     }
 
     function _splitCsv(string memory s) internal pure returns (string[] memory) {
