@@ -149,7 +149,8 @@ button:disabled {
 
 .feed-hero,
 .stake-card,
-.position-card {
+.position-card,
+.process-card {
   border: 2px solid var(--text);
   border-radius: var(--radius);
   box-shadow: 5px 5px 0 var(--text);
@@ -315,7 +316,8 @@ h2 {
 }
 
 .stake-card,
-.position-card {
+.position-card,
+.process-card {
   padding: 24px;
   background: var(--surface);
 }
@@ -488,7 +490,7 @@ h2 {
 }
 
 .position-card {
-  grid-row: span 2;
+  grid-row: span 3;
 }
 
 .status-card,
@@ -499,8 +501,117 @@ h2 {
   background: var(--surface);
 }
 
+.process-card {
+  grid-column: 1 / -1;
+  order: -1;
+}
+
+.card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.card-heading h2 {
+  margin-top: 6px;
+  font-size: 26px;
+}
+
+.deadline-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  white-space: nowrap;
+}
+
+.process-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.process-step {
+  display: grid;
+  gap: 8px;
+  min-height: 92px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfcff;
+  color: var(--muted);
+}
+
+.process-step span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.process-step.is-done {
+  border-color: rgba(6, 138, 82, 0.35);
+  background: var(--up-soft);
+  color: var(--up);
+}
+
+.process-step.is-current {
+  border: 2px solid var(--text);
+  background: #fff7c7;
+  color: var(--text);
+  box-shadow: 3px 3px 0 var(--text);
+}
+
+.process-note {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .position-summary {
   margin: 18px 0;
+}
+
+.jury-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.jury-panel p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.jury-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.jury-chip span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .next-steps,
@@ -536,8 +647,13 @@ code {
 
 @media (max-width: 900px) {
   .market-grid,
-  .dashboard-main {
+  .dashboard-main,
+  .process-steps {
     grid-template-columns: 1fr;
+  }
+
+  .process-card {
+    grid-column: auto;
   }
 
   .market-card {

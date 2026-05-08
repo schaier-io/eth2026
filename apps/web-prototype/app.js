@@ -5,11 +5,17 @@ const markets = [
     title: "Will agents close more support tickets than humans this week?",
     description: "A live claim about whether autonomous agents beat the human support queue under the locked rules.",
     phase: "Voting",
+    uiStage: "Voting",
     stake: 18420,
     commits: 173,
     jurySize: 9,
+    minRevealedJurors: 6,
+    revealedJurors: 0,
+    juryUpCount: 0,
+    juryDownCount: 0,
     pool: 2310,
     timeLeft: "3h 12m",
+    deadlineLabel: "Voting closes in 3h 12m",
     upPercent: 63,
     upMeaning: "Agents close a higher count of qualifying tickets before the cutoff.",
     downMeaning: "Humans close an equal or higher count of qualifying tickets before the cutoff.",
@@ -23,11 +29,17 @@ const markets = [
     title: "Will spot GPU rental clear below 2.20 TMT per hour?",
     description: "A pricing claim resolved by selected staked belief, not an external truth source.",
     phase: "Reveal",
+    uiStage: "Reveal",
     stake: 12670,
     commits: 98,
     jurySize: 7,
+    minRevealedJurors: 5,
+    revealedJurors: 3,
+    juryUpCount: 2,
+    juryDownCount: 1,
     pool: 1780,
     timeLeft: "54m",
+    deadlineLabel: "Reveal closes in 54m",
     upPercent: 48,
     upMeaning: "The clearing price is below the rule-defined threshold.",
     downMeaning: "The clearing price is at or above the rule-defined threshold.",
@@ -41,11 +53,17 @@ const markets = [
     title: "Will public jury replay tooling ship by Friday?",
     description: "A product-shipping claim for the auditability layer around SpaceComputer jury selection.",
     phase: "Voting",
+    uiStage: "Jury selection",
     stake: 9310,
     commits: 61,
     jurySize: 5,
+    minRevealedJurors: 3,
+    revealedJurors: 0,
+    juryUpCount: 0,
+    juryDownCount: 0,
     pool: 890,
     timeLeft: "1d 4h",
+    deadlineLabel: "Waiting for randomness",
     upPercent: 71,
     upMeaning: "The replay tool is public and reproduces the selected jury.",
     downMeaning: "The replay tool is missing, private, or cannot reproduce the selected jury.",
@@ -59,11 +77,17 @@ const markets = [
     title: "Will an open model top the coding benchmark this month?",
     description: "A fast-moving AI claim with hidden Up/Down positions until reveal.",
     phase: "Voting",
+    uiStage: "Voting",
     stake: 22140,
     commits: 204,
     jurySize: 11,
+    minRevealedJurors: 7,
+    revealedJurors: 0,
+    juryUpCount: 0,
+    juryDownCount: 0,
     pool: 3180,
     timeLeft: "8h 41m",
+    deadlineLabel: "Voting closes in 8h 41m",
     upPercent: 58,
     upMeaning: "An open model takes the top published score under the claim/rules document.",
     downMeaning: "No open model takes the top published score under the claim/rules document.",
@@ -114,10 +138,18 @@ const els = {
   positionSummary: document.getElementById("positionSummary"),
   revealButton: document.getElementById("revealButton"),
   revealStatus: document.getElementById("revealStatus"),
+  processTitle: document.getElementById("processTitle"),
+  deadlineText: document.getElementById("deadlineText"),
+  processSteps: document.getElementById("processSteps"),
+  processNote: document.getElementById("processNote"),
   dashPhase: document.getElementById("dashPhase"),
   dashCommits: document.getElementById("dashCommits"),
   dashJury: document.getElementById("dashJury"),
   dashPool: document.getElementById("dashPool"),
+  dashRevealedJurors: document.getElementById("dashRevealedJurors"),
+  dashJuryVote: document.getElementById("dashJuryVote"),
+  juryPanel: document.getElementById("juryPanel"),
+  reminderList: document.getElementById("reminderList"),
   nextSteps: document.getElementById("nextSteps"),
   devPanel: document.getElementById("devPanel"),
   debugCommitHash: document.getElementById("debugCommitHash"),
@@ -189,6 +221,65 @@ function shortHash(value) {
   return `${value.slice(0, 10)}...${value.slice(-8)}`;
 }
 
+function lifecycleIndex(stage) {
+  return ["Voting", "Jury selection", "Reveal", "Resolved"].indexOf(stage);
+}
+
+function processCopy(market, position) {
+  if (market.uiStage === "Voting") {
+    return position
+      ? "Your committed position is hidden. The next automated check is voting close, then the jury draw."
+      : "Commit before voting closes to enter the jury pool.";
+  }
+  if (market.uiStage === "Jury selection") {
+    return "Voting is closed. The jury committer should fetch SpaceComputer randomness and call commitJury.";
+  }
+  if (market.uiStage === "Reveal") {
+    return "Reveal is open. Everyone who committed should reveal; selected jurors are under the strongest penalty.";
+  }
+  return "The market is resolved. Revealed voters can withdraw according to the settlement rules.";
+}
+
+function nextStepCopy(market, position) {
+  if (!position) return ["No position in this market yet.", "Open a market and commit Up or Down."];
+  if (market.uiStage === "Voting") {
+    return [
+      "Keep the reveal key in this browser.",
+      `Reminder: reveal opens after jury selection.`,
+      "You do not need to do anything until the reveal window opens.",
+    ];
+  }
+  if (market.uiStage === "Jury selection") {
+    return [
+      "Waiting for SpaceComputer randomness.",
+      "Once jurors are selected, check whether your wallet was selected.",
+      "Reveal will open immediately after commitJury succeeds.",
+    ];
+  }
+  if (market.uiStage === "Reveal") {
+    return [
+      "Reveal your position before the deadline.",
+      "If you are selected as a juror and skip reveal, full stake is forfeited.",
+      "Non-jurors also reveal to settle and avoid losing risked stake.",
+    ];
+  }
+  return ["Market resolved.", "Withdraw your payout.", "Review settlement in developer settings if needed."];
+}
+
+function reminderCopy(market, position) {
+  if (!position) return ["Connect wallet and commit to enable reminders."];
+  if (market.uiStage === "Voting") {
+    return [`Notify at voting close: ${market.deadlineLabel}.`, "Notify when jury is selected.", "Notify when reveal opens."];
+  }
+  if (market.uiStage === "Jury selection") {
+    return ["Notify when SpaceComputer randomness is posted.", "Notify when selected jury appears on-chain."];
+  }
+  if (market.uiStage === "Reveal") {
+    return [`Urgent: reveal before ${market.deadlineLabel.replace("Reveal closes in ", "")}.`, "Repeat reminder 15 minutes before close."];
+  }
+  return ["Notify when withdrawal is available."];
+}
+
 function setStatus(element, message, kind = "") {
   element.textContent = message;
   element.classList.toggle("is-error", kind === "error");
@@ -212,7 +303,7 @@ function renderMarketCards() {
     article.innerHTML = `
       <div class="market-card-top">
         <span class="market-avatar">${market.symbol}</span>
-        <span class="phase-pill">${market.phase}</span>
+        <span class="phase-pill">${market.uiStage}</span>
       </div>
       <h2>${market.title}</h2>
       <p>${market.description}</p>
@@ -264,15 +355,20 @@ function renderDashboard() {
   const market = selectedMarket();
   const position = state.currentPosition;
   els.dashboardTitle.textContent = market.title;
-  els.dashPhase.textContent = market.phase;
+  els.processTitle.textContent = market.uiStage;
+  els.deadlineText.textContent = market.deadlineLabel;
+  els.processNote.textContent = processCopy(market, position);
+  els.dashPhase.textContent = market.uiStage;
   els.dashCommits.textContent = `${market.commits} positions`;
   els.dashJury.textContent = `${market.jurySize} selected`;
   els.dashPool.textContent = formatToken(market.pool);
+  els.dashRevealedJurors.textContent = `${market.revealedJurors} / ${market.minRevealedJurors} min`;
+  els.dashJuryVote.textContent = `${market.juryUpCount} Up / ${market.juryDownCount} Down`;
   els.debugRandomness.textContent = market.randomness;
   els.debugAudit.textContent = market.auditHash;
   els.debugVault.textContent = localStorage.getItem(vaultKey(market.id)) ? "Encrypted in browser" : "Empty";
-  els.revealButton.disabled = !position || market.phase !== "Reveal";
-  els.revealButton.textContent = market.phase === "Reveal" ? "Reveal position" : "Reveal when open";
+  els.revealButton.disabled = !position || market.uiStage !== "Reveal";
+  els.revealButton.textContent = market.uiStage === "Reveal" ? "Reveal position" : "Reveal when open";
 
   if (!position) {
     els.positionSummary.innerHTML = `<p>No committed position in this session.</p>`;
@@ -283,21 +379,59 @@ function renderDashboard() {
       <div><span>Stake</span><strong>${formatToken(position.stake)}</strong></div>
       <div><span>Conviction</span><strong>${position.conviction}%</strong></div>
       <div><span>At risk</span><strong>${formatToken(position.risked.toFixed(2))}</strong></div>
+      <div><span>Reveal</span><strong>${state.revealed ? "Done" : "Required later"}</strong></div>
+      <div><span>Juror status</span><strong>${market.jurors.includes(state.wallet) ? "Selected" : "Not selected yet"}</strong></div>
     `;
     els.debugCommitHash.textContent = shortHash(position.commitmentHash);
   }
 
-  const steps =
-    market.phase === "Voting"
-      ? ["Your position is hidden.", "Wait for the SpaceComputer jury draw.", "Reveal when the reveal window opens."]
-      : ["Reveal your position to settle.", "Selected jurors decide by count.", "Withdraw after resolution."];
-  els.nextSteps.innerHTML = "";
-  steps.forEach((step) => {
-    const item = document.createElement("li");
-    item.textContent = step;
-    els.nextSteps.appendChild(item);
-  });
+  renderProcessSteps(market);
+  renderJuryPanel(market);
+  renderList(els.reminderList, reminderCopy(market, position));
+  const steps = nextStepCopy(market, position);
+  renderList(els.nextSteps, steps);
+  renderDebugJury(market);
+}
 
+function renderProcessSteps(market) {
+  const stages = ["Voting", "Jury selection", "Reveal", "Resolved"];
+  const current = lifecycleIndex(market.uiStage);
+  els.processSteps.innerHTML = "";
+  stages.forEach((stage, index) => {
+    const item = document.createElement("div");
+    item.className = `process-step${index < current ? " is-done" : ""}${index === current ? " is-current" : ""}`;
+    item.innerHTML = `<span>${index + 1}</span><strong>${stage}</strong>`;
+    els.processSteps.appendChild(item);
+  });
+}
+
+function renderList(target, rows) {
+  target.innerHTML = "";
+  rows.forEach((row) => {
+    const item = document.createElement("li");
+    item.textContent = row;
+    target.appendChild(item);
+  });
+}
+
+function renderJuryPanel(market) {
+  els.juryPanel.innerHTML = "";
+  if (market.jurors.length === 0) {
+    const empty = document.createElement("p");
+    empty.textContent = market.uiStage === "Jury selection" ? "Jury selection is in progress." : "Jury not selected yet.";
+    els.juryPanel.appendChild(empty);
+    return;
+  }
+  market.jurors.forEach((juror, index) => {
+    const item = document.createElement("div");
+    item.className = "jury-chip";
+    const revealed = index < market.revealedJurors;
+    item.innerHTML = `<strong>${juror}</strong><span>${revealed ? "Revealed" : "Waiting"}</span>`;
+    els.juryPanel.appendChild(item);
+  });
+}
+
+function renderDebugJury(market) {
   els.debugJury.innerHTML = "";
   const jurors = market.jurors.length ? market.jurors : ["Jury draw pending"];
   jurors.forEach((juror) => {

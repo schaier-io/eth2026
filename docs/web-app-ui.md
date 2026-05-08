@@ -96,6 +96,64 @@ All committed voters need to reveal. The UI should not let non-jurors treat reve
 
 Until the user reveals, the app should not present them as a winner or loser. The outcome panel can show the market outcome, but the wallet-specific settlement state should remain "Reveal required" until their reveal transaction is complete.
 
+## Contract-Aligned Dashboard
+
+After a user commits, the dashboard should become more detailed than onboarding. It should answer:
+
+- What protocol stage is the market in?
+- What deadline matters now?
+- Has SpaceComputer jury selection happened?
+- Was this wallet selected as a juror?
+- How many jurors have revealed?
+- What does the user need to do next?
+- When should the app remind the user?
+
+The app-level lifecycle maps to the current contract as:
+
+1. Voting
+   - Contract: `phase() == Voting` and current time is before `votingDeadline()`.
+   - User action: `commitVote(commitHash, stake, convictionBps)`.
+   - UI state: show time until voting closes and keep position hidden.
+
+2. Jury selection
+   - Contract: `phase() == Voting`, current time is after `votingDeadline()`, before `juryCommitDeadline()`, and `randomness() == 0`.
+   - Service action: jury committer fetches SpaceComputer randomness and calls `commitJury(randomness, auditHash)`.
+   - UI state: show loading/progress state for randomness and jury draw.
+
+3. Reveal
+   - Contract: `phase() == Reveal`.
+   - User action: `revealVote(vote, nonce)`.
+   - UI state: show selected jurors from `getJury()`, reveal progress from `revealedJurorCount()`, current counts from `juryYesCount()` / `juryNoCount()` mapped to Up/Down, and time until `revealDeadline()`.
+
+4. Resolve
+   - Contract: `phase() == Reveal` and current time is after `revealDeadline()`, or `phase() == Voting` and current time is after `juryCommitDeadline()`.
+   - User/service action: anyone may call `resolve()`.
+   - UI state: show "ready to resolve" action or automated resolver status.
+
+5. Withdraw
+   - Contract: `phase() == Resolved`.
+   - User action: `withdraw()`.
+   - UI state: show `outcome()`, payout status from `commits(wallet).withdrawn`, and withdraw action.
+
+Useful read model:
+
+- Market phase and deadlines: `phase`, `votingDeadline`, `juryCommitDeadline`, `revealDeadline`
+- Market parameters: `jurySize`, `minCommits`, `minRevealedJurors`, `minStake`, `protocolFeeBps`
+- Claim/rules document: `ipfsHash`
+- Commit aggregate: `commitCount`, `totalCommittedStake`, `totalRiskedStake`
+- Wallet position: `commits(wallet)`, `isJuror(wallet)`
+- Jury state: `getJury()`, `revealedJurorCount`, `juryYesCount`, `juryNoCount`
+- Randomness audit: `randomness`, `juryAuditHash`
+- Settlement: `outcome`, `distributablePool`, `treasuryAccrued`, `creatorAccrued`, `withdrawnCount`
+
+Reminder triggers:
+
+- Before `votingDeadline`: remind user that voting will close soon if they have not committed.
+- At `votingDeadline`: monitor for `commitJury`.
+- On `JuryCommitted`: notify committed users that reveal is open and tell selected jurors they are under the full-stake penalty.
+- Before `revealDeadline`: remind every committed wallet that has not revealed.
+- On `Resolved`: notify revealed users to withdraw and unrevealed users of the settlement consequence.
+
 ## Juror Penalty Pool
 
 For the app narrative, juror non-reveal penalties should be presented as flowing into the revenue distribution pool when the market resolves Up or Down. If the market resolves Invalid, the current contract accrues invalid-path juror penalties to the claim creator. If the intended product behavior is that all juror penalties always go to the revenue distribution pool, the contract and docs should be updated together.

@@ -114,6 +114,18 @@
                 <p id="revealStatus" class="inline-status" role="status"></p>
               </article>
 
+              <article class="process-card">
+                <div class="card-heading">
+                  <div>
+                    <p class="eyebrow">Process</p>
+                    <h2 id="processTitle">Voting</h2>
+                  </div>
+                  <strong id="deadlineText" class="deadline-pill">3h left</strong>
+                </div>
+                <div id="processSteps" class="process-steps" aria-label="Market lifecycle"></div>
+                <div id="processNote" class="process-note" role="status"></div>
+              </article>
+
               <article class="status-card">
                 <p class="eyebrow">Market status</p>
                 <div class="status-grid">
@@ -133,10 +145,28 @@
                     <span>Pool</span>
                     <strong id="dashPool"></strong>
                   </div>
+                  <div>
+                    <span>Revealed jurors</span>
+                    <strong id="dashRevealedJurors"></strong>
+                  </div>
+                  <div>
+                    <span>Jury vote</span>
+                    <strong id="dashJuryVote"></strong>
+                  </div>
                 </div>
               </article>
 
               <article class="status-card">
+                <p class="eyebrow">Selected jury</p>
+                <div id="juryPanel" class="jury-panel"></div>
+              </article>
+
+              <article class="status-card reminders-card">
+                <p class="eyebrow">Reminders</p>
+                <ol id="reminderList" class="next-steps"></ol>
+              </article>
+
+              <article class="status-card next-card">
                 <p class="eyebrow">What matters now</p>
                 <ol id="nextSteps" class="next-steps"></ol>
               </article>
