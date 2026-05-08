@@ -50,9 +50,9 @@ contract TruthMarket is ReentrancyGuard {
 
     /// @dev Outcome values:
     ///      Unresolved (0) is the default storage value while the market is in Voting/Reveal.
-    ///      Yes (1)/No (2) are set by `resolve()` on a decisive jury weight.
+    ///      Yes (1)/No (2) are set by `resolve()` on a decisive jury count majority.
     ///      Invalid (3) is set by `resolve()` on missed deadline, too few revealing jurors,
-    ///      or jury weight tie.
+    ///      or jury count tie.
     enum Outcome {
         Unresolved,
         Yes,

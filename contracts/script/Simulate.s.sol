@@ -110,7 +110,7 @@ contract SimulateScript is Script {
     ///         jurySize=5, but one juror skips reveal — leaves 4 revealing jurors
     ///         configured to split 2-2.
     function tieInvalid() external {
-        console2.log("=== Scenario: Invalid (jury weight tie on even reveals) ===");
+        console2.log("=== Scenario: Invalid (jury count tie on even reveals) ===");
         (TruthMarket market, ExampleToken token) = _deployMarket(5, 5, 3);
         Voter[] memory voters = new Voter[](5);
         voters[0] = _v(_addr("alice"), "alice", "alice-nonce", 100 ether, 10_000, 1, true);

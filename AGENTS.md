@@ -57,14 +57,16 @@ If an agent does have similar skills available, it may use them, but repo files 
 - Do not reintroduce oracle/fact-checker framing into product docs or code comments.
 - Update ADRs when a decision is hard to reverse, surprising without context, and based on a real trade-off.
 
-## Current Code Caveat
+## Current Code Status
 
-The current Solidity contract still reflects parts of the older model. Before building frontend or services, align the contract with the PRD:
+The Solidity contract is aligned with the current PRD model:
 
-- add conviction to committed positions;
-- update commitment preimage;
-- implement partial slashing;
-- replace raw stake jury totals with square-root conviction weighting;
-- replace commit-order reward weighting with risked-stake/conviction reward weighting;
-- remove fact-checker/oracle wording.
+- conviction stored on committed positions (basis points), determines risked stake;
+- commitment hash binds vote, nonce, voter address, and contract address;
+- partial slashing on losing voters and non-revealing non-jurors (1× risked stake);
+- count-based jury outcome (each selected juror = 1 vote, [ADR 0006](./docs/adr/0006-count-based-jury-voting.md));
+- selected jurors who fail to reveal forfeit their full stake (~5× the normal slash);
+- risked-stake-weighted reward distribution to winning revealers;
+- treasury fee + Invalid-path juror penalty delivered via pull pattern (`withdrawTreasury`);
+- no fact-checker/oracle wording in contract or events.
 

@@ -2,15 +2,20 @@
 
 ## Summary
 
-The Solidity core now matches the first-pass random-jury belief-resolution model:
+The Solidity core matches the current random-jury belief-resolution model:
 
 - product language no longer frames the contract as a fact-checker or truth oracle;
-- commitments include claim id, vote, nonce, stake, conviction, voter, and contract address;
-- conviction is stored in basis points and determines the risked portion of stake;
-- losers and non-revealers lose only their risked stake;
-- selected juror resolution uses square-root weighting over risked stake;
-- winner upside is distributed by risked stake instead of commit order;
+- commitments bind vote, nonce, voter address, and contract address inside the hash; stake/conviction are stored in contract state at commit time and are not part of the hash;
+- conviction is stored in basis points and determines the risked portion of stake for the normal slash and the reward weight;
+- losers and non-revealing non-jurors lose only their risked stake;
+- jury outcome is count-based: each selected juror contributes 1 vote regardless of stake (see [ADR 0006](./adr/0006-count-based-jury-voting.md));
+- selected jurors who fail to reveal forfeit their full stake — at typical conviction this is roughly 5× the normal slash;
+- the extra above the normal 1× risked slash joins the distributable pool on a Yes/No outcome or accrues to the treasury on Invalid;
+- winner upside is distributed by risked stake;
+- treasury collects fee + Invalid-path juror penalties via a pull pattern (`withdrawTreasury`); dust sweeps on the same call once every voter has withdrawn;
 - the old evidence event has been removed from the core contract.
+
+Market parameters are locked at deployment (no separate setup tx); admin and jury committer are constructor-passed immutables (intended to become hardcoded constants once the production addresses are finalized).
 
 The code intentionally remains one contract for hackathon speed, but the internals are separated around commitment, reveal accounting, jury outcome, settlement, and payout.
 
@@ -26,9 +31,10 @@ The code intentionally remains one contract for hackathon speed, but the interna
 
 - low-conviction loser gets only risked stake slashed;
 - full-conviction loser loses full stake;
-- non-revealer gets refundable stake only;
-- no selected juror reveals -> invalid outcome and full refund;
-- tied selected juror weights -> invalid outcome and full refund;
+- non-juror non-revealer gets refundable stake only (1× risked slash);
+- selected juror non-revealer at low conviction still loses full stake (covered);
+- no selected juror reveals → Invalid outcome, non-revealing jurors slashed full stake to treasury;
+- tied selected juror counts on partial reveal → Invalid outcome, non-revealing jurors slashed full stake to treasury, revealing voters refunded;
 - small-stake/low-conviction commits that would round risked stake to zero revert.
 
 ### 2. Jury Selection Service Boundary
@@ -49,12 +55,12 @@ The code intentionally remains one contract for hackathon speed, but the interna
 
 ### 4. Frontend Read Model
 
-**Cluster:** `claimStatus`, `claimTotals`, `claimWeights`, `commits`, `getJury`, `juryAuditRef`.
+**Cluster:** public state getters (`phase`, `outcome`, `juryYesCount`, `juryNoCount`, `distributablePool`, `treasuryAccrued`, `randomness`, `juryAuditHash`, `commits`, `getJury`, `getCommitters`, `commitHashOf`).
 
-**Current state:** the contract exposes smaller read helpers instead of the full storage struct getter.
+**Recommended direction:** build the UI directly against the auto-generated getters; storage layout is stable and `commits[address]` exposes per-voter state. Add a small typed client wrapper once frontend work starts. Note the constructor takes a single `InitParams` struct — the bindings library should mirror that shape.
 
-**Recommended direction:** build the UI against those helpers and avoid relying on private storage shape. Add a small typed client wrapper once frontend work starts.
+## Resolved Product Decisions
 
-## Open Product Decision
-
-The current contract treats both no-juror-reveal and tied selected-juror weights as `Invalid`, which refunds every committer in full. If the demo wants selected jurors penalized for failing to reveal even when the market is invalid, settlement semantics need one more rule change.
+- **Juror non-reveal under Invalid:** previously open. Now resolved: selected jurors who fail to reveal are slashed their full stake on every post-jury-draw outcome. On Yes/No the slashed extra (above the normal 1× risked slash) flows to the distributable pool; on Invalid the full juror penalty accrues to the treasury via the pull-pattern `withdrawTreasury`. No-reveal at all paths to Invalid + treasury accrual; Yes/No is unaffected by missing jurors beyond the slash.
+- **Tie behavior on partial reveals:** Invalid; non-revealing jurors still slashed; revealing voters refunded.
+- **Treasury fee delivery:** pull pattern via `withdrawTreasury`. Eliminates the resolve-time risk that a reverting treasury would brick the market.

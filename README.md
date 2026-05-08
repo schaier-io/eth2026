@@ -20,7 +20,8 @@ Architecture decisions live in [docs/adr](./docs/adr):
 - Random-jury belief resolution, not oracle/fact-checking.
 - Classic commit-reveal for voter sovereignty.
 - Swarm for immutable claim/rules documents.
-- Conviction and square-root weighting.
+- Conviction (basis-point risked-stake share); jury voting is count-based (1 juror = 1 vote, ADR 0006 supersedes the original square-root weighting).
+- Selected jurors who skip reveal forfeit their full stake (~5× normal slash).
 - SpaceComputer-first sponsor strategy.
 
 ## Local Skills

@@ -19,7 +19,7 @@ Core principle: there is no oracle and no external source of truth. The protocol
 
 **Positioning:**
 
-> A belief-resolution protocol where staked voters privately commit to claims, SpaceComputer randomness selects a resolving jury, and conviction-weighted reveals determine settlement.
+> A belief-resolution protocol where staked voters privately commit to claims, SpaceComputer randomness selects a resolving jury, and the count majority of revealing jurors determines the outcome. Conviction governs only economic exposure — slash size and reward share — not voting power.
 
 **Primary hackathon track:** Network Economy.
 
@@ -152,25 +152,32 @@ At 100% conviction, the voter risks the full stake.
 - Revealed losing voters lose the risked portion of their stake.
 - Revealed winning voters receive stake back plus a share of the slashed pool.
 
-**Weighting:**
+**Jury voting:**
 
-Use square-root conviction weighting for jury resolution:
+Jury outcome is count-based ([ADR 0006](./docs/adr/0006-count-based-jury-voting.md)):
 
-- effective weight = square root of `stake * convictionPercent`
-
-This gives larger stakers more influence while reducing whale dominance.
+- each selected juror contributes exactly 1 vote;
+- stake and conviction do not influence the YES/NO decision;
+- jury size is constrained to be odd (≤ 100); on full reveal, ties are impossible;
+- on partial reveal with an even count of revealing jurors, ties resolve to Invalid.
 
 **Reward weighting:**
 
-- Winner reward share should account for risked stake/conviction.
-- High-conviction voters take more downside and receive more upside.
+- Winner reward share is weighted by the winner's own `riskedStake` (= stake × conviction).
+- High-conviction winners take more downside risk (1× risked slash if wrong) and receive a larger reward share if right.
+
+**Juror non-reveal penalty:**
+
+- Selected jurors who skip reveal forfeit their full stake regardless of conviction (~5× a typical normal slash).
+- The extra above the normal 1× risked slash joins the distributable pool on Yes/No, or accrues to the treasury on Invalid (pull pattern via `withdrawTreasury`).
 
 **Acceptance:**
 
-- Selected jurors reveal and publish the result.
+- Selected jurors reveal and the count majority decides the outcome.
 - Non-selected voters can reveal to settle.
-- Winners receive stake plus upside.
-- Losers/non-revealers lose only their risked portion, not necessarily the full stake.
+- Winners receive stake plus a risked-stake-weighted bonus.
+- Non-juror losers/non-revealers lose only their risked portion.
+- Selected jurors who skip reveal lose their full stake.
 
 ---
 
@@ -248,7 +255,9 @@ TruthMarket can become a venture because it monetizes belief-resolution markets 
 - "There is no oracle."
 - "Votes are private until reveal."
 - "Randomness selects the resolving jury."
-- "Conviction increases influence and upside, but square-root weighting limits whale dominance."
+- "Each selected juror counts as one vote — stake decides exposure, not the outcome."
+- "Conviction sizes your slash and your share of the winning pool, but never your jury vote."
+- "A selected juror who skips reveal forfeits their full stake — roughly 5× the normal slash."
 - "Immutable Swarm rules prevent post-stake rule changes."
 
 **Acceptance:**
