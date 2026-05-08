@@ -63,19 +63,11 @@ contract TruthMarketScript is Script {
     }
 
     /// @dev Reads CLAIM_TAGS as a comma-separated string (e.g. "demo,test,prediction"),
-    ///      filtering out empty entries. Up to MAX_TAGS (5) entries.
+    ///      filtering out empty entries. Up to MAX_TAGS (5) entries. Returns an empty
+    ///      array when CLAIM_TAGS is unset.
     function _envTags() internal view returns (string[] memory) {
-        string memory raw;
-        try this.readEnvString("CLAIM_TAGS") returns (string memory v) {
-            raw = v;
-        } catch {
-            return new string[](0);
-        }
+        string memory raw = vm.envOr("CLAIM_TAGS", string(""));
         return _splitCsv(raw);
-    }
-
-    function readEnvString(string calldata key) external view returns (string memory) {
-        return vm.envString(key);
     }
 
     function _envUint8(string memory key) internal view returns (uint8) {

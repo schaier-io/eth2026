@@ -42,7 +42,6 @@ contract TruthMarketLifecycleTest is Test {
         address addr;
         bytes32 nonce;
         uint96 stake;
-        uint8 conv;
         uint8 vote;
     }
 
@@ -90,13 +89,13 @@ contract TruthMarketLifecycleTest is Test {
 
     // ---------- Voter helpers ----------
 
-    function _makeVoters(uint256 n, uint96 stake, uint8 conv, uint8 vote) internal returns (V[] memory vs) {
+    function _makeVoters(uint256 n, uint96 stake, uint8 vote) internal returns (V[] memory vs) {
         vs = new V[](n);
         for (uint256 i = 0; i < n; i++) {
             address a = address(uint160(uint256(keccak256(abi.encode("voter", i)))));
             vm.deal(a, 1 ether); // gas only; not strictly needed in test, but harmless
             assertTrue(token.transfer(a, DEFAULT_BALANCE));
-            vs[i] = V({ addr: a, nonce: keccak256(abi.encode("nonce", i)), stake: stake, conv: conv, vote: vote });
+            vs[i] = V({ addr: a, nonce: keccak256(abi.encode("nonce", i)), stake: stake, vote: vote });
         }
     }
 
@@ -104,7 +103,7 @@ contract TruthMarketLifecycleTest is Test {
         bytes32 hash = market.commitHashOf(v.vote, v.nonce, v.addr);
         vm.startPrank(v.addr);
         token.approve(address(market), v.stake);
-        market.commitVote(hash, v.stake, v.conv);
+        market.commitVote(hash, v.stake);
         vm.stopPrank();
     }
 
@@ -161,7 +160,7 @@ contract TruthMarketLifecycleTest is Test {
         // jurySize=1 with the 15% rule needs minCommits >= 7. All commit + reveal yes.
         market = _deployMarket(1, 7, 1);
 
-        V[] memory vs = _makeVoters(7, 50 ether, 40, 1); // all YES, 40% conv → risked 20
+        V[] memory vs = _makeVoters(7, 50 ether, 1); // all YES, 40% conv → risked 20
         _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
@@ -190,16 +189,17 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function test_LifecycleSlashesLosersAndPaysWinners() public {
-        // jurySize=3 needs minCommits >= 20. Mix yes/no voters with different convictions.
+        // jurySize=3 needs minCommits >= 20. Mix yes/no voters with different stakes.
+        // Risked stake is fixed at 20% per voter.
         market = _deployMarket(3, 20, 2);
 
-        V[] memory yes = _makeVoters(15, 60 ether, 50, 1); // risked 30 each
+        V[] memory yes = _makeVoters(15, 60 ether, 1); // risked 12 each (15 * 12 = 180 total)
         // 5 NO voters via separate make so addresses don't clash
         V[] memory no = new V[](5);
         for (uint256 i = 0; i < 5; i++) {
             address a = address(uint160(uint256(keccak256(abi.encode("noVoter", i)))));
             assertTrue(token.transfer(a, DEFAULT_BALANCE));
-            no[i] = V({ addr: a, nonce: keccak256(abi.encode("noNonce", i)), stake: 80 ether, conv: 100, vote: 2 });
+            no[i] = V({ addr: a, nonce: keccak256(abi.encode("noNonce", i)), stake: 80 ether, vote: 2 });
         }
 
         _commitAll(yes);
@@ -221,15 +221,15 @@ contract TruthMarketLifecycleTest is Test {
         assertEq(market.creatorAccrued(), 0);
         assertTrue(outcome == TruthMarket.Outcome.Yes || outcome == TruthMarket.Outcome.No);
 
-        // slashed = losers' risked stake. fee = 5%. Whoever lost forfeits their risked.
+        // slashed = losers' risked stake. fee = 5%. Risked = stake * 20 / 100.
         if (outcome == TruthMarket.Outcome.Yes) {
-            // NO side lost: 5 * 80 risked = 400.
-            assertEq(market.distributablePool(), 380 ether);
-            assertEq(market.treasuryAccrued(), 20 ether);
+            // NO side lost: 5 * (80 * 20%) = 5 * 16 = 80 risked. fee = 4. distributable = 76.
+            assertEq(market.distributablePool(), 76 ether);
+            assertEq(market.treasuryAccrued(), 4 ether);
         } else {
-            // YES side lost: 15 * 30 risked = 450.
-            assertEq(market.distributablePool(), 427.5 ether);
-            assertEq(market.treasuryAccrued(), 22.5 ether);
+            // YES side lost: 15 * (60 * 20%) = 15 * 12 = 180 risked. fee = 9. distributable = 171.
+            assertEq(market.distributablePool(), 171 ether);
+            assertEq(market.treasuryAccrued(), 9 ether);
         }
 
         _withdrawAll(yes);
@@ -247,7 +247,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_ResolvesInvalidWhenJuryCommitDeadlineMissed() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(7, 10 ether, 50, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
         _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD + ADMIN_TIMEOUT);
@@ -268,7 +268,7 @@ contract TruthMarketLifecycleTest is Test {
         // jurySize=3, minCommits=20. Find which addresses get drawn as jurors and pick
         // one of them to skip reveal — should forfeit full stake; rest of payouts work.
         market = _deployMarket(3, 20, 2);
-        V[] memory vs = _makeVoters(20, 50 ether, 40, 1); // all YES, risked 20
+        V[] memory vs = _makeVoters(20, 50 ether, 1); // all YES, risked 20
         _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
@@ -312,7 +312,7 @@ contract TruthMarketLifecycleTest is Test {
     function test_NonRevealingJurorPenaltyBypassesConvictionAtLowConv() public {
         // 10% conviction juror who skips reveal still loses full stake.
         market = _deployMarket(3, 20, 2);
-        V[] memory vs = _makeVoters(20, 100 ether, 10, 1); // 10% conv → risked 10
+        V[] memory vs = _makeVoters(20, 100 ether, 1); // 10% conv → risked 10
         _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
@@ -342,7 +342,7 @@ contract TruthMarketLifecycleTest is Test {
         // jurySize=3, minRevealedJurors=2. Only one juror reveals → Invalid; the other
         // two jurors lose full stakes, accruing to the CREATOR (not treasury).
         market = _deployMarket(3, 20, 2);
-        V[] memory vs = _makeVoters(20, 80 ether, 100, 1); // 100% conv → risked 80
+        V[] memory vs = _makeVoters(20, 80 ether, 1); // 100% conv → risked 80
         _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
@@ -438,7 +438,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_RevertsCommitJuryWhenBelowMinCommits() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(3, 10 ether, 50, 1);
+        V[] memory vs = _makeVoters(3, 10 ether, 1);
         _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
@@ -456,26 +456,26 @@ contract TruthMarketLifecycleTest is Test {
         token.approve(address(market), 0.5 ether);
         bytes32 hash = market.commitHashOf(1, "n", a);
         vm.expectRevert(TruthMarket.StakeBelowMin.selector);
-        market.commitVote(hash, 0.5 ether, 100);
+        market.commitVote(hash, 0.5 ether);
         vm.stopPrank();
     }
 
     function test_RevertsSecondCommitFromSameWallet() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(1, 10 ether, 100, 1);
+        V[] memory vs = _makeVoters(1, 10 ether, 1);
         _commit(vs[0]);
 
         bytes32 hash2 = market.commitHashOf(2, "other", vs[0].addr);
         vm.startPrank(vs[0].addr);
         token.approve(address(market), 10 ether);
         vm.expectRevert(TruthMarket.AlreadyCommitted.selector);
-        market.commitVote(hash2, 10 ether, 100);
+        market.commitVote(hash2, 10 ether);
         vm.stopPrank();
     }
 
     function test_RevealRequiresMatchingVoter() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(7, 10 ether, 50, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
         _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
@@ -569,7 +569,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_RevokeStakeSplitsHalfToClaimerHalfToPool() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(7, 80 ether, 50, 1);
+        V[] memory vs = _makeVoters(7, 80 ether, 1);
         _commitAll(vs);
 
         // Attacker (non-voter) learned vs[0]'s nonce and revokes their stake.
@@ -582,14 +582,14 @@ contract TruthMarketLifecycleTest is Test {
         // Claimer takes half (40 ether); the other half waits in revokedSlashAccrued.
         assertEq(token.balanceOf(attacker), attackerBefore + 40 ether);
         assertEq(market.revokedSlashAccrued(), 40 ether);
-        // Aggregates drop by the full revoked stake.
+        // Aggregates drop by the revoked voter's stake / risked. Risked = 20% of 80 = 16.
         assertEq(market.totalCommittedStake(), 6 * 80 ether);
-        assertEq(market.totalRiskedStake(), 6 * 40 ether);
+        assertEq(market.totalRiskedStake(), 6 * 16 ether);
     }
 
     function test_RevokeStakeAccrualJoinsDistributablePoolOnYes() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(8, 80 ether, 50, 1); // 8 voters so 1 revoke still leaves >= 7
+        V[] memory vs = _makeVoters(8, 80 ether, 1); // 8 voters so 1 revoke still leaves >= 7
         _commitAll(vs);
 
         address attacker = makeAddr("attacker");
@@ -620,7 +620,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_RevokeStakeAccrualGoesToCreatorOnInvalid() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(7, 80 ether, 50, 1);
+        V[] memory vs = _makeVoters(7, 80 ether, 1);
         _commitAll(vs);
 
         address attacker = makeAddr("attacker");
@@ -643,7 +643,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_RevokeStakeRequiresValidNonce() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(7, 80 ether, 100, 1);
+        V[] memory vs = _makeVoters(7, 80 ether, 1);
         _commitAll(vs);
 
         address attacker = makeAddr("attacker");
@@ -654,7 +654,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_RevokeStakeRevertsAfterVotingDeadline() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(7, 50 ether, 100, 1);
+        V[] memory vs = _makeVoters(7, 50 ether, 1);
         _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
@@ -667,7 +667,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_RevokeStakeRevertsInRevealPhase() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(7, 50 ether, 100, 1);
+        V[] memory vs = _makeVoters(7, 50 ether, 1);
         _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
@@ -683,7 +683,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_RevokeStakeBlocksSelfCall() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(7, 50 ether, 100, 1);
+        V[] memory vs = _makeVoters(7, 50 ether, 1);
         _commitAll(vs);
 
         // Voter cannot revoke their own commit (would let them bypass slashing).
@@ -694,7 +694,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_RevokedCommitCannotReveal() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(8, 50 ether, 100, 1);
+        V[] memory vs = _makeVoters(8, 50 ether, 1);
         _commitAll(vs);
 
         address attacker = makeAddr("attacker");
@@ -713,7 +713,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_RevokedCommitCannotWithdraw() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(8, 50 ether, 100, 1);
+        V[] memory vs = _makeVoters(8, 50 ether, 1);
         _commitAll(vs);
 
         address attacker = makeAddr("attacker");
@@ -738,7 +738,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_RevokedVoterCannotBeDrawnAsJuror() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(8, 50 ether, 50, 1);
+        V[] memory vs = _makeVoters(8, 50 ether, 1);
         _commitAll(vs);
 
         // Revoke vs[0] before jury draw.
@@ -762,7 +762,7 @@ contract TruthMarketLifecycleTest is Test {
         // shouldn't OOG even though `n` is large.
         market = _deployMarket(7, 47, 4); // jurySize=7 -> minCommits>=47 (15% rule)
         uint256 n = 200;
-        V[] memory vs = _makeVoters(n, 5 ether, 100, 1);
+        V[] memory vs = _makeVoters(n, 5 ether, 1);
         _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
@@ -781,7 +781,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_ForceSweepDustRevertsBeforeGrace() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(7, 80 ether, 50, 1);
+        V[] memory vs = _makeVoters(7, 80 ether, 1);
         _commitAll(vs);
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
@@ -799,7 +799,7 @@ contract TruthMarketLifecycleTest is Test {
         // Voters lose their right to claim only by inaction; force-sweep must not raid
         // an unclaimed payout.
         market = _deployMarket(3, 20, 2);
-        V[] memory vs = _makeVoters(20, 100 ether, 100, 1); // all YES
+        V[] memory vs = _makeVoters(20, 100 ether, 1); // all YES
         _commitAll(vs);
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
@@ -854,32 +854,35 @@ contract TruthMarketLifecycleTest is Test {
         new TruthMarket(p);
     }
 
-    function test_RevokeStakeFloorsClaimerCutAtOneWei() public {
-        // Tiny-stake demo only — minStake protects production deploys, but the rounding
-        // path still needs a guarantee for 1-wei claimer cuts.
+    function test_RevokeStakeSplitsTinyStakeRoundsToProtocolFavor() public {
+        // Smallest-viable stake: stake = 5 wei → riskedStake = 1 wei (5 * 20/100).
+        // On revoke, claimerCut = 5 / 2 = 2 wei, pooledCut = 3 wei (ceiling half goes
+        // to the pool, biasing rounding in the protocol's favour).
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        p.minStake = 1; // allow 1-wei stakes purely to exercise the rounding floor
+        p.minStake = 5; // smallest stake whose 20% risked is non-zero
         market = new TruthMarket(p);
-        V[] memory vs = _makeVoters(7, 1, 100, 1); // stake = 1 wei each
+        V[] memory vs = _makeVoters(7, 5, 1); // stake = 5 wei each
         _commitAll(vs);
 
         address attacker = makeAddr("attacker");
         uint256 before_ = token.balanceOf(attacker);
         vm.prank(attacker);
         market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
-        // Claimer floor: gets 1 wei (not 0). Pool gets 0.
-        assertEq(token.balanceOf(attacker), before_ + 1);
-        assertEq(market.revokedSlashAccrued(), 0);
+        assertEq(token.balanceOf(attacker), before_ + 2);
+        assertEq(market.revokedSlashAccrued(), 3);
     }
 
     function test_ResolveHandlesSlashedPoolAboveUint96() public {
         market = _deployMarket(1, 7, 1);
-        uint96 hugeStake = type(uint96).max / 4;
+        // Risked stake is fixed at 20% of stake. To push the slashed pool above uint96.max
+        // with 6 non-revealers contributing risked stake, each voter must stake the full
+        // uint96.max. Total risked across non-revealers = 6 * (uint96.max / 5) > uint96.max.
+        uint96 hugeStake = type(uint96).max;
         V[] memory vs = new V[](7);
         for (uint256 i = 0; i < vs.length; i++) {
             address a = address(uint160(uint256(keccak256(abi.encode("hugeVoter", i)))));
             token.mint(a, hugeStake);
-            vs[i] = V({ addr: a, nonce: keccak256(abi.encode("hugeNonce", i)), stake: hugeStake, conv: 100, vote: 1 });
+            vs[i] = V({ addr: a, nonce: keccak256(abi.encode("hugeNonce", i)), stake: hugeStake, vote: 1 });
         }
         _commitAll(vs);
 
@@ -905,7 +908,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_ForceSweepDustPaginates() public {
         market = _deployMarket(3, 20, 2);
-        V[] memory vs = _makeVoters(20, 100 ether, 100, 1); // all YES
+        V[] memory vs = _makeVoters(20, 100 ether, 1); // all YES
         _commitAll(vs);
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
@@ -929,7 +932,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_DoubleRevokeReverts() public {
         market = _deployMarket(1, 7, 1);
-        V[] memory vs = _makeVoters(7, 50 ether, 100, 1);
+        V[] memory vs = _makeVoters(7, 50 ether, 1);
         _commitAll(vs);
 
         address attacker = makeAddr("attacker");

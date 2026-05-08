@@ -8,10 +8,9 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 /// @title TruthMarket
 /// @notice Single-market random-jury belief-resolution contract. Market parameters are
 ///         locked at deployment (no separate setup tx). Voters privately commit YES/NO
-///         beliefs with stake and conviction. After the voting deadline, the jury
-///         committer posts SpaceComputer cTRNG randomness plus an audit hash; the
-///         contract draws the resolving jury on-chain via Fisher-Yates from the set of
-///         committed voters.
+///         beliefs with stake. After the voting deadline, the jury committer posts
+///         SpaceComputer cTRNG randomness plus an audit hash; the contract draws the
+///         resolving jury on-chain via Fisher-Yates from the set of committed voters.
 ///
 ///         Claim metadata: in addition to the immutable Swarm/IPFS rules document, the
 ///         contract stores an on-chain `name`, `description`, and up to MAX_TAGS short
@@ -35,20 +34,19 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 ///         claim creator on Invalid (matching the rest of the slash-pool routing).
 ///
 ///         Voting power: every selected juror counts as exactly 1 vote toward the
-///         outcome. Stake and conviction do NOT influence the YES/NO decision.
+///         outcome. Stake does NOT influence the YES/NO decision.
 ///
 ///         Stake roles:
 ///         - Normal slash: a voter on the losing side, or a non-revealing non-juror,
-///           forfeits their `riskedStake` (= stake × conviction). At a typical 20%
-///           conviction this is roughly 20% of stake.
+///           forfeits their `riskedStake` (= stake × RISK_PERCENT / 100 = 20% of stake).
 ///         - Reward: winning revealers split the slashed pool in proportion to their
-///           own `riskedStake`.
-///         - Juror penalty: ~5× the normal slash. A selected juror who fails to reveal
-///           forfeits their FULL stake regardless of conviction — i.e. 100% of stake,
-///           which lines up with 5× a typical 20% normal slash. On a Yes/No outcome
-///           the extra (above the normal 1× riskedStake slash) joins the distributable
-///           pool. On Invalid (after the jury was drawn) the entire juror penalty
-///           accrues to the **claim creator** while every other voter is fully refunded.
+///           own `riskedStake` (equivalently: in proportion to their own stake).
+///         - Juror penalty: 5× the normal slash. A selected juror who fails to reveal
+///           forfeits their FULL stake — i.e. 100% of stake, which is 5× the 20% normal
+///           slash. On a Yes/No outcome the extra (above the normal 1× riskedStake
+///           slash) joins the distributable pool. On Invalid (after the jury was drawn)
+///           the entire juror penalty accrues to the **claim creator** while every
+///           other voter is fully refunded.
 ///
 ///         Jury composition limit: the jury is always a strict minority. The contract
 ///         guarantees `jurySize ≤ MAX_JURY_PERCENTAGE × commitCount / 100`, enforced at
@@ -62,9 +60,12 @@ contract TruthMarket is ReentrancyGuard {
 
     // ---------- Constants ----------
 
-    /// @notice Conviction is expressed as a whole percent (0–100). Internally it is
-    ///         applied directly via `stake × conviction / 100` for risked stake math.
-    uint8 public constant MAX_CONVICTION_PERCENT = 100;
+    /// @notice Fixed protocol-wide risked-stake percentage (0–100). Every voter risks
+    ///         exactly this fraction of their stake on the outcome. A losing voter or
+    ///         non-revealing non-juror forfeits `stake × RISK_PERCENT / 100`. Selected
+    ///         jurors who fail to reveal forfeit their full stake (RISK_PERCENT is
+    ///         ignored for that case).
+    uint8 public constant RISK_PERCENT = 20;
     /// @notice Protocol fee on the slashed pool, expressed as a whole percent (0–10).
     uint8 public constant MAX_PROTOCOL_FEE_PERCENT = 10;
     uint32 public constant MAX_JURY_SIZE = 100;
@@ -80,6 +81,9 @@ contract TruthMarket is ReentrancyGuard {
     uint256 public constant MAX_DESCRIPTION_BYTES = 1000;
     /// @notice Maximum bytes for each short on-chain claim tag.
     uint256 public constant MAX_TAG_BYTES = 32;
+    /// @notice Maximum bytes for the on-chain Swarm/IPFS rules-document reference.
+    ///         Sized to fit any common CID/Swarm hash plus a short scheme prefix.
+    uint256 public constant MAX_IPFS_HASH_BYTES = 96;
     /// @notice Time after `revealDeadline` before residual dust may be force-swept to
     ///         treasury. Long enough that any voter has had ample time to withdraw.
     uint64 public constant DUST_SWEEP_GRACE = 30 days;
@@ -121,9 +125,8 @@ contract TruthMarket is ReentrancyGuard {
     struct Commit {
         bytes32 hash;
         uint96 stake;
-        uint96 riskedStake;
+        uint96 riskedStake; // always stake × RISK_PERCENT / 100; cached for cheap reads
         uint32 committerIndex; // index into `_activeCommitters` (valid iff !revoked)
-        uint8 conviction; // whole percent (0–100)
         uint8 revealedVote;
         bool revealed;
         bool withdrawn;
@@ -156,7 +159,8 @@ contract TruthMarket is ReentrancyGuard {
         uint256 maxNameBytes;
         uint256 maxDescriptionBytes;
         uint256 maxTagBytes;
-        uint8 maxConvictionPercent;
+        uint256 maxIpfsHashBytes;
+        uint8 riskPercent;
         uint8 maxProtocolFeePercent;
     }
 
@@ -167,6 +171,7 @@ contract TruthMarket is ReentrancyGuard {
         Outcome outcome;
         uint32 commitCount;
         uint32 revokedCount; // commitCount delta vs the original committers
+        uint32 withdrawnCount;
         uint32 revealedYesCount;
         uint32 revealedNoCount;
         uint32 revealedTotalCount;
@@ -197,7 +202,6 @@ contract TruthMarket is ReentrancyGuard {
         uint8 vote; // 0 = not revealed, 1 = YES, 2 = NO
         uint96 stake;
         uint96 riskedStake;
-        uint8 conviction; // whole percent (0–100)
     }
 
     /// @dev Constructor params bundled to avoid stack-too-deep with the deployment config.
@@ -317,9 +321,9 @@ contract TruthMarket is ReentrancyGuard {
         uint32 minRevealedJurors,
         uint96 minStake
     );
-    event VoteCommitted(address indexed voter, bytes32 commitHash, uint96 stake, uint8 conviction, uint96 riskedStake);
+    event VoteCommitted(address indexed voter, bytes32 commitHash, uint96 stake, uint96 riskedStake);
     event JuryCommitted(uint256 randomness, address[] jurors, bytes32 auditHash);
-    event VoteRevealed(address indexed voter, uint8 vote, uint96 stake, uint8 conviction, uint96 riskedStake);
+    event VoteRevealed(address indexed voter, uint8 vote, uint96 stake, uint96 riskedStake);
     event Resolved(
         Outcome outcome,
         uint32 winningJuryCount,
@@ -364,7 +368,7 @@ contract TruthMarket is ReentrancyGuard {
     constructor(InitParams memory p) {
         if (address(p.stakeToken) == address(0) || p.treasury == address(0)) revert BadParams();
         if (p.admin == address(0) || p.juryCommitter == address(0) || p.creator == address(0)) revert BadParams();
-        if (p.ipfsHash.length == 0) revert BadParams();
+        if (p.ipfsHash.length == 0 || p.ipfsHash.length > MAX_IPFS_HASH_BYTES) revert BadParams();
         if (p.votingPeriod < MIN_PERIOD || p.adminTimeout < MIN_PERIOD || p.revealPeriod < MIN_PERIOD) {
             revert BadParams();
         }
@@ -431,9 +435,10 @@ contract TruthMarket is ReentrancyGuard {
         );
     }
 
-    // ---------- Commit (hidden vote + stake + conviction) ----------
+    // ---------- Commit (hidden vote + stake) ----------
 
-    /// @notice Commit a hidden YES/NO belief with stake and conviction.
+    /// @notice Commit a hidden YES/NO belief with stake. Risked stake (the slashable
+    ///         portion) is always `stake × RISK_PERCENT / 100`.
     ///         commitHash = keccak256(abi.encode(vote, nonce, voter, block.chainid, address(this))).
     ///         The voter, chain id, and contract address are bound into the hash so that
     ///         copying someone else's hash yields a useless commit (the copier can't
@@ -444,11 +449,10 @@ contract TruthMarket is ReentrancyGuard {
     ///         support for fee-on-transfer or rebasing tokens.
     ///         Nonce MUST be a high-entropy 256-bit secret: vote space is {1,2}, so a
     ///         guessable nonce makes the hash brute-forceable.
-    function commitVote(bytes32 commitHash, uint96 stake, uint8 conviction) external nonReentrant {
+    function commitVote(bytes32 commitHash, uint96 stake) external nonReentrant {
         if (phase != Phase.Voting) revert WrongPhase();
         if (block.timestamp >= votingDeadline) revert DeadlinePassed();
         if (stake < minStake) revert StakeBelowMin();
-        if (conviction == 0 || conviction > MAX_CONVICTION_PERCENT) revert BadParams();
         if (commitHash == bytes32(0)) revert BadParams();
         if (commits[msg.sender].hash != bytes32(0)) revert AlreadyCommitted();
 
@@ -461,7 +465,7 @@ contract TruthMarket is ReentrancyGuard {
         if (received > type(uint96).max) revert BadParams();
         uint96 actualStake = uint96(received);
 
-        uint96 riskedStake = _riskedStake(actualStake, conviction);
+        uint96 riskedStake = _riskedStake(actualStake);
         if (riskedStake == 0) revert BadParams();
 
         commitCount++;
@@ -473,7 +477,6 @@ contract TruthMarket is ReentrancyGuard {
             stake: actualStake,
             riskedStake: riskedStake,
             committerIndex: idx,
-            conviction: conviction,
             revealedVote: 0,
             revealed: false,
             withdrawn: false,
@@ -481,7 +484,7 @@ contract TruthMarket is ReentrancyGuard {
         });
         _activeCommitters.push(msg.sender);
 
-        emit VoteCommitted(msg.sender, commitHash, actualStake, conviction, riskedStake);
+        emit VoteCommitted(msg.sender, commitHash, actualStake, riskedStake);
     }
 
     // ---------- Nonce-leak revocation (voting phase only) ----------
@@ -597,22 +600,22 @@ contract TruthMarket is ReentrancyGuard {
         if (juror) revealedJurorCount++;
         _recordReveal(k, vote, juror);
 
-        emit VoteRevealed(msg.sender, vote, k.stake, k.conviction, k.riskedStake);
+        emit VoteRevealed(msg.sender, vote, k.stake, k.riskedStake);
     }
 
     // ---------- Resolve ----------
 
     /// @notice Finalize the market. Anyone may call.
     ///         Outcome is decided by simple count of revealing jurors: each juror
-    ///         contributes 1 vote regardless of their stake or conviction.
+    ///         contributes 1 vote regardless of their stake.
     ///         Resolves Invalid if the admin missed the jury-commit deadline, if too few
     ///         jurors revealed, or if juror counts tie (only possible when an even number
     ///         of jurors actually revealed).
-    ///         Selected jurors who fail to reveal lose their FULL stake — conviction is
-    ///         ignored for the juror penalty. The extra (above the normal 1× riskedStake
-    ///         slash) joins the distributable pool on a Yes/No outcome. On Invalid (after
-    ///         the jury was drawn) the entire juror penalty accrues to the claim creator
-    ///         and every other voter is fully refunded.
+    ///         Selected jurors who fail to reveal lose their FULL stake. The extra
+    ///         (above the normal 1× riskedStake slash) joins the distributable pool on
+    ///         a Yes/No outcome. On Invalid (after the jury was drawn) the entire juror
+    ///         penalty accrues to the claim creator and every other voter is fully
+    ///         refunded.
     function resolve() external nonReentrant {
         if (phase == Phase.Resolved) revert WrongPhase();
 
@@ -800,7 +803,8 @@ contract TruthMarket is ReentrancyGuard {
             maxNameBytes: MAX_NAME_BYTES,
             maxDescriptionBytes: MAX_DESCRIPTION_BYTES,
             maxTagBytes: MAX_TAG_BYTES,
-            maxConvictionPercent: MAX_CONVICTION_PERCENT,
+            maxIpfsHashBytes: MAX_IPFS_HASH_BYTES,
+            riskPercent: RISK_PERCENT,
             maxProtocolFeePercent: MAX_PROTOCOL_FEE_PERCENT
         });
     }
@@ -813,6 +817,7 @@ contract TruthMarket is ReentrancyGuard {
         s.outcome = outcome;
         s.commitCount = commitCount;
         s.revokedCount = revokedCount;
+        s.withdrawnCount = withdrawnCount;
         s.revealedYesCount = revealedYesCount;
         s.revealedNoCount = revealedNoCount;
         s.revealedTotalCount = revealedYesCount + revealedNoCount;
@@ -845,7 +850,7 @@ contract TruthMarket is ReentrancyGuard {
         }
     }
 
-    /// @notice Per-juror snapshot — address, reveal status, vote, stake, conviction —
+    /// @notice Per-juror snapshot — address, reveal status, vote, stake, riskedStake —
     ///         in jury-draw order.
     function getJurorVotes() external view returns (JurorVote[] memory votes) {
         address[] memory jury = _jury;
@@ -857,8 +862,7 @@ contract TruthMarket is ReentrancyGuard {
                 revealed: k.revealed,
                 vote: k.revealedVote,
                 stake: k.stake,
-                riskedStake: k.riskedStake,
-                conviction: k.conviction
+                riskedStake: k.riskedStake
             });
         }
     }
@@ -970,7 +974,7 @@ contract TruthMarket is ReentrancyGuard {
     }
 
     /// @dev Returns (totalPenalty, totalExtra) summed over jurors who failed to reveal.
-    ///      penalty = full `stake` (conviction ignored for jurors).
+    ///      penalty = full `stake` (the juror non-reveal slash always takes 100%).
     ///      extra   = stake - riskedStake (the slash beyond what's already counted in
     ///                missedRisked).
     function _jurorNoRevealAccounting() internal view returns (uint256 totalPenalty, uint256 totalExtra) {
@@ -985,8 +989,8 @@ contract TruthMarket is ReentrancyGuard {
     }
 
     function _payoutFor(Commit storage k, bool jurorAddr) internal view returns (uint256) {
-        // Selected juror who failed to reveal: lose full stake regardless of conviction.
-        // Applies on any post-jury-draw outcome.
+        // Selected juror who failed to reveal: lose full stake (RISK_PERCENT does not
+        // apply). Applies on any post-jury-draw outcome.
         if (jurorAddr && !k.revealed && randomness != 0) {
             return 0;
         }
@@ -1009,9 +1013,9 @@ contract TruthMarket is ReentrancyGuard {
         return keccak256(abi.encode(vote, nonce, voter, block.chainid, address(this)));
     }
 
-    function _riskedStake(uint96 stake, uint8 conviction) internal pure returns (uint96) {
+    function _riskedStake(uint96 stake) internal pure returns (uint96) {
         // forge-lint: disable-next-line(unsafe-typecast)
-        return uint96((uint256(stake) * conviction) / 100);
+        return uint96((uint256(stake) * RISK_PERCENT) / 100);
     }
 
     function _resetDustSweep() internal {

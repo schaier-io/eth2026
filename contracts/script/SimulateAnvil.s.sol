@@ -70,7 +70,6 @@ contract SimulateAnvilScript is Script {
     uint32 internal constant MIN_REVEALED_JURORS = 1;
 
     uint96 internal constant VOTER_STAKE = 50 ether;
-    uint8 internal constant VOTER_CONV = 40; // 40% conviction
 
     // ---------- Phases ----------
 
@@ -139,7 +138,7 @@ contract SimulateAnvilScript is Script {
 
         console2.log("=== Phase: Commit ===");
         for (uint256 i = 0; i < 7; i++) {
-            _commit(market, token, _voterPk(i), 1, _nonce(i), VOTER_STAKE, VOTER_CONV, i);
+            _commit(market, token, _voterPk(i), 1, _nonce(i), VOTER_STAKE, i);
         }
         console2.log("Total committed stake:", market.totalCommittedStake());
         console2.log("Total risked stake:   ", market.totalRiskedStake());
@@ -249,13 +248,12 @@ contract SimulateAnvilScript is Script {
         uint8 vote,
         bytes32 nonce,
         uint96 stake,
-        uint8 conv,
         uint256 i
     ) internal {
         bytes32 hash = market.commitHashOf(vote, nonce, vm.addr(pk));
         vm.startBroadcast(pk);
         token.approve(address(market), stake);
-        market.commitVote(hash, stake, conv);
+        market.commitVote(hash, stake);
         vm.stopBroadcast();
         console2.log(string.concat("v", vm.toString(i), ": committed vote=", vm.toString(vote)));
     }

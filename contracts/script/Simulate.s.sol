@@ -40,7 +40,6 @@ contract SimulateScript is Script {
         string label;
         bytes32 nonce;
         uint96 stake;
-        uint8 conviction;
         uint8 vote; // 1 = YES, 2 = NO
         bool willReveal;
     }
@@ -50,7 +49,7 @@ contract SimulateScript is Script {
     /// @notice Happy-path: 7 voters, jurySize=1, all reveal — single juror's vote decides.
     function lifecycle() external {
         console2.log("=== Scenario: Lifecycle (jurySize=1, all reveal) ===");
-        Voter[] memory voters = _makeVoters(7, 50 ether, 40, 1, true); // all YES, 40% conv
+        Voter[] memory voters = _makeVoters(7, 50 ether, 1, true); // all YES
         (TruthMarket market, MockERC20 token) = _deployMarket(1, 7, 1);
 
         _commitAll(market, token, voters);
@@ -69,7 +68,7 @@ contract SimulateScript is Script {
     ///         refund for everyone, no jury was ever drawn so no penalty applies.
     function invalidNoJury() external {
         console2.log("=== Scenario: Invalid (admin missed jury-commit deadline) ===");
-        Voter[] memory voters = _makeVoters(7, 50 ether, 40, 1, true);
+        Voter[] memory voters = _makeVoters(7, 50 ether, 1, true);
         (TruthMarket market, MockERC20 token) = _deployMarket(1, 7, 1);
 
         _commitAll(market, token, voters);
@@ -87,7 +86,7 @@ contract SimulateScript is Script {
     ///         get full refunds. Uses jurySize=3 with 20 voters to satisfy the 15% rule.
     function invalidJurorPenalty() external {
         console2.log("=== Scenario: Invalid juror penalty -> creator ===");
-        Voter[] memory voters = _makeVoters(20, 80 ether, 100, 1, true); // 100% conv → risked = stake
+        Voter[] memory voters = _makeVoters(20, 80 ether, 1, true);
         (TruthMarket market, MockERC20 token) = _deployMarket(3, 20, 2);
 
         _commitAll(market, token, voters);
@@ -119,7 +118,7 @@ contract SimulateScript is Script {
         console2.log("Creator balance:  ", _ether(token.balanceOf(CREATOR)));
     }
 
-    /// @notice Random votes, random conviction, random reveal participation.
+    /// @notice Random votes, random reveal participation.
     /// @param seed RNG seed; pass any uint256 to vary the scenario.
     function randomScenario(uint256 seed) external {
         console2.log("=== Scenario: Random ===");
@@ -145,7 +144,7 @@ contract SimulateScript is Script {
 
     // ---------- Voter constructors ----------
 
-    function _makeVoters(uint256 n, uint96 stake, uint8 conv, uint8 vote, bool willReveal)
+    function _makeVoters(uint256 n, uint96 stake, uint8 vote, bool willReveal)
         internal
         pure
         returns (Voter[] memory voters)
@@ -157,7 +156,6 @@ contract SimulateScript is Script {
                 label: string.concat("v", _u(i)),
                 nonce: keccak256(abi.encode("nonce", i)),
                 stake: stake,
-                conviction: conv,
                 vote: vote,
                 willReveal: willReveal
             });
@@ -173,7 +171,6 @@ contract SimulateScript is Script {
                 label: string.concat("v", _u(i)),
                 nonce: bytes32(uint256(keccak256(abi.encode(seed, "nonce", i)))),
                 stake: uint96(((r >> 32) % 90 ether) + 10 ether),
-                conviction: uint8(((r >> 8) % 90) + 10), // 10–99 percent
                 vote: uint8((r & 1) + 1),
                 willReveal: ((r >> 64) % 10) < 8
             });
@@ -240,7 +237,7 @@ contract SimulateScript is Script {
             bytes32 hash = market.commitHashOf(v.vote, v.nonce, v.addr);
             vm.startPrank(v.addr);
             token.approve(address(market), v.stake);
-            market.commitVote(hash, v.stake, v.conviction);
+            market.commitVote(hash, v.stake);
             vm.stopPrank();
         }
         console2.log("Committers:        ", voters.length);
@@ -327,9 +324,9 @@ contract SimulateScript is Script {
                     _voteLabel(jv[i].vote),
                     " stake=",
                     _ether(jv[i].stake),
-                    " conv=",
-                    _u(jv[i].conviction),
-                    "% revealed=",
+                    " risked=",
+                    _ether(jv[i].riskedStake),
+                    " revealed=",
                     jv[i].revealed ? "yes" : "no"
                 )
             );
