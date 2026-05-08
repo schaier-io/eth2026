@@ -12,9 +12,9 @@ The Solidity core matches the current random-jury belief-resolution model:
 - losers and non-revealing non-jurors lose only their risked stake;
 - jury outcome is count-based: each selected juror contributes 1 vote regardless of stake (see [ADR 0006](./adr/0006-count-based-jury-voting.md));
 - selected jurors who fail to reveal forfeit their full stake — at typical conviction this is roughly 5× the normal slash;
-- the extra above the normal 1× risked slash joins the distributable pool on a Yes/No outcome or accrues to the treasury on Invalid;
+- the extra above the normal 1× risked slash joins the distributable pool on a Yes/No outcome or accrues to the claim creator on Invalid;
 - winner upside is distributed by risked stake;
-- treasury collects fee + Invalid-path juror penalties via a pull pattern (`withdrawTreasury`); dust sweeps on the same call once every voter has withdrawn;
+- treasury collects protocol fees via `withdrawTreasury`; Invalid-path juror penalties accrue to the claim creator via `withdrawCreator`; dust may be swept to treasury after the grace window;
 - the old evidence event has been removed from the core contract.
 
 Market parameters are locked at deployment (no separate setup tx); admin and jury committer are constructor-passed immutables (intended to become hardcoded constants once the production addresses are finalized).
@@ -35,8 +35,8 @@ The code intentionally remains one contract for hackathon speed, but the interna
 - full-conviction loser loses full stake;
 - non-juror non-revealer gets refundable stake only (1× risked slash);
 - selected juror non-revealer at low conviction still loses full stake (covered);
-- no selected juror reveals → Invalid outcome, non-revealing jurors slashed full stake to treasury;
-- tied selected juror counts on partial reveal → Invalid outcome, non-revealing jurors slashed full stake to treasury, revealing voters refunded;
+- no selected juror reveals → Invalid outcome, non-revealing jurors slashed full stake to the claim creator;
+- tied selected juror counts on partial reveal → Invalid outcome, non-revealing jurors slashed full stake to the claim creator, revealing voters refunded;
 - small-stake/low-conviction commits that would round risked stake to zero revert.
 
 ### 2. Jury Selection Service Boundary
@@ -63,6 +63,6 @@ The code intentionally remains one contract for hackathon speed, but the interna
 
 ## Resolved Product Decisions
 
-- **Juror non-reveal under Invalid:** previously open. Now resolved: selected jurors who fail to reveal are slashed their full stake on every post-jury-draw outcome. On Yes/No the slashed extra (above the normal 1× risked slash) flows to the distributable pool; on Invalid the full juror penalty accrues to the treasury via the pull-pattern `withdrawTreasury`. No-reveal at all paths to Invalid + treasury accrual; Yes/No is unaffected by missing jurors beyond the slash.
+- **Juror non-reveal under Invalid:** previously open. Now resolved: selected jurors who fail to reveal are slashed their full stake on every post-jury-draw outcome. On Yes/No the slashed extra (above the normal 1× risked slash) flows to the distributable pool; on Invalid the full juror penalty accrues to the claim creator via the pull-pattern `withdrawCreator`. No-reveal at all paths to Invalid + creator accrual; Yes/No is unaffected by missing jurors beyond the slash.
 - **Tie behavior on partial reveals:** Invalid; non-revealing jurors still slashed; revealing voters refunded.
 - **Treasury fee delivery:** pull pattern via `withdrawTreasury`. Eliminates the resolve-time risk that a reverting treasury would brick the market.

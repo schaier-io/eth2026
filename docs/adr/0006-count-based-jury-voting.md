@@ -17,7 +17,7 @@ A randomly selected juror who skips reveal damages the resolution process and is
 - Normal slash (loser, or non-revealing non-juror): 1 × `riskedStake` (= stake × conviction). At a typical 20% conviction this is roughly 20% of stake.
 - Juror non-reveal slash: full stake. Conviction is ignored for jurors. At a typical 20% conviction this lines up with ~5× the normal slash.
 
-The extra (above the normal 1× `riskedStake`) joins the distributable pool on a Yes/No outcome (so honest revealing winners absorb it) or accrues to the treasury when the market resolves Invalid.
+The extra (above the normal 1× `riskedStake`) joins the distributable pool on a Yes/No outcome (so honest revealing winners absorb it) or accrues to the claim creator when the market resolves Invalid.
 
 **Implications**
 

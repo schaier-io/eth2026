@@ -169,7 +169,7 @@ Jury outcome is count-based ([ADR 0006](./docs/adr/0006-count-based-jury-voting.
 **Juror non-reveal penalty:**
 
 - Selected jurors who skip reveal forfeit their full stake regardless of conviction (~5× a typical normal slash).
-- The extra above the normal 1× risked slash joins the distributable pool on Yes/No, or accrues to the treasury on Invalid (pull pattern via `withdrawTreasury`).
+- The extra above the normal 1× risked slash joins the distributable pool on Yes/No, or accrues to the claim creator on Invalid (pull pattern via `withdrawCreator`).
 
 **Acceptance:**
 

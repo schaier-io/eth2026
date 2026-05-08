@@ -41,7 +41,7 @@ The portion of a voter stake that can be slashed when the voter loses or, as a n
 _Avoid_: full stake unless conviction is 100%
 
 **Juror non-reveal slash**:
-The penalty applied when a selected juror skips reveal. Equal to the juror's full stake (conviction is ignored). At a typical 20%-conviction normal slash, this is roughly 5× the normal loss. The extra above the normal 1× risked slash joins the distributable pool on Yes/No, or accrues to the treasury on Invalid.
+The penalty applied when a selected juror skips reveal. Equal to the juror's full stake (conviction is ignored). At a typical 20%-conviction normal slash, this is roughly 5× the normal loss. The extra above the normal 1× risked slash joins the distributable pool on Yes/No, or accrues to the claim creator on Invalid.
 _Avoid_: 1× risked, partial slash for jurors
 
 **Slashed pool**:
@@ -79,7 +79,7 @@ _Avoid_: governance token unless governance is explicitly added later
 - **Selected jurors** reveal; the market outcome is the simple count majority of revealing jurors (one juror = one **Jury vote**).
 - All voters reveal to settle their own stake.
 - Losing voters and non-revealing non-jurors contribute **Risked stake** to the **Slashed pool**.
-- Selected jurors who skip reveal contribute their **full stake** (the **Juror non-reveal slash**) — risked portion to the slashed pool, extra to the distributable pool on Yes/No or to treasury on Invalid.
+- Selected jurors who skip reveal contribute their **full stake** (the **Juror non-reveal slash**) — risked portion to the slashed pool, extra to the distributable pool on Yes/No or to the claim creator on Invalid.
 - Winning voters receive returned stake plus a share of the **Slashed pool** weighted by their own risked stake.
 
 ## Example Dialogue
@@ -101,4 +101,3 @@ _Avoid_: governance token unless governance is explicitly added later
 - "Oracle" appeared in contract wording. Resolved: avoid oracle language except when discussing rejected alternatives.
 - Apify was originally part of the critical path. Resolved: Apify is optional and not core.
 - "Jury weight" originally meant `sqrt(riskedStake)` per juror. Resolved (ADR 0006): each juror contributes 1 **Jury vote**; stake/conviction no longer affect the YES/NO decision, only slash and reward distribution.
-

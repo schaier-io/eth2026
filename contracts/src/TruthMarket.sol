@@ -17,6 +17,11 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 ///         contract stores an on-chain `name`, `description`, and up to MAX_TAGS short
 ///         `tags` so the claim is self-describing without a fetch.
 ///
+///         Stake token assumption: `stakeToken` must be a plain, non-rebasing,
+///         no-fee ERC20. The contract measures the actual inbound amount received
+///         on commit, but payout accounting assumes recorded token units remain
+///         transferable 1:1 for the market lifetime.
+///
 ///         Nonce-leak revocation (voting phase only): anyone who can produce a valid
 ///         (vote, nonce) for another voter's commit may call `revokeStake(voter, ...)`.
 ///         The voter's stake is split 50/50: half pays the claimer immediately, half
@@ -304,7 +309,12 @@ contract TruthMarket is ReentrancyGuard {
     event JuryCommitted(uint256 randomness, address[] jurors, bytes32 auditHash);
     event VoteRevealed(address indexed voter, uint8 vote, uint96 stake, uint8 conviction, uint96 riskedStake);
     event Resolved(
-        Outcome outcome, uint32 winningJuryCount, uint256 slashedRiskedStake, uint256 fee, uint256 distributablePool
+        Outcome outcome,
+        uint32 winningJuryCount,
+        uint256 slashedRiskedStake,
+        uint256 protocolFee,
+        uint256 creatorAccruedAmount,
+        uint256 distributablePool
     );
     event Withdrawn(address indexed voter, uint256 payout);
     event TreasuryUpdated(address indexed treasury);
@@ -418,8 +428,9 @@ contract TruthMarket is ReentrancyGuard {
     ///         someone else's hash yields a useless commit (the copier can't reveal it),
     ///         and so that nonces are not correlated across markets.
     ///         Each wallet may commit at most once.
-    ///         The actual received balance (after any token-transfer fee) is what gets
-    ///         recorded; the `stake` argument is just the spend authorization.
+    ///         The actual received balance is what gets recorded; the `stake` argument
+    ///         is just the spend authorization. This is an inbound sanity check, not
+    ///         support for fee-on-transfer or rebasing tokens.
     ///         Nonce MUST be a high-entropy 256-bit secret: vote space is {1,2}, so a
     ///         guessable nonce makes the hash brute-forceable.
     function commitVote(bytes32 commitHash, uint96 stake, uint8 conviction) external nonReentrant {
@@ -430,7 +441,8 @@ contract TruthMarket is ReentrancyGuard {
         if (commitHash == bytes32(0)) revert BadParams();
         if (commits[msg.sender].hash != bytes32(0)) revert AlreadyCommitted();
 
-        // Use the actual received balance to defend against fee-on-transfer / rebasing tokens.
+        // Measure the actual inbound receipt, while still requiring a plain, no-fee,
+        // non-rebasing ERC20 so later payouts remain 1:1 with recorded stake units.
         uint256 balanceBefore = stakeToken.balanceOf(address(this));
         stakeToken.safeTransferFrom(msg.sender, address(this), stake);
         uint256 received = stakeToken.balanceOf(address(this)) - balanceBefore;
@@ -600,7 +612,7 @@ contract TruthMarket is ReentrancyGuard {
             creatorAccrued += revokedHalf;
             outcome = Outcome.Invalid;
             phase = Phase.Resolved;
-            emit Resolved(Outcome.Invalid, 0, 0, revokedHalf, 0);
+            emit Resolved(Outcome.Invalid, 0, 0, 0, revokedHalf, 0);
             return;
         }
 
@@ -618,21 +630,24 @@ contract TruthMarket is ReentrancyGuard {
         phase = Phase.Resolved;
 
         uint256 slashedRiskedStake;
-        uint256 fee;
+        uint256 protocolFee;
+        uint256 creatorAccruedAmount;
         if (out != Outcome.Invalid) {
-            (slashedRiskedStake, fee) = _settleSlashedPool(out);
+            (slashedRiskedStake, protocolFee) = _settleSlashedPool(out);
         } else {
             // Jury was drawn but outcome Invalid: slash each non-revealing juror's full
             // stake and route the revoked-slash half to the creator. Every other voter
-            // is refunded. `fee` in the event surfaces the total creator-bound amount.
+            // is refunded. The event reports this separately from protocol fees.
             uint96 jurorPenalty = _accrueNonRevealingJurorPenaltyToCreator();
             uint96 revokedHalf = revokedSlashAccrued;
             revokedSlashAccrued = 0;
             creatorAccrued += revokedHalf;
-            fee = uint256(jurorPenalty) + uint256(revokedHalf);
+            creatorAccruedAmount = uint256(jurorPenalty) + uint256(revokedHalf);
         }
 
-        emit Resolved(out, winningJuryCount, slashedRiskedStake, fee, distributablePool);
+        emit Resolved(
+            out, winningJuryCount, slashedRiskedStake, protocolFee, creatorAccruedAmount, distributablePool
+        );
     }
 
     // ---------- Withdraw ----------
@@ -929,7 +944,7 @@ contract TruthMarket is ReentrancyGuard {
         return (Outcome.Invalid, 0);
     }
 
-    function _settleSlashedPool(Outcome out) internal returns (uint256 slashedRiskedStake, uint256 fee) {
+    function _settleSlashedPool(Outcome out) internal returns (uint256 slashedRiskedStake, uint256 protocolFee) {
         uint256 losingRisked = out == Outcome.Yes ? revealedNoRisked : revealedYesRisked;
         uint256 missedRisked = uint256(totalRiskedStake) - revealedYesRisked - revealedNoRisked;
         (, uint96 jurorExtra) = _jurorNoRevealAccounting();
@@ -938,9 +953,9 @@ contract TruthMarket is ReentrancyGuard {
         slashedRiskedStake = losingRisked + missedRisked + uint256(jurorExtra) + revokedHalf;
 
         if (slashedRiskedStake > 0) {
-            fee = (slashedRiskedStake * protocolFeePercent) / 100;
-            if (fee > 0) treasuryAccrued += fee;
-            distributablePool = slashedRiskedStake - fee;
+            protocolFee = (slashedRiskedStake * protocolFeePercent) / 100;
+            if (protocolFee > 0) treasuryAccrued += protocolFee;
+            distributablePool = slashedRiskedStake - protocolFee;
         }
     }
 

@@ -10,6 +10,15 @@ contract TruthMarketLifecycleTest is Test {
     TruthMarket internal market;
     MockERC20 internal token;
 
+    event Resolved(
+        TruthMarket.Outcome outcome,
+        uint32 winningJuryCount,
+        uint256 slashedRiskedStake,
+        uint256 protocolFee,
+        uint256 creatorAccruedAmount,
+        uint256 distributablePool
+    );
+
     address internal treasury = makeAddr("treasury");
     address internal admin = makeAddr("admin");
     address internal juryCommitter = makeAddr("juryCommitter");
@@ -139,6 +148,8 @@ contract TruthMarketLifecycleTest is Test {
         _revealAll(vs);
 
         vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        vm.expectEmit(false, false, false, true, address(market));
+        emit Resolved(TruthMarket.Outcome.Yes, 1, 0, 0, 0, 0);
         market.resolve();
 
         // No losers, no missed reveals → slashed pool empty. Outcome Yes.
@@ -332,6 +343,8 @@ contract TruthMarketLifecycleTest is Test {
         }
 
         vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        vm.expectEmit(false, false, false, true, address(market));
+        emit Resolved(TruthMarket.Outcome.Invalid, 0, 0, 0, 160 ether, 0);
         market.resolve();
 
         assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Invalid));
@@ -568,6 +581,8 @@ contract TruthMarketLifecycleTest is Test {
 
         // Skip jury commit so the market resolves Invalid via timeout.
         vm.warp(block.timestamp + VOTING_PERIOD + ADMIN_TIMEOUT);
+        vm.expectEmit(false, false, false, true, address(market));
+        emit Resolved(TruthMarket.Outcome.Invalid, 0, 0, 0, 40 ether, 0);
         market.resolve();
 
         assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Invalid));

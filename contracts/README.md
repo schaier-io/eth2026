@@ -66,6 +66,13 @@ forge install
 forge build
 ```
 
+## Stake token assumption
+
+`TruthMarket` expects `STAKE_TOKEN` to be a plain, non-rebasing, no-fee ERC20. The contract records the
+actual token amount received during `commitVote`, but payout math assumes recorded stake units remain transferable
+1:1 for the full market lifecycle. Do not deploy markets with rebasing tokens, fee-on-transfer tokens, or tokens
+with other balance-changing transfer mechanics.
+
 ## Local emulation (anvil)
 
 `anvil` ships with Foundry. It runs a deterministic local node on `127.0.0.1:8545`, chain id `31337`, with 10 pre-funded accounts.

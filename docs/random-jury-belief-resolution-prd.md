@@ -72,7 +72,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - Non-selected voters do not determine the outcome but reveal to prove whether they won or lost.
 - Losing voters lose only their risked portion, not necessarily their full stake.
 - Non-revealing non-juror voters lose the risked portion because unrevealed votes cannot be classified as winning or losing.
-- Selected jurors who fail to reveal forfeit their full stake (~5× a typical normal slash); the extra above the normal 1× risked portion joins the distributable pool on a Yes/No outcome or accrues to the treasury on Invalid.
+- Selected jurors who fail to reveal forfeit their full stake (~5× a typical normal slash); the extra above the normal 1× risked portion joins the distributable pool on a Yes/No outcome or accrues to the claim creator on Invalid.
 - Winning voters receive stake back plus a share of slashed stake, weighted by their own risked stake.
 - Jury size is constrained to be odd (≤ 100). Even-count partial reveals can still tie → Invalid.
 - The token story for the hackathon is limited to staking and protocol fee/revenue share.
