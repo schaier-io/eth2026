@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: help install update build test test-gas coverage fmt fmt-check snapshot clean anvil deploy-counter deploy-token verify-counter
+.PHONY: help install update build test test-gas coverage fmt fmt-check snapshot clean anvil deploy-counter deploy-token deploy-market verify-counter
 
 help:
 	@echo "Targets:"
@@ -20,37 +20,39 @@ help:
 	@echo "  new-key-write   - generate keypair AND write to .env"
 	@echo "  deploy-counter NETWORK=anvil  - deploy Counter"
 	@echo "  deploy-token   NETWORK=anvil  - deploy ExampleToken"
+	@echo "  deploy-market  NETWORK=anvil  - deploy TruthMarket"
 	@echo "  clean           - remove build artifacts"
 
 NETWORK ?= anvil
 BROADCAST ?= --broadcast
+FORGE ?= $(shell if [ -x "$$HOME/.foundry/bin/forge" ]; then printf "%s" "$$HOME/.foundry/bin/forge"; else command -v forge; fi)
 
 install:
-	forge install
+	$(FORGE) install
 
 update:
-	forge update
+	$(FORGE) update
 
 build:
-	forge build
+	$(FORGE) build
 
 test:
-	forge test -vv
+	$(FORGE) test -vv
 
 test-gas:
-	forge test --gas-report
+	$(FORGE) test --gas-report
 
 coverage:
-	forge coverage --report lcov
+	$(FORGE) coverage --report lcov
 
 fmt:
-	forge fmt
+	$(FORGE) fmt
 
 fmt-check:
-	forge fmt --check
+	$(FORGE) fmt --check
 
 snapshot:
-	forge snapshot
+	$(FORGE) snapshot
 
 anvil:
 	anvil --host 0.0.0.0 --chain-id 31337
@@ -68,10 +70,13 @@ new-key-write:
 	./bin/new-key --write
 
 deploy-counter:
-	forge script script/Counter.s.sol:CounterScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv
+	$(FORGE) script script/Counter.s.sol:CounterScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv
 
 deploy-token:
-	forge script script/ExampleToken.s.sol:ExampleTokenScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv
+	$(FORGE) script script/ExampleToken.s.sol:ExampleTokenScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv
+
+deploy-market:
+	$(FORGE) script script/TruthMarket.s.sol:TruthMarketScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv
 
 clean:
-	forge clean
+	$(FORGE) clean

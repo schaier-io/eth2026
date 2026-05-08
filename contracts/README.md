@@ -1,6 +1,6 @@
 # eth2026 / contracts
 
-Ethereum smart-contract boilerplate.
+TruthMarket smart contracts and Foundry tooling.
 
 **Stack**
 
@@ -21,15 +21,18 @@ contracts/
 │   ├── new-key           # generate keypair (--write to save to .env)
 │   ├── anvil-up          # start anvil in background
 │   ├── anvil-down        # stop background anvil
-│   ├── deploy            # deploy {counter|token} [network]
+│   ├── deploy            # deploy {counter|token|market} [network]
 │   └── counter           # {read|inc|inc-by N|set N} [network]
 ├── src/
+│   ├── TruthMarket.sol   # random-jury belief-resolution market
 │   ├── Counter.sol       # minimal example w/ events + custom errors
 │   └── ExampleToken.sol  # ERC20 + Burnable + Permit + Ownable cap
 ├── test/
+│   ├── TruthMarketLifecycle.t.sol
 │   ├── Counter.t.sol
 │   └── ExampleToken.t.sol
 ├── script/
+│   ├── TruthMarket.s.sol
 │   ├── Counter.s.sol
 │   └── ExampleToken.s.sol
 └── lib/
@@ -45,6 +48,8 @@ Foundry installed (see [foundry.paradigm.xyz](https://foundry.paradigm.xyz)). If
 export PATH="$HOME/.foundry/bin:$PATH"
 foundryup            # update to latest
 ```
+
+The `Makefile` and `bin/deploy` prefer `$HOME/.foundry/bin/forge` when it exists.
 
 ## Setup
 
@@ -71,6 +76,7 @@ Everything you need lives in `bin/`. They source `.env` automatically, resolve d
 ```sh
 bin/anvil-up                       # start anvil in background (writes .anvil.pid)
 bin/deploy counter                 # deploy Counter to anvil
+bin/deploy market                  # deploy TruthMarket to anvil
 bin/counter read                   # → 0
 bin/counter inc                    # → 1
 bin/counter inc-by 5               # → 6
@@ -95,6 +101,7 @@ bin/new-key --mnemonic             # 12-word HD wallet
 # deploy
 make deploy-counter NETWORK=anvil
 make deploy-token   NETWORK=anvil
+make deploy-market  NETWORK=anvil
 
 # read state
 cast call <counter_addr> "number()(uint256)" --rpc-url anvil
@@ -132,6 +139,7 @@ anvil --fork-url $MAINNET_RPC_URL --fork-block-number 19000000
 | `make anvil`             | local node on `:8545`                     |
 | `make deploy-counter`    | deploy `Counter` (default `NETWORK=anvil`)|
 | `make deploy-token`      | deploy `ExampleToken`                     |
+| `make deploy-market`     | deploy `TruthMarket`                      |
 | `make clean`             | remove build artifacts                    |
 
 Override the RPC: `make deploy-counter NETWORK=sepolia`.
