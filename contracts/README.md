@@ -22,16 +22,15 @@ contracts/
 │   ├── new-key           # generate keypair (--write to save to .env)
 │   ├── anvil-up          # start anvil in background
 │   ├── anvil-down        # stop background anvil
-│   └── deploy            # deploy {token|market} [network]
+│   └── deploy            # deploy market [network]
 ├── src/
 │   ├── TruthMarket.sol   # random-jury belief-resolution market
-│   └── ExampleToken.sol  # ERC20 stake-token fixture (Burnable+Permit+Ownable cap)
+│   └── ExampleToken.sol  # ERC20 stake-token fixture, used inline by tests + sim
 ├── test/
 │   ├── TruthMarketLifecycle.t.sol
 │   └── ExampleToken.t.sol
 ├── script/
 │   ├── TruthMarket.s.sol # production deploy
-│   ├── ExampleToken.s.sol# stake-token deploy (test/sim setups)
 │   └── Simulate.s.sol    # local end-to-end scenarios (no broadcast)
 └── lib/
     ├── forge-std/
@@ -73,12 +72,11 @@ Everything you need lives in `bin/`. They source `.env` automatically, resolve d
 
 ```sh
 bin/anvil-up                       # start anvil in background (writes .anvil.pid)
-bin/deploy token                   # deploy ExampleToken to anvil
-bin/deploy market                  # deploy TruthMarket to anvil
+bin/deploy market                  # deploy TruthMarket to anvil (provide STAKE_TOKEN in .env)
 bin/anvil-down                     # stop background anvil
 ```
 
-Same scripts work against any configured network: `bin/deploy market sepolia`, etc.
+Same script works against any configured network: `bin/deploy market sepolia`, etc.
 
 ### Local end-to-end simulation
 
@@ -105,8 +103,7 @@ bin/new-key --mnemonic             # 12-word HD wallet
 ### Manual mode — raw cast
 
 ```sh
-# deploy
-make deploy-token   NETWORK=anvil
+# deploy (STAKE_TOKEN must be set to a real ERC20 in .env)
 make deploy-market  NETWORK=anvil
 
 # read state
@@ -143,8 +140,7 @@ anvil --fork-url $MAINNET_RPC_URL --fork-block-number 19000000
 | `make fmt` / `fmt-check` | format / check formatting                 |
 | `make snapshot`          | gas snapshot to `.gas-snapshot`           |
 | `make anvil`             | local node on `:8545`                     |
-| `make deploy-token`      | deploy `ExampleToken` (default `NETWORK=anvil`) |
-| `make deploy-market`     | deploy `TruthMarket`                      |
+| `make deploy-market`     | deploy `TruthMarket` (default `NETWORK=anvil`) |
 | `make simulate`          | run the lifecycle scenario in-process     |
 | `make clean`             | remove build artifacts                    |
 
