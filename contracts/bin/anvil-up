@@ -17,14 +17,13 @@ if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
   exit 0
 fi
 
-EXTRA=()
 if [[ "${1:-}" == "--fork" ]]; then
   [ -f .env ] && set -a && source .env && set +a
   : "${MAINNET_RPC_URL:?MAINNET_RPC_URL must be set in .env to fork}"
-  EXTRA=(--fork-url "$MAINNET_RPC_URL")
+  anvil --chain-id 31337 --host 127.0.0.1 --fork-url "$MAINNET_RPC_URL" > "$LOGFILE" 2>&1 &
+else
+  anvil --chain-id 31337 --host 127.0.0.1 > "$LOGFILE" 2>&1 &
 fi
-
-anvil --chain-id 31337 --host 127.0.0.1 "${EXTRA[@]}" > "$LOGFILE" 2>&1 &
 echo $! > "$PIDFILE"
 
 # wait for RPC up

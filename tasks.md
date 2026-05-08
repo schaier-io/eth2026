@@ -8,7 +8,7 @@ Agent-native prediction-market fact-checker. Bounty surface: Apify (X402) + ENS 
 
 ### 1. Smart Contract — claim & market core (4-phase commit-reveal)
 
-**What:** Solidity contract that owns the lifecycle of a claim through four explicit phases: **Created → Voting → Reveal → Resolved**. Voters commit hidden votes during the voting phase; a cTRNG-selected jury reveals during the reveal phase; payouts are weighted by a sequence-based curve so earlier-correct jurors earn more.
+**What:** Solidity contract that owns the lifecycle of a claim through four explicit phases: **Created → Voting → Reveal → Resolved**. Voters commit hidden votes during the voting phase; an admin-committed cTRNG jury (a strict subset of committers) decides the outcome by revealing during the reveal phase, but reveal is open to every committer; payouts are weighted by a sequence-based curve so earlier-correct revealers earn more.
 
 **Why first:** Everything else reads from or writes to this. Frontend, agents, Swarm pointers, jury selection, and rewards all pivot on the contract being deployed and stable. The commit-reveal design also means front-running and last-second copy-vote attacks aren't possible — important for a credible fact-checking story.
 
@@ -47,7 +47,7 @@ The jury's role is purely informational — they are the truth oracle. Economic 
 
 **Dependencies:** None. Start immediately. Task 3 plugs into `commitJury` later.
 
-**Acceptance:** Contract verified on the testnet block explorer; a Foundry script runs the full happy path end-to-end (create → 3+ commits → advance → commitJury with mock randomness + dummy CID → reveals → resolve → withdraw) with assertions on token balances; a second script exercises the slash paths (non-revealing juror, losing juror, invalid-outcome refund) and confirms the math.
+**Acceptance:** Contract verified on the testnet block explorer; a Foundry script runs the full happy path end-to-end (create → 3+ commits including non-jurors → advance → commitJury with mock randomness + dummy CID → reveals from jurors and at least one non-juror → resolve → withdraw) with assertions on token balances; a second script exercises the slash paths (non-revealer, losing revealer, invalid-outcome refund) and confirms a non-juror who revealed correctly receives their share of the distributable pool.
 
 **Known gaps to fix before audit (not blockers for hackathon):**
 - Jury submission is fully trusted — the admin/oracle could post any juror list and any randomness, and the contract has no way to detect it. The IPFS CID is the only audit trail. Future hardening: signed cTRNG attestations, on-chain verifier, or in-contract derivation from a posted seed.
@@ -153,7 +153,8 @@ Task 2: Swarm Upload  ────────────┼──────�
                                   └──────────────► AI Agent
                                                    (commits hidden vote,
                                                     posts evidence to Swarm,
-                                                    reveals if drawn)
+                                                    reveals to claim payout —
+                                                    drawn-jury or not)
 
 Task 4: Umia Pitch  ──────────────────────────────► (needs 1–3 shaped, not finished)
 
@@ -191,7 +192,7 @@ x402 Integration  ────────────────────�
 ## Definition of Done (for the hackathon submission)
 
 - Contract deployed and verified on testnet, with a transaction history that walks all four phases (Created → Voting → Reveal → Resolved) on at least one claim
-- One real claim resolved end-to-end on stage: claim doc on Swarm, multiple hidden commits, admin-committed jury (cTRNG output pinned to IPFS, posted via `commitJury`) visible in `JuryCommitted`, reveals from the posted jurors, payouts that demonstrate the sequence-based bonus
+- One real claim resolved end-to-end on stage: claim doc on Swarm, multiple hidden commits (jurors + at least one non-juror), admin-committed jury (cTRNG output pinned to IPFS, posted via `commitJury`) visible in `JuryCommitted`, reveals from jurors and at least one non-juror, payouts that demonstrate the sequence-based bonus and the non-juror revealer collecting their share
 - At least one AI fact-checker agent that calls an Apify Actor, posts evidence to Swarm, commits a vote, and is paid via x402
 - 60-second demo video uploaded
 - Umia pitch slide ready

@@ -17,6 +17,12 @@ contracts/
 ├── remappings.txt        # @openzeppelin/contracts/* → lib/...
 ├── Makefile              # common commands
 ├── .env.example          # copy to .env, fill in
+├── bin/                  # CLI helpers (bash)
+│   ├── new-key           # generate keypair (--write to save to .env)
+│   ├── anvil-up          # start anvil in background
+│   ├── anvil-down        # stop background anvil
+│   ├── deploy            # deploy {counter|token} [network]
+│   └── counter           # {read|inc|inc-by N|set N} [network]
 ├── src/
 │   ├── Counter.sol       # minimal example w/ events + custom errors
 │   └── ExampleToken.sol  # ERC20 + Burnable + Permit + Ownable cap
@@ -54,25 +60,43 @@ forge test -vv
 
 `anvil` ships with Foundry. It runs a deterministic local node on `127.0.0.1:8545`, chain id `31337`, with 10 pre-funded accounts.
 
-**Terminal 1 — start the node:**
-
-```sh
-make anvil
-# or:  anvil --host 0.0.0.0 --chain-id 31337
-```
-
 The first dev account's private key (used by `.env.example`) is:
 `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80`
 (address `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266`).
 
-**Terminal 2 — deploy and interact:**
+### Easy mode — `bin/` scripts
+
+Everything you need lives in `bin/`. They source `.env` automatically, resolve deployed addresses from `broadcast/`, and require zero hand-editing.
+
+```sh
+bin/anvil-up                       # start anvil in background (writes .anvil.pid)
+bin/deploy counter                 # deploy Counter to anvil
+bin/counter read                   # → 0
+bin/counter inc                    # → 1
+bin/counter inc-by 5               # → 6
+bin/counter set 100                # → 100
+bin/deploy token                   # deploy ExampleToken
+bin/anvil-down                     # stop background anvil
+```
+
+Same scripts work against any configured network: `bin/deploy counter sepolia`, `bin/counter read sepolia`, etc.
+
+### Generating keys
+
+```sh
+bin/new-key                        # print new keypair only
+bin/new-key --write                # also write PRIVATE_KEY to .env
+bin/new-key --mnemonic             # 12-word HD wallet
+```
+
+### Manual mode — raw cast
 
 ```sh
 # deploy
 make deploy-counter NETWORK=anvil
 make deploy-token   NETWORK=anvil
 
-# read state with cast
+# read state
 cast call <counter_addr> "number()(uint256)" --rpc-url anvil
 
 # write state

@@ -12,6 +12,9 @@ broadcast/
 lcov.info
 coverage/
 
+# anvil-up pidfile
+.anvil.pid
+
 # Editor
 .vscode/
 .idea/

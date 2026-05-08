@@ -13,7 +13,11 @@ help:
 	@echo "  coverage        - generate coverage report (lcov.info)"
 	@echo "  fmt / fmt-check - format / check formatting"
 	@echo "  snapshot        - generate gas snapshots"
-	@echo "  anvil           - start local anvil node on :8545"
+	@echo "  anvil           - start local anvil node on :8545 (foreground)"
+	@echo "  anvil-up        - start anvil in background (bin/anvil-up)"
+	@echo "  anvil-down      - stop background anvil (bin/anvil-down)"
+	@echo "  new-key         - generate fresh keypair (bin/new-key)"
+	@echo "  new-key-write   - generate keypair AND write to .env"
 	@echo "  deploy-counter NETWORK=anvil  - deploy Counter"
 	@echo "  deploy-token   NETWORK=anvil  - deploy ExampleToken"
 	@echo "  clean           - remove build artifacts"
@@ -50,6 +54,18 @@ snapshot:
 
 anvil:
 	anvil --host 0.0.0.0 --chain-id 31337
+
+anvil-up:
+	./bin/anvil-up
+
+anvil-down:
+	./bin/anvil-down
+
+new-key:
+	./bin/new-key
+
+new-key-write:
+	./bin/new-key --write
 
 deploy-counter:
 	forge script script/Counter.s.sol:CounterScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv
