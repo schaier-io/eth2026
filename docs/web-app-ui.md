@@ -1,6 +1,6 @@
 # Web App UI Direction
 
-TruthMarket's app should feel like a live market terminal for random-jury belief resolution. The first useful screen is the active market board; marketing copy stays secondary.
+TruthMarket's app should feel like a lightweight social market feed for random-jury belief resolution. The first useful screen is a grid of ongoing markets; marketing copy stays secondary.
 
 ## Product Language
 
@@ -27,25 +27,25 @@ Avoid:
 
 The contract still encodes vote values as `1` and `2`; the app maps those values to Up and Down.
 
-## Minimum Screens
+## Minimum User Flow
 
-1. Market board
-   - Active markets, phase, time left, committed stake, commit count, jury size.
-   - Wallet/account status.
-   - Create market entry point.
+1. Market feed
+   - Show several ongoing markets first, similar to a social/trending feed.
+   - Each card should expose only the claim, phase, committed stake, commit count, time left, and one clear "Open market" action.
 
-2. Market terminal
-   - Immutable claim/rules summary.
-   - Up/Down committed-position controls.
-   - Stake input.
-   - Conviction slider.
-   - Risked stake and refundable stake preview.
-   - Local reveal-key vault status.
-   - Jury selection panel with SpaceComputer randomness and audit hash.
-   - Reveal panel for all committed voters.
-   - Resolution and withdrawal panel.
+2. Focused staking step
+   - After opening a market, focus the user on one decision: Up or Down.
+   - Then show conviction and stake.
+   - Keep protocol/debug details out of the main path.
+   - Store the local reveal key automatically using wallet-local protection where possible.
 
-3. Create market
+3. Monitoring dashboard
+   - Only show after the user commits.
+   - Show the user's committed position, phase, commit count, jury size, pool, reveal action, and the next required step.
+   - Put randomness, audit hash, jury addresses, commitment hash, and local vault status in a developer settings panel.
+
+4. Create market
+   - Keep as a secondary builder/admin flow.
    - Claim title, description, Up meaning, Down meaning, resolution rules, voting deadline, reveal deadline, jury size, min stake.
    - Upload claim/rules document to Swarm before deploying/recording the market.
 
@@ -102,8 +102,10 @@ For the app narrative, juror non-reveal penalties should be presented as flowing
 
 ## Visual Direction
 
-- Dense but clean, closer to a market terminal than a landing page.
-- Feed on the left, selected market in the center, account/action rail on the right.
+- Bright, social, and direct rather than a dark trading terminal.
+- Landing page is a grid of active markets.
+- Open market leads to a focused staking screen.
+- Dashboard appears only after the user commits.
 - Up and Down are first-class actions.
-- Use color sparingly: Up and Down may have semantic accents, but the rest should stay neutral.
-- Show mechanism transparency without turning the screen into documentation.
+- Use color for market energy and Up/Down semantics, but keep the staking step calm and obvious.
+- Show mechanism transparency in the dashboard and developer settings without turning the first interaction into documentation.
