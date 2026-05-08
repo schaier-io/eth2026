@@ -32,6 +32,7 @@ The contract still encodes vote values as `1` and `2`; the app maps those values
 1. Market feed
    - Show several ongoing markets first, similar to a social/trending feed.
    - Each card should expose only the claim, phase, committed stake, commit count, time left, and one clear "Open market" action.
+   - Include a visible "Create market" action in the nav and feed toolbar.
 
 2. Focused staking step
    - After opening a market, focus the user on one decision: Up or Down.
@@ -45,9 +46,10 @@ The contract still encodes vote values as `1` and `2`; the app maps those values
    - Put randomness, audit hash, jury addresses, commitment hash, and local vault status in a developer settings panel.
 
 4. Create market
-   - Keep as a secondary builder/admin flow.
-   - Claim title, description, Up meaning, Down meaning, resolution rules, voting deadline, reveal deadline, jury size, min stake.
+   - Keep as a secondary but first-class flow, not hidden in developer settings.
+   - Claim title, description, Up meaning, Down meaning, voting window, jury size, and minimum revealed jurors.
    - Upload claim/rules document to Swarm before deploying/recording the market.
+   - After creation, send the creator directly to the focused staking step for the new market.
 
 ## Commit And Reveal UX
 

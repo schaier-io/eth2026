@@ -15,6 +15,7 @@
         </button>
         <nav class="topnav" aria-label="Primary">
           <button id="marketsNav" type="button">Markets</button>
+          <button id="createNav" type="button">Create</button>
           <button id="devNav" type="button">Developer</button>
         </nav>
         <button id="walletButton" class="wallet-button" type="button">Connect wallet</button>
@@ -33,9 +34,81 @@
               <button class="feed-tab is-active" type="button">Trending</button>
               <button class="feed-tab" type="button">New</button>
               <button class="feed-tab" type="button">Reveal soon</button>
+              <button id="createMarketButton" class="feed-tab create-tab" type="button">Create market</button>
             </div>
 
             <div id="marketCards" class="market-grid" aria-label="Ongoing markets"></div>
+          </div>
+        </section>
+
+        <section id="createView" class="view" aria-labelledby="createTitle">
+          <div class="create-shell">
+            <button id="backFromCreate" class="ghost-button" type="button">Back to markets</button>
+
+            <article class="create-card">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">Create market</p>
+                  <h1 id="createTitle">Start a custom claim</h1>
+                </div>
+                <strong class="deadline-pill">Prototype</strong>
+              </div>
+
+              <form id="createForm" class="create-form">
+                <label class="field">
+                  <span>Market question</span>
+                  <input id="createQuestion" type="text" autocomplete="off" placeholder="Will..." required />
+                </label>
+
+                <label class="field">
+                  <span>Short description</span>
+                  <textarea id="createDescription" rows="3" placeholder="What should voters know before committing?" required></textarea>
+                </label>
+
+                <div class="meaning-grid">
+                  <label class="field meaning-field">
+                    <span>Up means</span>
+                    <textarea id="createUpMeaning" rows="3" placeholder="Define the upward outcome" required></textarea>
+                  </label>
+                  <label class="field meaning-field">
+                    <span>Down means</span>
+                    <textarea id="createDownMeaning" rows="3" placeholder="Define the downward outcome" required></textarea>
+                  </label>
+                </div>
+
+                <div class="create-grid">
+                  <label class="field">
+                    <span>Symbol</span>
+                    <input id="createSymbol" type="text" autocomplete="off" maxlength="5" placeholder="AI" />
+                  </label>
+                  <label class="field">
+                    <span>Jury size</span>
+                    <input id="createJurySize" type="number" min="1" step="2" value="5" />
+                  </label>
+                  <label class="field">
+                    <span>Minimum revealed jurors</span>
+                    <input id="createMinRevealed" type="number" min="1" value="3" />
+                  </label>
+                  <label class="field">
+                    <span>Voting window</span>
+                    <select id="createVotingWindow">
+                      <option value="6h">6h</option>
+                      <option value="12h" selected>12h</option>
+                      <option value="1d">1d</option>
+                      <option value="3d">3d</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="create-preview">
+                  <span>Next in production</span>
+                  <p>Upload the claim/rules document to Swarm, then deploy a TruthMarket contract with these parameters.</p>
+                </div>
+
+                <button class="primary-action" type="submit">Create market</button>
+                <p id="createStatus" class="inline-status" role="status"></p>
+              </form>
+            </article>
           </div>
         </section>
 

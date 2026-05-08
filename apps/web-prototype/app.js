@@ -109,12 +109,26 @@ const state = {
 const els = {
   homeButton: document.getElementById("homeButton"),
   marketsNav: document.getElementById("marketsNav"),
+  createNav: document.getElementById("createNav"),
   devNav: document.getElementById("devNav"),
   walletButton: document.getElementById("walletButton"),
   feedView: document.getElementById("feedView"),
+  createView: document.getElementById("createView"),
   stakeView: document.getElementById("stakeView"),
   dashboardView: document.getElementById("dashboardView"),
   marketCards: document.getElementById("marketCards"),
+  createMarketButton: document.getElementById("createMarketButton"),
+  backFromCreate: document.getElementById("backFromCreate"),
+  createForm: document.getElementById("createForm"),
+  createQuestion: document.getElementById("createQuestion"),
+  createDescription: document.getElementById("createDescription"),
+  createUpMeaning: document.getElementById("createUpMeaning"),
+  createDownMeaning: document.getElementById("createDownMeaning"),
+  createSymbol: document.getElementById("createSymbol"),
+  createJurySize: document.getElementById("createJurySize"),
+  createMinRevealed: document.getElementById("createMinRevealed"),
+  createVotingWindow: document.getElementById("createVotingWindow"),
+  createStatus: document.getElementById("createStatus"),
   backToFeed: document.getElementById("backToFeed"),
   dashboardBack: document.getElementById("dashboardBack"),
   newPositionButton: document.getElementById("newPositionButton"),
@@ -289,6 +303,7 @@ function setStatus(element, message, kind = "") {
 function showScreen(screen) {
   state.screen = screen;
   els.feedView.classList.toggle("is-active", screen === "feed");
+  els.createView.classList.toggle("is-active", screen === "create");
   els.stakeView.classList.toggle("is-active", screen === "stake");
   els.dashboardView.classList.toggle("is-active", screen === "dashboard");
   window.scrollTo({ top: 0, behavior: "auto" });
@@ -447,6 +462,82 @@ function render() {
   renderDashboard();
 }
 
+function symbolFromQuestion(question) {
+  const words = question
+    .replace(/[^a-zA-Z0-9 ]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const symbol = words
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+  return symbol || "NEW";
+}
+
+function handleCreateMarket(event) {
+  event.preventDefault();
+  const title = els.createQuestion.value.trim();
+  const description = els.createDescription.value.trim();
+  const upMeaning = els.createUpMeaning.value.trim();
+  const downMeaning = els.createDownMeaning.value.trim();
+  const jurySize = Number.parseInt(els.createJurySize.value, 10);
+  const minRevealedJurors = Number.parseInt(els.createMinRevealed.value, 10);
+  const votingWindow = els.createVotingWindow.value;
+  const symbol = (els.createSymbol.value.trim() || symbolFromQuestion(title)).slice(0, 5).toUpperCase();
+
+  if (!title || !description || !upMeaning || !downMeaning) {
+    setStatus(els.createStatus, "Add the question, description, and both outcome meanings.", "error");
+    return;
+  }
+  if (!Number.isFinite(jurySize) || jurySize < 1 || jurySize % 2 === 0) {
+    setStatus(els.createStatus, "Jury size must be an odd number.", "error");
+    return;
+  }
+  if (!Number.isFinite(minRevealedJurors) || minRevealedJurors < 1 || minRevealedJurors > jurySize) {
+    setStatus(els.createStatus, "Minimum revealed jurors must be between 1 and jury size.", "error");
+    return;
+  }
+
+  const market = {
+    id: `custom-${Date.now()}`,
+    symbol,
+    title,
+    description,
+    phase: "Voting",
+    uiStage: "Voting",
+    stake: 0,
+    commits: 0,
+    jurySize,
+    minRevealedJurors,
+    revealedJurors: 0,
+    juryUpCount: 0,
+    juryDownCount: 0,
+    pool: 0,
+    timeLeft: votingWindow,
+    deadlineLabel: `Voting closes in ${votingWindow}`,
+    upPercent: 50,
+    upMeaning,
+    downMeaning,
+    randomness: "Pending",
+    auditHash: "Pending",
+    jurors: [],
+  };
+
+  markets.unshift(market);
+  state.selectedMarketId = market.id;
+  state.direction = "Up";
+  state.currentPosition = null;
+  state.revealed = false;
+  event.target.reset();
+  els.createJurySize.value = "5";
+  els.createMinRevealed.value = "3";
+  els.createVotingWindow.value = "12h";
+  setStatus(els.createStatus, "");
+  showScreen("stake");
+}
+
 async function handleCommit(event) {
   event.preventDefault();
   const market = selectedMarket();
@@ -516,6 +607,9 @@ function handleReveal() {
 
 els.homeButton.addEventListener("click", () => showScreen("feed"));
 els.marketsNav.addEventListener("click", () => showScreen("feed"));
+els.createNav.addEventListener("click", () => showScreen("create"));
+els.createMarketButton.addEventListener("click", () => showScreen("create"));
+els.backFromCreate.addEventListener("click", () => showScreen("feed"));
 els.devNav.addEventListener("click", () => {
   showScreen("dashboard");
   els.devPanel.open = true;
@@ -537,6 +631,7 @@ els.chooseDown.addEventListener("click", () => {
 });
 els.convictionInput.addEventListener("input", renderRiskPreview);
 els.stakeInput.addEventListener("input", renderRiskPreview);
+els.createForm.addEventListener("submit", handleCreateMarket);
 els.stakeForm.addEventListener("submit", handleCommit);
 els.revealButton.addEventListener("click", handleReveal);
 
