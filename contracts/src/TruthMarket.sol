@@ -57,8 +57,11 @@ contract TruthMarket is ReentrancyGuard {
 
     // ---------- Constants ----------
 
-    uint16 public constant MAX_CONVICTION_BPS = 10_000;
-    uint96 public constant MAX_PROTOCOL_FEE_BPS = 1000;
+    /// @notice Conviction is expressed as a whole percent (0–100). Internally it is
+    ///         applied directly via `stake × conviction / 100` for risked stake math.
+    uint8 public constant MAX_CONVICTION_PERCENT = 100;
+    /// @notice Protocol fee on the slashed pool, expressed as a whole percent (0–10).
+    uint8 public constant MAX_PROTOCOL_FEE_PERCENT = 10;
     uint32 public constant MAX_JURY_SIZE = 100;
     /// @notice Upper bound on jury size as a percentage of committed voters. Enforced at
     ///         construction via `minCommits × MAX_JURY_PERCENTAGE ≥ jurySize × 100`, so
@@ -97,7 +100,7 @@ contract TruthMarket is ReentrancyGuard {
         bytes32 hash;
         uint96 stake;
         uint96 riskedStake;
-        uint16 convictionBps;
+        uint8 conviction; // whole percent (0–100)
         uint8 revealedVote;
         bool revealed;
         bool withdrawn;
@@ -119,7 +122,7 @@ contract TruthMarket is ReentrancyGuard {
         uint64 votingDeadline;
         uint64 juryCommitDeadline;
         uint64 revealDeadline;
-        uint96 protocolFeeBps;
+        uint8 protocolFeePercent;
         uint96 minStake;
         uint32 jurySize;
         uint32 minCommits;
@@ -127,8 +130,8 @@ contract TruthMarket is ReentrancyGuard {
         uint32 maxJurySize;
         uint256 maxJuryPercentage;
         uint256 maxTags;
-        uint16 maxConvictionBps;
-        uint96 maxProtocolFeeBps;
+        uint8 maxConvictionPercent;
+        uint8 maxProtocolFeePercent;
     }
 
     /// @dev Snapshot of reveal-phase state. Combines counts, stake totals, and
@@ -168,7 +171,7 @@ contract TruthMarket is ReentrancyGuard {
         uint8 vote; // 0 = not revealed, 1 = YES, 2 = NO
         uint96 stake;
         uint96 riskedStake;
-        uint16 convictionBps;
+        uint8 conviction; // whole percent (0–100)
     }
 
     /// @dev Constructor params bundled to avoid stack-too-deep with the deployment config.
@@ -185,7 +188,7 @@ contract TruthMarket is ReentrancyGuard {
         uint64 votingPeriod;
         uint64 adminTimeout;
         uint64 revealPeriod;
-        uint96 protocolFeeBps;
+        uint8 protocolFeePercent;
         uint96 minStake;
         uint32 jurySize;
         uint32 minCommits;
@@ -205,7 +208,7 @@ contract TruthMarket is ReentrancyGuard {
     uint64 public immutable votingDeadline;
     uint64 public immutable juryCommitDeadline;
     uint64 public immutable revealDeadline;
-    uint96 public immutable protocolFeeBps;
+    uint8 public immutable protocolFeePercent;
     uint96 public immutable minStake;
     uint32 public immutable jurySize;
     uint32 public immutable minCommits;
@@ -272,10 +275,10 @@ contract TruthMarket is ReentrancyGuard {
         uint96 minStake
     );
     event VoteCommitted(
-        address indexed voter, bytes32 commitHash, uint96 stake, uint16 convictionBps, uint96 riskedStake
+        address indexed voter, bytes32 commitHash, uint96 stake, uint8 conviction, uint96 riskedStake
     );
     event JuryCommitted(uint256 randomness, address[] jurors, bytes32 auditHash);
-    event VoteRevealed(address indexed voter, uint8 vote, uint96 stake, uint16 convictionBps, uint96 riskedStake);
+    event VoteRevealed(address indexed voter, uint8 vote, uint96 stake, uint8 conviction, uint96 riskedStake);
     event Resolved(
         Outcome outcome, uint32 winningJuryCount, uint96 slashedRiskedStake, uint256 fee, uint96 distributablePool
     );
@@ -323,7 +326,7 @@ contract TruthMarket is ReentrancyGuard {
         if (p.admin == address(0) || p.juryCommitter == address(0) || p.creator == address(0)) revert BadParams();
         if (p.ipfsHash.length == 0) revert BadParams();
         if (p.votingPeriod == 0 || p.adminTimeout == 0 || p.revealPeriod == 0) revert BadParams();
-        if (p.protocolFeeBps > MAX_PROTOCOL_FEE_BPS) revert BadParams();
+        if (p.protocolFeePercent > MAX_PROTOCOL_FEE_PERCENT) revert BadParams();
         if (p.minStake == 0) revert BadParams();
         if (p.jurySize == 0 || p.jurySize > MAX_JURY_SIZE) revert BadParams();
         if (p.jurySize % 2 == 0) revert BadParams(); // jury size must be odd
@@ -356,7 +359,7 @@ contract TruthMarket is ReentrancyGuard {
         juryCommitDeadline = _juryCommitDeadline;
         revealDeadline = _revealDeadline;
 
-        protocolFeeBps = p.protocolFeeBps;
+        protocolFeePercent = p.protocolFeePercent;
         minStake = p.minStake;
         jurySize = p.jurySize;
         minCommits = p.minCommits;
@@ -390,11 +393,11 @@ contract TruthMarket is ReentrancyGuard {
     ///         recorded; the `stake` argument is just the spend authorization.
     ///         Nonce MUST be a high-entropy 256-bit secret: vote space is {1,2}, so a
     ///         guessable nonce makes the hash brute-forceable.
-    function commitVote(bytes32 commitHash, uint96 stake, uint16 convictionBps) external nonReentrant {
+    function commitVote(bytes32 commitHash, uint96 stake, uint8 conviction) external nonReentrant {
         if (phase != Phase.Voting) revert WrongPhase();
         if (block.timestamp >= votingDeadline) revert DeadlinePassed();
         if (stake < minStake) revert StakeBelowMin();
-        if (convictionBps == 0 || convictionBps > MAX_CONVICTION_BPS) revert BadParams();
+        if (conviction == 0 || conviction > MAX_CONVICTION_PERCENT) revert BadParams();
         if (commitHash == bytes32(0)) revert BadParams();
         if (commits[msg.sender].hash != bytes32(0)) revert AlreadyCommitted();
 
@@ -406,7 +409,7 @@ contract TruthMarket is ReentrancyGuard {
         if (received > type(uint96).max) revert BadParams();
         uint96 actualStake = uint96(received);
 
-        uint96 riskedStake = _riskedStake(actualStake, convictionBps);
+        uint96 riskedStake = _riskedStake(actualStake, conviction);
         if (riskedStake == 0) revert BadParams();
 
         commitCount++;
@@ -416,7 +419,7 @@ contract TruthMarket is ReentrancyGuard {
             hash: commitHash,
             stake: actualStake,
             riskedStake: riskedStake,
-            convictionBps: convictionBps,
+            conviction: conviction,
             revealedVote: 0,
             revealed: false,
             withdrawn: false,
@@ -424,7 +427,7 @@ contract TruthMarket is ReentrancyGuard {
         });
         _committers.push(msg.sender);
 
-        emit VoteCommitted(msg.sender, commitHash, actualStake, convictionBps, riskedStake);
+        emit VoteCommitted(msg.sender, commitHash, actualStake, conviction, riskedStake);
     }
 
     // ---------- Nonce-leak revocation (voting phase only) ----------
@@ -523,7 +526,7 @@ contract TruthMarket is ReentrancyGuard {
         if (juror) revealedJurorCount++;
         _recordReveal(k, vote, juror);
 
-        emit VoteRevealed(msg.sender, vote, k.stake, k.convictionBps, k.riskedStake);
+        emit VoteRevealed(msg.sender, vote, k.stake, k.conviction, k.riskedStake);
     }
 
     // ---------- Resolve ----------
@@ -668,7 +671,7 @@ contract TruthMarket is ReentrancyGuard {
             votingDeadline: votingDeadline,
             juryCommitDeadline: juryCommitDeadline,
             revealDeadline: revealDeadline,
-            protocolFeeBps: protocolFeeBps,
+            protocolFeePercent: protocolFeePercent,
             minStake: minStake,
             jurySize: jurySize,
             minCommits: minCommits,
@@ -676,8 +679,8 @@ contract TruthMarket is ReentrancyGuard {
             maxJurySize: MAX_JURY_SIZE,
             maxJuryPercentage: MAX_JURY_PERCENTAGE,
             maxTags: MAX_TAGS,
-            maxConvictionBps: MAX_CONVICTION_BPS,
-            maxProtocolFeeBps: MAX_PROTOCOL_FEE_BPS
+            maxConvictionPercent: MAX_CONVICTION_PERCENT,
+            maxProtocolFeePercent: MAX_PROTOCOL_FEE_PERCENT
         });
     }
 
@@ -736,7 +739,7 @@ contract TruthMarket is ReentrancyGuard {
                 vote: k.revealedVote,
                 stake: k.stake,
                 riskedStake: k.riskedStake,
-                convictionBps: k.convictionBps
+                conviction: k.conviction
             });
         }
     }
@@ -811,7 +814,7 @@ contract TruthMarket is ReentrancyGuard {
         );
 
         if (slashedRiskedStake > 0) {
-            fee = (uint256(slashedRiskedStake) * protocolFeeBps) / 10_000;
+            fee = (uint256(slashedRiskedStake) * protocolFeePercent) / 100;
             if (fee > 0) treasuryAccrued += fee;
             // forge-lint: disable-next-line(unsafe-typecast)
             distributablePool = slashedRiskedStake - uint96(fee);
@@ -865,8 +868,8 @@ contract TruthMarket is ReentrancyGuard {
         return keccak256(abi.encode(vote, nonce, voter, address(this)));
     }
 
-    function _riskedStake(uint96 stake, uint16 convictionBps) internal pure returns (uint96) {
+    function _riskedStake(uint96 stake, uint8 conviction) internal pure returns (uint96) {
         // forge-lint: disable-next-line(unsafe-typecast)
-        return uint96((uint256(stake) * convictionBps) / MAX_CONVICTION_BPS);
+        return uint96((uint256(stake) * conviction) / 100);
     }
 }

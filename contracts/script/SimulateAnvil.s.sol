@@ -63,14 +63,14 @@ contract SimulateAnvilScript is Script {
     uint64 internal constant VOTING_PERIOD = 1 days;
     uint64 internal constant ADMIN_TIMEOUT = 12 hours;
     uint64 internal constant REVEAL_PERIOD = 1 days;
-    uint96 internal constant FEE_BPS = 500;
+    uint8 internal constant FEE_PERCENT = 5;
     uint96 internal constant MIN_STAKE = 1 ether;
     uint32 internal constant JURY_SIZE = 1;
     uint32 internal constant MIN_COMMITS = 7;
     uint32 internal constant MIN_REVEALED_JURORS = 1;
 
     uint96 internal constant VOTER_STAKE = 50 ether;
-    uint16 internal constant VOTER_CONV = 4_000; // 40% conviction
+    uint8 internal constant VOTER_CONV = 40; // 40% conviction
 
     // ---------- Phases ----------
 
@@ -101,7 +101,7 @@ contract SimulateAnvilScript is Script {
                 votingPeriod: VOTING_PERIOD,
                 adminTimeout: ADMIN_TIMEOUT,
                 revealPeriod: REVEAL_PERIOD,
-                protocolFeeBps: FEE_BPS,
+                protocolFeePercent: FEE_PERCENT,
                 minStake: MIN_STAKE,
                 jurySize: JURY_SIZE,
                 minCommits: MIN_COMMITS,
@@ -249,7 +249,7 @@ contract SimulateAnvilScript is Script {
         uint8 vote,
         bytes32 nonce,
         uint96 stake,
-        uint16 conv,
+        uint8 conv,
         uint256 i
     ) internal {
         bytes32 hash = market.commitHashOf(vote, nonce, vm.addr(pk));

@@ -22,7 +22,7 @@ contract TruthMarketScript is Script {
         uint64 votingPeriod = uint64(vm.envUint("VOTING_PERIOD"));
         uint64 adminTimeout = uint64(vm.envUint("ADMIN_TIMEOUT"));
         uint64 revealPeriod = uint64(vm.envUint("REVEAL_PERIOD"));
-        uint96 protocolFeeBps = uint96(vm.envUint("PROTOCOL_FEE_BPS"));
+        uint8 protocolFeePercent = uint8(vm.envUint("PROTOCOL_FEE_PERCENT"));
         uint96 minStake = uint96(vm.envUint("MIN_STAKE"));
         uint32 jurySize = uint32(vm.envUint("JURY_SIZE"));
         uint32 minCommits = uint32(vm.envUint("MIN_COMMITS"));
@@ -43,7 +43,7 @@ contract TruthMarketScript is Script {
                 votingPeriod: votingPeriod,
                 adminTimeout: adminTimeout,
                 revealPeriod: revealPeriod,
-                protocolFeeBps: protocolFeeBps,
+                protocolFeePercent: protocolFeePercent,
                 minStake: minStake,
                 jurySize: jurySize,
                 minCommits: minCommits,

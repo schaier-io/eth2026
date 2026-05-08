@@ -8,7 +8,7 @@ The Solidity core matches the current random-jury belief-resolution model:
 - claim metadata (`name`, `description`, up to `MAX_TAGS = 5` tags) is stored on-chain at deployment alongside the Swarm/IPFS rules pointer;
 - commitments bind vote, nonce, voter address, and contract address inside the hash; stake/conviction are stored in contract state at commit time and are not part of the hash;
 - voting-phase `revokeStake(voter, vote, nonce)` lets a third party claim a voter's full stake when their nonce leaks (see [ADR 0007](./adr/0007-nonce-leak-revocation.md)); self-revocation is blocked, and revocation is gated to the voting phase only;
-- conviction is stored in basis points and determines the risked portion of stake for the normal slash and the reward weight;
+- conviction is stored as a whole percent (0–100) and determines the risked portion of stake for the normal slash and the reward weight;
 - losers and non-revealing non-jurors lose only their risked stake;
 - jury outcome is count-based: each selected juror contributes 1 vote regardless of stake (see [ADR 0006](./adr/0006-count-based-jury-voting.md));
 - selected jurors who fail to reveal forfeit their full stake — at typical conviction this is roughly 5× the normal slash;

@@ -22,7 +22,7 @@ contract SimulateScript is Script {
     uint64 internal constant VOTING_PERIOD = 1 days;
     uint64 internal constant ADMIN_TIMEOUT = 12 hours;
     uint64 internal constant REVEAL_PERIOD = 1 days;
-    uint96 internal constant FEE_BPS = 500;
+    uint8 internal constant FEE_PERCENT = 5;
     uint96 internal constant MIN_STAKE = 1 ether;
     uint96 internal constant START_BALANCE = 1_000 ether;
 
@@ -40,7 +40,7 @@ contract SimulateScript is Script {
         string label;
         bytes32 nonce;
         uint96 stake;
-        uint16 conviction;
+        uint8 conviction;
         uint8 vote; // 1 = YES, 2 = NO
         bool willReveal;
     }
@@ -50,7 +50,7 @@ contract SimulateScript is Script {
     /// @notice Happy-path: 7 voters, jurySize=1, all reveal — single juror's vote decides.
     function lifecycle() external {
         console2.log("=== Scenario: Lifecycle (jurySize=1, all reveal) ===");
-        Voter[] memory voters = _makeVoters(7, 50 ether, 4_000, 1, true); // all YES, 40% conv
+        Voter[] memory voters = _makeVoters(7, 50 ether, 40, 1, true); // all YES, 40% conv
         (TruthMarket market, MockERC20 token) = _deployMarket(1, 7, 1);
 
         _commitAll(market, token, voters);
@@ -69,7 +69,7 @@ contract SimulateScript is Script {
     ///         refund for everyone, no jury was ever drawn so no penalty applies.
     function invalidNoJury() external {
         console2.log("=== Scenario: Invalid (admin missed jury-commit deadline) ===");
-        Voter[] memory voters = _makeVoters(7, 50 ether, 4_000, 1, true);
+        Voter[] memory voters = _makeVoters(7, 50 ether, 40, 1, true);
         (TruthMarket market, MockERC20 token) = _deployMarket(1, 7, 1);
 
         _commitAll(market, token, voters);
@@ -87,7 +87,7 @@ contract SimulateScript is Script {
     ///         get full refunds. Uses jurySize=3 with 20 voters to satisfy the 15% rule.
     function invalidJurorPenalty() external {
         console2.log("=== Scenario: Invalid juror penalty -> creator ===");
-        Voter[] memory voters = _makeVoters(20, 80 ether, 10_000, 1, true); // 100% conv → risked = stake
+        Voter[] memory voters = _makeVoters(20, 80 ether, 100, 1, true); // 100% conv → risked = stake
         (TruthMarket market, MockERC20 token) = _deployMarket(3, 20, 2);
 
         _commitAll(market, token, voters);
@@ -145,7 +145,7 @@ contract SimulateScript is Script {
 
     // ---------- Voter constructors ----------
 
-    function _makeVoters(uint256 n, uint96 stake, uint16 conv, uint8 vote, bool willReveal)
+    function _makeVoters(uint256 n, uint96 stake, uint8 conv, uint8 vote, bool willReveal)
         internal
         pure
         returns (Voter[] memory voters)
@@ -173,7 +173,7 @@ contract SimulateScript is Script {
                 label: string.concat("v", _u(i)),
                 nonce: bytes32(uint256(keccak256(abi.encode(seed, "nonce", i)))),
                 stake: uint96(((r >> 32) % 90 ether) + 10 ether),
-                conviction: uint16(((r >> 8) % 9_000) + 1_000),
+                conviction: uint8(((r >> 8) % 90) + 10), // 10–99 percent
                 vote: uint8((r & 1) + 1),
                 willReveal: ((r >> 64) % 10) < 8
             });
@@ -207,7 +207,7 @@ contract SimulateScript is Script {
                 votingPeriod: VOTING_PERIOD,
                 adminTimeout: ADMIN_TIMEOUT,
                 revealPeriod: REVEAL_PERIOD,
-                protocolFeeBps: FEE_BPS,
+                protocolFeePercent: FEE_PERCENT,
                 minStake: MIN_STAKE,
                 jurySize: jurySize,
                 minCommits: minCommits,
@@ -328,8 +328,8 @@ contract SimulateScript is Script {
                     " stake=",
                     _ether(jv[i].stake),
                     " conv=",
-                    _u(jv[i].convictionBps),
-                    "bps revealed=",
+                    _u(jv[i].conviction),
+                    "% revealed=",
                     jv[i].revealed ? "yes" : "no"
                 )
             );

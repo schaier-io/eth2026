@@ -4,7 +4,7 @@ Status: superseded by [ADR 0006](./0006-count-based-jury-voting.md)
 
 The original decision used square-root weighting over risked stake for jury vote weight. ADR 0006 replaces this with count-based jury voting (1 vote per juror) — stake and conviction now affect only the slash and the reward distribution, not the YES/NO decision.
 
-The conviction concept itself (a basis-point share of stake placed at risk) is preserved.
+The conviction concept itself (a whole-percent share of stake placed at risk, 0–100) is preserved.
 
 ## Original notes
 

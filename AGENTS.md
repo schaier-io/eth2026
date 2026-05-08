@@ -61,7 +61,7 @@ If an agent does have similar skills available, it may use them, but repo files 
 
 The Solidity contract is aligned with the current PRD model:
 
-- conviction stored on committed positions (basis points), determines risked stake;
+- conviction stored on committed positions as a whole percent (0–100), determines risked stake;
 - commitment hash binds vote, nonce, voter address, and contract address;
 - partial slashing on losing voters and non-revealing non-jurors (1× risked stake);
 - count-based jury outcome (each selected juror = 1 vote, [ADR 0006](./docs/adr/0006-count-based-jury-voting.md));
