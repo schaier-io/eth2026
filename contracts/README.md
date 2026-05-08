@@ -26,13 +26,12 @@ contracts/
 │   ├── deploy            # deploy market [network]
 │   └── sim-anvil         # full lifecycle against fresh anvil
 ├── src/
-│   ├── TruthMarket.sol   # random-jury belief-resolution market
-│   └── ExampleToken.sol  # ERC20 stake-token fixture, used inline by tests + sim
+│   └── TruthMarket.sol   # random-jury belief-resolution market
 ├── test/
 │   ├── TruthMarketLifecycle.t.sol
-│   └── ExampleToken.t.sol
+│   └── MockERC20.sol     # minimal stake-token used by tests + sims (open mint)
 ├── script/
-│   ├── TruthMarket.s.sol      # production deploy
+│   ├── TruthMarket.s.sol      # production deploy (real ERC20 via STAKE_TOKEN env)
 │   ├── Simulate.s.sol         # in-process scenarios (no broadcast)
 │   └── SimulateAnvil.s.sol    # broadcast-based phases for bin/sim-anvil
 └── lib/

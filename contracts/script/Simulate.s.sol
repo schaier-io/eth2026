@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 import { Script, console2 } from "forge-std/Script.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { TruthMarket } from "../src/TruthMarket.sol";
-import { ExampleToken } from "../src/ExampleToken.sol";
+import { MockERC20 } from "../test/MockERC20.sol";
 
 /// @notice Local end-to-end simulator for TruthMarket. Run a scenario with:
 ///
@@ -13,7 +13,7 @@ import { ExampleToken } from "../src/ExampleToken.sol";
 ///   forge script script/Simulate.s.sol --sig 'invalidJurorPenalty()' -vv
 ///   forge script script/Simulate.s.sol --sig 'randomScenario(uint256)' 0xDEADBEEF -vv
 ///
-/// All scenarios deploy a fresh TruthMarket + ExampleToken in a local EVM, advance time
+/// All scenarios deploy a fresh TruthMarket + MockERC20 stake token in a local EVM, advance time
 /// through every phase, and print the resulting state. No anvil or broadcast needed.
 ///
 /// Configs respect the contract's MAX_JURY_PERCENTAGE = 15 rule:
@@ -51,7 +51,7 @@ contract SimulateScript is Script {
     function lifecycle() external {
         console2.log("=== Scenario: Lifecycle (jurySize=1, all reveal) ===");
         Voter[] memory voters = _makeVoters(7, 50 ether, 4_000, 1, true); // all YES, 40% conv
-        (TruthMarket market, ExampleToken token) = _deployMarket(1, 7, 1);
+        (TruthMarket market, MockERC20 token) = _deployMarket(1, 7, 1);
 
         _commitAll(market, token, voters);
         _advanceTo(market.votingDeadline());
@@ -70,7 +70,7 @@ contract SimulateScript is Script {
     function invalidNoJury() external {
         console2.log("=== Scenario: Invalid (admin missed jury-commit deadline) ===");
         Voter[] memory voters = _makeVoters(7, 50 ether, 4_000, 1, true);
-        (TruthMarket market, ExampleToken token) = _deployMarket(1, 7, 1);
+        (TruthMarket market, MockERC20 token) = _deployMarket(1, 7, 1);
 
         _commitAll(market, token, voters);
         _advanceTo(market.juryCommitDeadline()); // skip past without commitJury
@@ -88,7 +88,7 @@ contract SimulateScript is Script {
     function invalidJurorPenalty() external {
         console2.log("=== Scenario: Invalid juror penalty -> creator ===");
         Voter[] memory voters = _makeVoters(20, 80 ether, 10_000, 1, true); // 100% conv → risked = stake
-        (TruthMarket market, ExampleToken token) = _deployMarket(3, 20, 2);
+        (TruthMarket market, MockERC20 token) = _deployMarket(3, 20, 2);
 
         _commitAll(market, token, voters);
         _advanceTo(market.votingDeadline());
@@ -126,7 +126,7 @@ contract SimulateScript is Script {
         console2.log("Seed:", seed);
 
         Voter[] memory voters = _makeRandomVoters(7, seed);
-        (TruthMarket market, ExampleToken token) = _deployMarket(1, 7, 1);
+        (TruthMarket market, MockERC20 token) = _deployMarket(1, 7, 1);
 
         _commitAll(market, token, voters);
         _advanceTo(market.votingDeadline());
@@ -184,10 +184,10 @@ contract SimulateScript is Script {
 
     function _deployMarket(uint32 jurySize, uint32 minCommits, uint32 minRevealedJurors)
         internal
-        returns (TruthMarket market, ExampleToken token)
+        returns (TruthMarket market, MockERC20 token)
     {
         vm.startPrank(DEPLOYER);
-        token = new ExampleToken("Truth Stake", "TRUTH", 1_000_000 ether, 10_000_000 ether, DEPLOYER);
+        token = new MockERC20("Truth Stake", "TRUTH", 1_000_000 ether, DEPLOYER);
         vm.stopPrank();
         string[] memory tags = new string[](3);
         tags[0] = "demo";
@@ -230,7 +230,7 @@ contract SimulateScript is Script {
         console2.log("");
     }
 
-    function _commitAll(TruthMarket market, ExampleToken token, Voter[] memory voters) internal {
+    function _commitAll(TruthMarket market, MockERC20 token, Voter[] memory voters) internal {
         console2.log("--- Phase: Voting (commit) ---");
         for (uint256 i = 0; i < voters.length; i++) {
             Voter memory v = voters[i];
@@ -273,7 +273,7 @@ contract SimulateScript is Script {
         }
     }
 
-    function _resolveAndWithdraw(TruthMarket market, ExampleToken token, Voter[] memory voters) internal {
+    function _resolveAndWithdraw(TruthMarket market, MockERC20 token, Voter[] memory voters) internal {
         console2.log("--- Phase: Resolve ---");
         market.resolve();
         _printResolved(market);
@@ -354,7 +354,7 @@ contract SimulateScript is Script {
         }
     }
 
-    function _printFinalBalances(ExampleToken token, Voter[] memory voters) internal view {
+    function _printFinalBalances(MockERC20 token, Voter[] memory voters) internal view {
         console2.log("--- Final balances (delta vs starting 1000) ---");
         uint256 winners;
         uint256 losers;

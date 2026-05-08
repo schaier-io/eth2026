@@ -4,11 +4,11 @@ pragma solidity 0.8.28;
 import { Test } from "forge-std/Test.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { TruthMarket } from "../src/TruthMarket.sol";
-import { ExampleToken } from "../src/ExampleToken.sol";
+import { MockERC20 } from "./MockERC20.sol";
 
 contract TruthMarketLifecycleTest is Test {
     TruthMarket internal market;
-    ExampleToken internal token;
+    MockERC20 internal token;
 
     address internal treasury = makeAddr("treasury");
     address internal admin = makeAddr("admin");
@@ -35,7 +35,7 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function setUp() public {
-        token = new ExampleToken("Truth Stake", "TRUTH", 10_000_000 ether, 10_000_000 ether, address(this));
+        token = new MockERC20("Truth Stake", "TRUTH", 10_000_000 ether, address(this));
     }
 
     // ---------- Deployment helpers ----------

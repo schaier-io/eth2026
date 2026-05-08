@@ -4,22 +4,23 @@ pragma solidity 0.8.28;
 import { Script, console2 } from "forge-std/Script.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { TruthMarket } from "../src/TruthMarket.sol";
-import { ExampleToken } from "../src/ExampleToken.sol";
+import { MockERC20 } from "../test/MockERC20.sol";
 
 /// @notice Anvil-driven full simulation. Each phase is a separate sig so the shell
 ///         driver (`bin/sim-anvil`) can advance the chain clock between phases via
 ///         `cast rpc evm_increaseTime`.
 ///
 /// Phases:
-///   deploy()         — deploy ExampleToken + TruthMarket, fund 7 voters
+///   deploy()         — deploy MockERC20 + TruthMarket, fund 7 voters
 ///   commit()         — 7 voters commit hidden votes (jurySize=1, minCommits=7)
 ///   commitJury()     — jury committer posts randomness; contract draws 1 juror
 ///   reveal()         — 7 voters reveal
 ///   resolve()        — anyone resolves; voters and treasury withdraw
 ///   printBalances()  — show final stake-token balances
 ///
-/// All phases assume a fresh anvil run because the deterministic ExampleToken /
-/// TruthMarket addresses (deployer's nonce 0/1) are hardcoded.
+/// All phases assume a fresh anvil run because the deterministic MockERC20 /
+/// TruthMarket addresses (deployer's nonce 0/1) are hardcoded. The mock token has
+/// an open mint and is for local simulation only.
 ///
 /// Anvil must be started with at least 12 accounts (deployer + 4 roles + 7 voters):
 ///   anvil --accounts 12   (or higher)
@@ -81,7 +82,7 @@ contract SimulateAnvilScript is Script {
         address creator = vm.addr(CREATOR_PK);
 
         vm.startBroadcast(DEPLOYER_PK);
-        ExampleToken token = new ExampleToken("Truth Stake", "TRUTH", 100_000 ether, 1_000_000 ether, deployer);
+        MockERC20 token = new MockERC20("Truth Stake", "TRUTH", 100_000 ether, deployer);
         string[] memory tags = new string[](3);
         tags[0] = "anvil";
         tags[1] = "demo";
@@ -134,7 +135,7 @@ contract SimulateAnvilScript is Script {
 
     function commit() external {
         TruthMarket market = TruthMarket(MARKET_ADDR);
-        ExampleToken token = ExampleToken(TOKEN_ADDR);
+        MockERC20 token = MockERC20(TOKEN_ADDR);
 
         console2.log("=== Phase: Commit ===");
         for (uint256 i = 0; i < 7; i++) {
@@ -229,7 +230,7 @@ contract SimulateAnvilScript is Script {
     }
 
     function printBalances() public view {
-        ExampleToken token = ExampleToken(TOKEN_ADDR);
+        MockERC20 token = MockERC20(TOKEN_ADDR);
         console2.log("=== Final balances ===");
         for (uint256 i = 0; i < 7; i++) {
             console2.log(string.concat("v", vm.toString(i), ":      "), token.balanceOf(_voterAddr(i)));
@@ -243,7 +244,7 @@ contract SimulateAnvilScript is Script {
 
     function _commit(
         TruthMarket market,
-        ExampleToken token,
+        MockERC20 token,
         uint256 pk,
         uint8 vote,
         bytes32 nonce,
