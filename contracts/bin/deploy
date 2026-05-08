@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Deploy a contract via its forge script.
+#
+# Usage:
+#   bin/deploy counter [network]      # default network: anvil
+#   bin/deploy token   [network]
+#
+# Requires PRIVATE_KEY in .env.
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+target="${1:-}"
+network="${2:-anvil}"
+
+case "$target" in
+  counter) script="script/Counter.s.sol:CounterScript"; out="broadcast/Counter.s.sol" ;;
+  token)   script="script/ExampleToken.s.sol:ExampleTokenScript"; out="broadcast/ExampleToken.s.sol" ;;
+  -h|--help|"") sed -n '2,9p' "$0"; exit 0 ;;
+  *) echo "unknown target: $target (use 'counter' or 'token')" >&2; exit 1 ;;
+esac
+
+[ -f .env ] || { echo ".env missing — run 'cp .env.example .env' and set PRIVATE_KEY"; exit 1; }
+set -a && source .env && set +a
+: "${PRIVATE_KEY:?PRIVATE_KEY must be set in .env}"
+
+forge script "$script" --rpc-url "$network" --broadcast -vvv
+
+# Print the deployed address from the latest broadcast artifact
+chain_dir=$(ls -td "$out"/*/ 2>/dev/null | head -n1 || true)
+if [ -n "$chain_dir" ] && [ -f "${chain_dir}run-latest.json" ]; then
+  addr=$(jq -r '.transactions[0].contractAddress' "${chain_dir}run-latest.json")
+  echo
+  echo "deployed: $addr"
+  echo "  (saved in ${chain_dir}run-latest.json)"
+fi

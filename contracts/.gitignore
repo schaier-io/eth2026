@@ -1,0 +1,22 @@
+# Foundry build output
+out/
+cache/
+broadcast/
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# Coverage
+lcov.info
+coverage/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Docs
+docs/

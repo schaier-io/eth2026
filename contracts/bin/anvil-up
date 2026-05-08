@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Start anvil in the background, log to /tmp/anvil.log, write pid to .anvil.pid.
+# Idempotent: if a previous anvil from this script is still running, no-op.
+#
+# Usage:
+#   bin/anvil-up                # start fresh node
+#   bin/anvil-up --fork         # fork mainnet (needs MAINNET_RPC_URL in .env)
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+PIDFILE=.anvil.pid
+LOGFILE=/tmp/anvil.log
+
+if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+  echo "anvil already running (pid $(cat "$PIDFILE"))"
+  exit 0
+fi
+
+EXTRA=()
+if [[ "${1:-}" == "--fork" ]]; then
+  [ -f .env ] && set -a && source .env && set +a
+  : "${MAINNET_RPC_URL:?MAINNET_RPC_URL must be set in .env to fork}"
+  EXTRA=(--fork-url "$MAINNET_RPC_URL")
+fi
+
+anvil --chain-id 31337 --host 127.0.0.1 "${EXTRA[@]}" > "$LOGFILE" 2>&1 &
+echo $! > "$PIDFILE"
+
+# wait for RPC up
+for _ in {1..20}; do
+  if cast block-number --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then
+    echo "anvil up (pid $(cat "$PIDFILE"), logs: $LOGFILE)"
+    exit 0
+  fi
+  sleep 0.2
+done
+
+echo "anvil failed to start; see $LOGFILE" >&2
+exit 1

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Generate a new EVM keypair. Optionally write to .env (default just prints).
+#
+# Usage:
+#   bin/new-key                  # print only
+#   bin/new-key --write          # write PRIVATE_KEY to .env (creates from .env.example if missing)
+#   bin/new-key --mnemonic       # generate from mnemonic instead
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+WRITE=false
+USE_MNEMONIC=false
+for arg in "$@"; do
+  case "$arg" in
+    --write) WRITE=true ;;
+    --mnemonic) USE_MNEMONIC=true ;;
+    -h|--help) sed -n '2,8p' "$0"; exit 0 ;;
+    *) echo "unknown arg: $arg" >&2; exit 1 ;;
+  esac
+done
+
+if $USE_MNEMONIC; then
+  out=$(cast wallet new-mnemonic --words 12)
+  echo "$out"
+  pk=$(echo "$out" | grep -m1 'Private key:' | awk '{print $3}')
+  addr=$(echo "$out" | grep -m1 'Address:' | awk '{print $2}')
+else
+  out=$(cast wallet new)
+  echo "$out"
+  pk=$(echo "$out" | awk -F': *' '/Private key:/{print $2}')
+  addr=$(echo "$out" | awk -F': *' '/Address:/{print $2}')
+fi
+
+if $WRITE; then
+  [ -f .env ] || cp .env.example .env
+  if grep -q '^PRIVATE_KEY=' .env; then
+    # macOS + linux compatible in-place
+    tmp=$(mktemp)
+    awk -v k="PRIVATE_KEY=$pk" '/^PRIVATE_KEY=/{print k; next} {print}' .env > "$tmp" && mv "$tmp" .env
+  else
+    printf '\nPRIVATE_KEY=%s\n' "$pk" >> .env
+  fi
+  echo
+  echo "wrote PRIVATE_KEY to .env (address: $addr)"
+fi
