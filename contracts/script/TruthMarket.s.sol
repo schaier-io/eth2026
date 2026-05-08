@@ -14,6 +14,7 @@ contract TruthMarketScript is Script {
         address treasury = vm.envOr("TREASURY", deployer);
         address admin = vm.envOr("ADMIN", deployer);
         address juryCommitter = vm.envOr("JURY_COMMITTER", deployer);
+        address creator = vm.envOr("CREATOR", deployer);
         bytes memory ipfsHash = vm.envBytes("IPFS_HASH");
         uint64 votingPeriod = uint64(vm.envUint("VOTING_PERIOD"));
         uint64 adminTimeout = uint64(vm.envUint("ADMIN_TIMEOUT"));
@@ -31,6 +32,7 @@ contract TruthMarketScript is Script {
                 treasury: treasury,
                 admin: admin,
                 juryCommitter: juryCommitter,
+                creator: creator,
                 ipfsHash: ipfsHash,
                 votingPeriod: votingPeriod,
                 adminTimeout: adminTimeout,
@@ -45,9 +47,10 @@ contract TruthMarketScript is Script {
         vm.stopBroadcast();
 
         console2.log("TruthMarket deployed at:", address(market));
-        console2.log("Stake token:", stakeToken);
-        console2.log("Treasury:", treasury);
-        console2.log("Admin:", admin);
+        console2.log("Stake token:   ", stakeToken);
+        console2.log("Treasury:      ", treasury);
+        console2.log("Admin:         ", admin);
         console2.log("Jury committer:", juryCommitter);
+        console2.log("Creator:       ", creator);
     }
 }

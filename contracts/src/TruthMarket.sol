@@ -24,9 +24,14 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 ///           own `riskedStake`.
 ///         - Juror penalty: ~5× the normal slash. A selected juror who fails to reveal
 ///           forfeits their FULL stake regardless of conviction — i.e. 100% of stake,
-///           which lines up with 5× a typical 20% normal slash. The extra (above the
-///           normal 1× riskedStake slash) joins the distributable pool on a Yes/No
-///           outcome, or accrues to the treasury on Invalid.
+///           which lines up with 5× a typical 20% normal slash. On a Yes/No outcome
+///           the extra (above the normal 1× riskedStake slash) joins the distributable
+///           pool. On Invalid (after the jury was drawn) the entire juror penalty
+///           accrues to the **claim creator** while every other voter is fully refunded.
+///
+///         Jury composition limit: the jury is always a strict minority. The contract
+///         guarantees `jurySize ≤ MAX_JURY_PERCENTAGE × commitCount / 100`, enforced at
+///         construction by requiring `minCommits × MAX_JURY_PERCENTAGE ≥ jurySize × 100`.
 ///
 ///         Tie behavior: ties on juror count resolve to Invalid. Ties are impossible
 ///         when `minRevealedJurors == jurySize` (all jurors reveal, odd count); they
@@ -39,6 +44,10 @@ contract TruthMarket is ReentrancyGuard {
     uint16 public constant MAX_CONVICTION_BPS = 10_000;
     uint96 public constant MAX_PROTOCOL_FEE_BPS = 1000;
     uint32 public constant MAX_JURY_SIZE = 100;
+    /// @notice Upper bound on jury size as a percentage of committed voters. Enforced at
+    ///         construction via `minCommits × MAX_JURY_PERCENTAGE ≥ jurySize × 100`, so
+    ///         once `commitCount ≥ minCommits` the rule holds for the actual draw too.
+    uint256 public constant MAX_JURY_PERCENTAGE = 15;
 
     // ---------- Types ----------
 
@@ -80,6 +89,7 @@ contract TruthMarket is ReentrancyGuard {
         address treasury;
         address admin;
         address juryCommitter;
+        address creator;
         bytes ipfsHash;
         uint64 votingPeriod;
         uint64 adminTimeout;
@@ -98,6 +108,9 @@ contract TruthMarket is ReentrancyGuard {
     ///      production addresses are finalized.
     address public immutable admin;
     address public immutable juryCommitter;
+    /// @notice Claim creator. Receives the full juror non-reveal penalty when the market
+    ///         resolves Invalid after the jury was drawn.
+    address public immutable creator;
     uint64 public immutable votingDeadline;
     uint64 public immutable juryCommitDeadline;
     uint64 public immutable revealDeadline;
@@ -131,6 +144,9 @@ contract TruthMarket is ReentrancyGuard {
     uint256 public totalNoRewardWeight;
     uint256 public randomness;
     uint256 public treasuryAccrued;
+    /// @notice Pull-pattern accrual for the claim creator. Filled with the juror
+    ///         non-reveal penalty when the market resolves Invalid after the jury draw.
+    uint256 public creatorAccrued;
     bytes32 public juryAuditHash;
 
     mapping(address => Commit) public commits;
@@ -161,6 +177,7 @@ contract TruthMarket is ReentrancyGuard {
     event Withdrawn(address indexed voter, uint256 payout);
     event TreasuryUpdated(address indexed treasury);
     event TreasuryWithdrawn(address indexed treasury, uint256 amount);
+    event CreatorWithdrawn(address indexed creator, uint256 amount);
 
     // ---------- Errors ----------
 
@@ -194,20 +211,24 @@ contract TruthMarket is ReentrancyGuard {
 
     constructor(InitParams memory p) {
         if (address(p.stakeToken) == address(0) || p.treasury == address(0)) revert BadParams();
-        if (p.admin == address(0) || p.juryCommitter == address(0)) revert BadParams();
+        if (p.admin == address(0) || p.juryCommitter == address(0) || p.creator == address(0)) revert BadParams();
         if (p.ipfsHash.length == 0) revert BadParams();
         if (p.votingPeriod == 0 || p.adminTimeout == 0 || p.revealPeriod == 0) revert BadParams();
         if (p.protocolFeeBps > MAX_PROTOCOL_FEE_BPS) revert BadParams();
         if (p.minStake == 0) revert BadParams();
         if (p.jurySize == 0 || p.jurySize > MAX_JURY_SIZE) revert BadParams();
         if (p.jurySize % 2 == 0) revert BadParams(); // jury size must be odd
-        if (p.minCommits < p.jurySize) revert BadParams(); // ensures full jury can always be drawn
+        // Jury size must stay within MAX_JURY_PERCENTAGE of the minimum committer pool;
+        // this also implies minCommits >= jurySize, so the older subset check is subsumed.
+        if (uint256(p.minCommits) * MAX_JURY_PERCENTAGE < uint256(p.jurySize) * 100) revert BadParams();
+        if (p.minRevealedJurors == 0) revert BadParams();
         if (p.minRevealedJurors > p.jurySize) revert BadParams();
 
         stakeToken = p.stakeToken;
         treasury = p.treasury;
         admin = p.admin;
         juryCommitter = p.juryCommitter;
+        creator = p.creator;
         ipfsHash = p.ipfsHash;
 
         uint64 deployTime = uint64(block.timestamp);
@@ -343,8 +364,9 @@ contract TruthMarket is ReentrancyGuard {
     ///         of jurors actually revealed).
     ///         Selected jurors who fail to reveal lose their FULL stake — conviction is
     ///         ignored for the juror penalty. The extra (above the normal 1× riskedStake
-    ///         slash) joins the distributable pool on a Yes/No outcome, or accrues to
-    ///         the treasury on Invalid.
+    ///         slash) joins the distributable pool on a Yes/No outcome. On Invalid (after
+    ///         the jury was drawn) the entire juror penalty accrues to the claim creator
+    ///         and every other voter is fully refunded.
     function resolve() external nonReentrant {
         if (phase == Phase.Resolved) revert WrongPhase();
 
@@ -375,8 +397,9 @@ contract TruthMarket is ReentrancyGuard {
             (slashedRiskedStake, fee) = _settleSlashedPool(out);
         } else {
             // Jury was drawn but outcome Invalid: slash each non-revealing juror's full
-            // stake; accrue to treasury (no winners to distribute to).
-            uint96 jurorPenalty = _accrueNonRevealingJurorPenalty();
+            // stake; the penalty accrues to the claim creator (every other voter is
+            // refunded). `fee` in the event is reused to surface the creator-bound total.
+            uint96 jurorPenalty = _accrueNonRevealingJurorPenaltyToCreator();
             fee = jurorPenalty;
         }
 
@@ -398,23 +421,34 @@ contract TruthMarket is ReentrancyGuard {
         emit Withdrawn(msg.sender, payout);
     }
 
-    /// @notice Pull all treasury-bound funds. Permissionless: only the configured
-    ///         `treasury` address ever receives. Once every voter has withdrawn, also
-    ///         sweeps any rounding dust left in the contract.
+    /// @notice Pull all treasury-bound funds. Permissionless — funds always go to the
+    ///         configured `treasury`. Once every voter has withdrawn, also sweeps any
+    ///         rounding dust left in the contract, but never touches funds already
+    ///         accrued for the claim creator. Idempotent: returns silently when there is
+    ///         nothing to sweep.
     function withdrawTreasury() external nonReentrant {
         uint256 amount;
         if (phase == Phase.Resolved && withdrawnCount == commitCount) {
-            // Sweep entire balance: accrued plus any bonus-rounding dust.
-            amount = stakeToken.balanceOf(address(this));
-            treasuryAccrued = 0;
+            uint256 balance = stakeToken.balanceOf(address(this));
+            amount = balance > creatorAccrued ? balance - creatorAccrued : 0;
         } else {
             amount = treasuryAccrued;
-            if (amount == 0) revert NothingToWithdraw();
-            treasuryAccrued = 0;
         }
-        if (amount == 0) revert NothingToWithdraw();
+        treasuryAccrued = 0;
+        if (amount == 0) return;
         stakeToken.safeTransfer(treasury, amount);
         emit TreasuryWithdrawn(treasury, amount);
+    }
+
+    /// @notice Pull the creator-bound juror penalty accrued on an Invalid outcome.
+    ///         Permissionless — funds always go to the configured `creator`. Idempotent:
+    ///         returns silently when nothing has accrued.
+    function withdrawCreator() external nonReentrant {
+        uint256 amount = creatorAccrued;
+        creatorAccrued = 0;
+        if (amount == 0) return;
+        stakeToken.safeTransfer(creator, amount);
+        emit CreatorWithdrawn(creator, amount);
     }
 
     // ---------- Views ----------
@@ -506,10 +540,10 @@ contract TruthMarket is ReentrancyGuard {
         }
     }
 
-    function _accrueNonRevealingJurorPenalty() internal returns (uint96 totalPenalty) {
+    function _accrueNonRevealingJurorPenaltyToCreator() internal returns (uint96 totalPenalty) {
         (totalPenalty,) = _jurorNoRevealAccounting();
         if (totalPenalty > 0) {
-            treasuryAccrued += totalPenalty;
+            creatorAccrued += totalPenalty;
         }
     }
 

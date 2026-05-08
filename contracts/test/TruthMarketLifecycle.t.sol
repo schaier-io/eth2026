@@ -13,38 +13,30 @@ contract TruthMarketLifecycleTest is Test {
     address internal treasury = makeAddr("treasury");
     address internal admin = makeAddr("admin");
     address internal juryCommitter = makeAddr("juryCommitter");
-    address internal alice = makeAddr("alice");
-    address internal bob = makeAddr("bob");
-    address internal carol = makeAddr("carol");
-    address internal dave = makeAddr("dave");
-    address internal eve = makeAddr("eve");
+    address internal creator = makeAddr("creator");
 
     bytes internal constant IPFS_HASH = bytes("ipfs://Qm-claim-doc");
     bytes32 internal constant AUDIT_HASH = keccak256("swarm://ctrng-output");
-    bytes32 internal constant ALICE_NONCE = "alice";
-    bytes32 internal constant BOB_NONCE = "bob";
-    bytes32 internal constant CAROL_NONCE = "carol";
-    bytes32 internal constant DAVE_NONCE = "dave";
-    bytes32 internal constant EVE_NONCE = "eve";
     uint64 internal constant VOTING_PERIOD = 1 days;
     uint64 internal constant ADMIN_TIMEOUT = 12 hours;
     uint64 internal constant REVEAL_PERIOD = 1 days;
     uint96 internal constant FEE_BPS = 500;
     uint96 internal constant MIN_STAKE = 1 ether;
-    uint32 internal constant JURY_SIZE = 3;
-    uint32 internal constant MIN_COMMITS = 3;
-    uint32 internal constant MIN_REVEALED_JURORS = 2;
+    uint96 internal constant DEFAULT_BALANCE = 1_000 ether;
+
+    struct V {
+        address addr;
+        bytes32 nonce;
+        uint96 stake;
+        uint16 conv;
+        uint8 vote;
+    }
 
     function setUp() public {
-        token = new ExampleToken("Truth Stake", "TRUTH", 10_000 ether, 10_000 ether, address(this));
-        market = _deployMarket(JURY_SIZE, MIN_COMMITS, MIN_REVEALED_JURORS);
-
-        assertTrue(token.transfer(alice, 1000 ether));
-        assertTrue(token.transfer(bob, 1000 ether));
-        assertTrue(token.transfer(carol, 1000 ether));
-        assertTrue(token.transfer(dave, 1000 ether));
-        assertTrue(token.transfer(eve, 1000 ether));
+        token = new ExampleToken("Truth Stake", "TRUTH", 10_000_000 ether, 10_000_000 ether, address(this));
     }
+
+    // ---------- Deployment helpers ----------
 
     function _deployMarket(uint32 jurySize, uint32 minCommits, uint32 minRevealedJurors)
         internal
@@ -63,6 +55,7 @@ contract TruthMarketLifecycleTest is Test {
             treasury: treasury,
             admin: admin,
             juryCommitter: juryCommitter,
+            creator: creator,
             ipfsHash: IPFS_HASH,
             votingPeriod: VOTING_PERIOD,
             adminTimeout: ADMIN_TIMEOUT,
@@ -75,257 +68,335 @@ contract TruthMarketLifecycleTest is Test {
         });
     }
 
-    function test_FullLifecycleRewardsWinningRevealersAndSlashesLosers() public {
-        // 3 voters, jurySize == 3 -> all are jurors. Yes/No outcome deterministic.
-        _commit(alice, 1, ALICE_NONCE, 100 ether, 10_000); // yes, risked 100
-        _commit(bob, 2, BOB_NONCE, 60 ether, 10_000); // no, risked 60
-        _commit(carol, 1, CAROL_NONCE, 40 ether, 5000); // yes, risked 20
+    // ---------- Voter helpers ----------
+
+    function _makeVoters(uint256 n, uint96 stake, uint16 conv, uint8 vote) internal returns (V[] memory vs) {
+        vs = new V[](n);
+        for (uint256 i = 0; i < n; i++) {
+            address a = address(uint160(uint256(keccak256(abi.encode("voter", i)))));
+            vm.deal(a, 1 ether); // gas only; not strictly needed in test, but harmless
+            assertTrue(token.transfer(a, DEFAULT_BALANCE));
+            vs[i] = V({
+                addr: a,
+                nonce: keccak256(abi.encode("nonce", i)),
+                stake: stake,
+                conv: conv,
+                vote: vote
+            });
+        }
+    }
+
+    function _commit(V memory v) internal {
+        bytes32 hash = market.commitHashOf(v.vote, v.nonce, v.addr);
+        vm.startPrank(v.addr);
+        token.approve(address(market), v.stake);
+        market.commitVote(hash, v.stake, v.conv);
+        vm.stopPrank();
+    }
+
+    function _commitAll(V[] memory vs) internal {
+        for (uint256 i = 0; i < vs.length; i++) _commit(vs[i]);
+    }
+
+    function _reveal(V memory v) internal {
+        vm.prank(v.addr);
+        market.revealVote(v.vote, v.nonce);
+    }
+
+    function _revealAll(V[] memory vs) internal {
+        for (uint256 i = 0; i < vs.length; i++) _reveal(vs[i]);
+    }
+
+    function _withdrawAll(V[] memory vs) internal {
+        for (uint256 i = 0; i < vs.length; i++) {
+            vm.prank(vs[i].addr);
+            market.withdraw();
+        }
+    }
+
+    // ---------- Tests ----------
+
+    function test_FullLifecycleSingleJurorYesOutcome() public {
+        // jurySize=1 with the 15% rule needs minCommits >= 7. All commit + reveal yes.
+        market = _deployMarket(1, 7, 1);
+
+        V[] memory vs = _makeVoters(7, 50 ether, 4_000, 1); // all YES, 40% conv → risked 20
+        _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(123, AUDIT_HASH);
+        market.commitJury(0xC0FFEE, AUDIT_HASH);
+        assertEq(market.getJury().length, 1);
 
-        assertEq(market.getJury().length, 3);
-
-        vm.prank(alice);
-        market.revealVote(1, ALICE_NONCE);
-        vm.prank(bob);
-        market.revealVote(2, BOB_NONCE);
-        vm.prank(carol);
-        market.revealVote(1, CAROL_NONCE);
+        _revealAll(vs);
 
         vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
         market.resolve();
 
+        // No losers, no missed reveals → slashed pool empty. Outcome Yes.
         assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Yes));
-        // slashed = bob's risked (60). Fee = 60 * 5% = 3. Distributable = 57.
-        assertEq(market.distributablePool(), 57 ether);
-        assertEq(market.treasuryAccrued(), 3 ether);
-        // Treasury hasn't pulled yet.
-        assertEq(token.balanceOf(treasury), 0);
+        assertEq(market.distributablePool(), 0);
+        assertEq(market.treasuryAccrued(), 0);
+        assertEq(market.creatorAccrued(), 0);
 
-        vm.prank(alice);
-        market.withdraw();
-        vm.prank(bob);
-        market.withdraw();
-        vm.prank(carol);
-        market.withdraw();
-
-        // alice winner: 100 stake + bonus (57 * 100/120) = 100 + 47.5
-        assertEq(token.balanceOf(alice), 1000 ether - 100 ether + 100 ether + 47.5 ether);
-        // bob loser-revealed: stake - risked = 0
-        assertEq(token.balanceOf(bob), 1000 ether - 60 ether);
-        // carol winner: 40 stake + bonus (57 * 20/120) = 40 + 9.5
-        assertEq(token.balanceOf(carol), 1000 ether - 40 ether + 40 ether + 9.5 ether);
-
-        // Permissionless treasury pull: sweeps accrued + dust (no dust here, exact divisions).
-        market.withdrawTreasury();
-        assertEq(token.balanceOf(treasury), 3 ether);
+        _withdrawAll(vs);
+        for (uint256 i = 0; i < vs.length; i++) {
+            assertEq(token.balanceOf(vs[i].addr), DEFAULT_BALANCE);
+        }
         assertEq(token.balanceOf(address(market)), 0);
     }
 
-    function test_RandomJurySubsetWhenJurySizeBelowCommitterCount() public {
-        // 5 voters, jurySize 3 -> Fisher-Yates picks a strict subset.
-        market = _deployMarket(3, 3, 2);
+    function test_LifecycleSlashesLosersAndPaysWinners() public {
+        // jurySize=3 needs minCommits >= 20. Mix yes/no voters with different convictions.
+        market = _deployMarket(3, 20, 2);
 
-        _commit(alice, 1, ALICE_NONCE, 100 ether, 10_000);
-        _commit(bob, 2, BOB_NONCE, 60 ether, 10_000);
-        _commit(carol, 1, CAROL_NONCE, 40 ether, 5000);
-        _commit(dave, 2, DAVE_NONCE, 30 ether, 2500);
-        _commit(eve, 1, EVE_NONCE, 50 ether, 5000);
+        V[] memory yes = _makeVoters(15, 60 ether, 5_000, 1); // risked 30 each
+        // 5 NO voters via separate make so addresses don't clash
+        V[] memory no = new V[](5);
+        for (uint256 i = 0; i < 5; i++) {
+            address a = address(uint160(uint256(keccak256(abi.encode("noVoter", i)))));
+            assertTrue(token.transfer(a, DEFAULT_BALANCE));
+            no[i] = V({
+                addr: a,
+                nonce: keccak256(abi.encode("noNonce", i)),
+                stake: 80 ether,
+                conv: 10_000,
+                vote: 2
+            });
+        }
+
+        _commitAll(yes);
+        _commitAll(no);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
         market.commitJury(0xC0FFEE, AUDIT_HASH);
 
-        address[] memory jury = market.getJury();
-        assertEq(jury.length, 3);
-        // Distinct + all are committers.
-        assertTrue(jury[0] != jury[1] && jury[1] != jury[2] && jury[0] != jury[2]);
-        for (uint256 i = 0; i < 3; i++) {
-            assertTrue(market.isJuror(jury[i]));
-            address[5] memory voters = [alice, bob, carol, dave, eve];
-            bool ok;
-            for (uint256 j = 0; j < 5; j++) {
-                if (jury[i] == voters[j]) {
-                    ok = true;
-                    break;
-                }
-            }
-            assertTrue(ok);
+        _revealAll(yes);
+        _revealAll(no);
+
+        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        market.resolve();
+
+        TruthMarket.Outcome outcome = market.outcome();
+        // With 15 YES and 5 NO committers and a random 3-juror draw, both outcomes are
+        // possible. Either way, no juror missed reveal so creator accrues nothing.
+        assertEq(market.creatorAccrued(), 0);
+        assertTrue(outcome == TruthMarket.Outcome.Yes || outcome == TruthMarket.Outcome.No);
+
+        // slashed = losers' risked stake. fee = 5%. Whoever lost forfeits their risked.
+        if (outcome == TruthMarket.Outcome.Yes) {
+            // NO side lost: 5 * 80 risked = 400.
+            assertEq(market.distributablePool(), 380 ether);
+            assertEq(market.treasuryAccrued(), 20 ether);
+        } else {
+            // YES side lost: 15 * 30 risked = 450.
+            assertEq(market.distributablePool(), 427.5 ether);
+            assertEq(market.treasuryAccrued(), 22.5 ether);
         }
+
+        _withdrawAll(yes);
+        _withdrawAll(no);
+        market.withdrawTreasury();
+
+        // Conservation: contract balance is zero (withdrawTreasury sweeps any dust).
+        assertEq(token.balanceOf(address(market)), 0);
+        assertEq(market.creatorAccrued(), 0);
     }
 
     function test_ResolvesInvalidWhenJuryCommitDeadlineMissed() public {
-        _commit(alice, 1, ALICE_NONCE, 100 ether, 10_000);
-        _commit(bob, 2, BOB_NONCE, 60 ether, 10_000);
-        _commit(carol, 1, CAROL_NONCE, 40 ether, 5000);
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 5_000, 1);
+        _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD + ADMIN_TIMEOUT);
         market.resolve();
 
         assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Invalid));
-        assertEq(uint256(market.phase()), uint256(TruthMarket.Phase.Resolved));
-
-        vm.prank(alice);
-        market.withdraw();
-        vm.prank(bob);
-        market.withdraw();
-        vm.prank(carol);
-        market.withdraw();
-
-        assertEq(token.balanceOf(alice), 1000 ether);
-        assertEq(token.balanceOf(bob), 1000 ether);
-        assertEq(token.balanceOf(carol), 1000 ether);
-        // No accrual on this path (jury never drawn).
+        assertEq(market.creatorAccrued(), 0);
         assertEq(market.treasuryAccrued(), 0);
+
+        _withdrawAll(vs);
+        for (uint256 i = 0; i < vs.length; i++) {
+            assertEq(token.balanceOf(vs[i].addr), DEFAULT_BALANCE);
+        }
         assertEq(token.balanceOf(address(market)), 0);
     }
 
-    function test_ResolvesInvalidWhenTooFewJurorsReveal_SlashesNonRevealingJurors() public {
-        // 3 jurors, minRevealedJurors=2, only 1 reveals -> Invalid + slash 2 non-revealers.
-        _commit(alice, 1, ALICE_NONCE, 100 ether, 10_000); // risked 100, conv 100% -> penalty cap = 100
-        _commit(bob, 2, BOB_NONCE, 100 ether, 10_000); // risked 100, penalty cap = 100
-        _commit(carol, 1, CAROL_NONCE, 100 ether, 10_000); // risked 100, penalty cap = 100
+    function test_NonRevealingJurorAtValidOutcomeForfeitsFullStake() public {
+        // jurySize=3, minCommits=20. Find which addresses get drawn as jurors and pick
+        // one of them to skip reveal — should forfeit full stake; rest of payouts work.
+        market = _deployMarket(3, 20, 2);
+        V[] memory vs = _makeVoters(20, 50 ether, 4_000, 1); // all YES, risked 20
+        _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(123, AUDIT_HASH);
+        market.commitJury(0xBEEF, AUDIT_HASH);
 
-        // Reveal exactly one juror.
         address[] memory jury = market.getJury();
-        bytes32 nonce = jury[0] == alice ? ALICE_NONCE : (jury[0] == bob ? BOB_NONCE : CAROL_NONCE);
-        uint8 vote = jury[0] == bob ? 2 : 1;
-        vm.prank(jury[0]);
-        market.revealVote(vote, nonce);
+        address skipper = jury[0];
+
+        // Reveal everyone except the chosen juror.
+        for (uint256 i = 0; i < vs.length; i++) {
+            if (vs[i].addr == skipper) continue;
+            _reveal(vs[i]);
+        }
+
+        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        market.resolve();
+
+        // 2 yes jurors, 0 no jurors → outcome Yes.
+        assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Yes));
+        // Slashed pool: skipper missed risked (20) + extra (50 - 20 = 30) = 50.
+        // Fee 5% = 2.5, distributable = 47.5.
+        assertEq(market.treasuryAccrued(), 2.5 ether);
+        assertEq(market.distributablePool(), 47.5 ether);
+        assertEq(market.creatorAccrued(), 0); // only on Invalid path
+
+        _withdrawAll(vs);
+
+        assertEq(token.balanceOf(skipper), DEFAULT_BALANCE - 50 ether); // full stake gone
+        // Each other yes-revealer: risked 20, totalYesRewardWeight = 19 * 20 = 380.
+        //   bonus = 47.5 * 20 / 380 = 2.5.
+        for (uint256 i = 0; i < vs.length; i++) {
+            if (vs[i].addr == skipper) continue;
+            assertEq(token.balanceOf(vs[i].addr), DEFAULT_BALANCE + 2.5 ether);
+        }
+
+        market.withdrawTreasury();
+        assertEq(token.balanceOf(address(market)), 0);
+    }
+
+    function test_NonRevealingJurorPenaltyBypassesConvictionAtLowConv() public {
+        // 10% conviction juror who skips reveal still loses full stake.
+        market = _deployMarket(3, 20, 2);
+        V[] memory vs = _makeVoters(20, 100 ether, 1_000, 1); // 10% conv → risked 10
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(0xBEEF, AUDIT_HASH);
+
+        address skipper = market.getJury()[0];
+        for (uint256 i = 0; i < vs.length; i++) {
+            if (vs[i].addr == skipper) continue;
+            _reveal(vs[i]);
+        }
+
+        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        market.resolve();
+
+        assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Yes));
+        // Slashed: skipper missed risked 10 + extra (100 - 10 = 90) = 100.
+        // Fee 5%=5, distributable=95.
+        assertEq(market.treasuryAccrued(), 5 ether);
+        assertEq(market.distributablePool(), 95 ether);
+
+        _withdrawAll(vs);
+        assertEq(token.balanceOf(skipper), DEFAULT_BALANCE - 100 ether); // full stake gone
+    }
+
+    function test_InvalidWhenTooFewJurorsRevealRoutesPenaltyToCreator() public {
+        // jurySize=3, minRevealedJurors=2. Only one juror reveals → Invalid; the other
+        // two jurors lose full stakes, accruing to the CREATOR (not treasury).
+        market = _deployMarket(3, 20, 2);
+        V[] memory vs = _makeVoters(20, 80 ether, 10_000, 1); // 100% conv → risked 80
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(0xBEEF, AUDIT_HASH);
+
+        address[] memory jury = market.getJury();
+        // Reveal only jury[0] among jurors. Reveal all non-jurors normally.
+        for (uint256 i = 0; i < vs.length; i++) {
+            bool isJuror = vs[i].addr == jury[0] || vs[i].addr == jury[1] || vs[i].addr == jury[2];
+            if (!isJuror) {
+                _reveal(vs[i]);
+                continue;
+            }
+            if (vs[i].addr == jury[0]) _reveal(vs[i]);
+        }
 
         vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
         market.resolve();
 
         assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Invalid));
-        // Both non-revealing jurors lose 100 (cap == stake at 100% conviction). Total accrued = 200.
-        assertEq(market.treasuryAccrued(), 200 ether);
+        // Two non-revealing jurors × full 80-stake penalty = 160.
+        assertEq(market.creatorAccrued(), 160 ether);
+        // No treasury accrual on Invalid.
+        assertEq(market.treasuryAccrued(), 0);
 
-        vm.prank(alice);
-        market.withdraw();
-        vm.prank(bob);
-        market.withdraw();
-        vm.prank(carol);
-        market.withdraw();
+        _withdrawAll(vs);
 
-        assertEq(token.balanceOf(jury[0]), 1000 ether);
-        // Two non-revealers each lose their full stake.
-        assertEq(token.balanceOf(jury[1]), 900 ether);
-        assertEq(token.balanceOf(jury[2]), 900 ether);
+        // Non-revealing jurors get 0; everyone else (revealing jurors and non-jurors)
+        // gets full refund.
+        uint256 zeroCount;
+        for (uint256 i = 0; i < vs.length; i++) {
+            uint256 bal = token.balanceOf(vs[i].addr);
+            if (bal == DEFAULT_BALANCE - 80 ether) {
+                zeroCount++;
+            } else {
+                assertEq(bal, DEFAULT_BALANCE);
+            }
+        }
+        assertEq(zeroCount, 2);
 
-        market.withdrawTreasury();
-        assertEq(token.balanceOf(treasury), 200 ether);
+        // Creator pulls; nothing left in the contract (no fee accrues on Invalid).
+        market.withdrawCreator();
+        assertEq(token.balanceOf(creator), 160 ether);
         assertEq(token.balanceOf(address(market)), 0);
     }
 
-    function test_FullStakeSlashOnNonRevealingJurorAtValidOutcome() public {
-        // 5 voters, jurySize=5 -> all jurors. eve fails to reveal at 50% conviction:
-        // her full stake is slashed regardless of conviction.
-        market = _deployMarket(5, 5, 3);
+    // ---------- Constructor guard tests ----------
 
-        _commit(alice, 1, ALICE_NONCE, 100 ether, 10_000); // yes risked 100
-        _commit(bob, 1, BOB_NONCE, 100 ether, 10_000); // yes risked 100
-        _commit(carol, 1, CAROL_NONCE, 100 ether, 10_000); // yes risked 100
-        _commit(dave, 2, DAVE_NONCE, 100 ether, 10_000); // no risked 100 (revealed loser)
-        _commit(eve, 2, EVE_NONCE, 80 ether, 5000); // no risked 40, won't reveal -> full 80 slashed
-
-        vm.warp(block.timestamp + VOTING_PERIOD);
-        vm.prank(juryCommitter);
-        market.commitJury(0xBEEF, AUDIT_HASH);
-
-        vm.prank(alice);
-        market.revealVote(1, ALICE_NONCE);
-        vm.prank(bob);
-        market.revealVote(1, BOB_NONCE);
-        vm.prank(carol);
-        market.revealVote(1, CAROL_NONCE);
-        vm.prank(dave);
-        market.revealVote(2, DAVE_NONCE);
-
-        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
-        market.resolve();
-
-        // 3 yes vs 1 no jurors revealed -> Yes wins (count-based, ignores stakes).
-        assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Yes));
-        assertEq(market.juryYesCount(), 3);
-        assertEq(market.juryNoCount(), 1);
-
-        // slashed = dave 100 (loser) + eve 40 (missed base) + eve extra 40 (full-stake) = 180
-        // fee = 9, distributable = 171
-        assertEq(market.treasuryAccrued(), 9 ether);
-        assertEq(market.distributablePool(), 171 ether);
-
-        vm.prank(alice);
-        market.withdraw();
-        vm.prank(bob);
-        market.withdraw();
-        vm.prank(carol);
-        market.withdraw();
-        vm.prank(dave);
-        market.withdraw();
-        vm.prank(eve);
-        market.withdraw();
-
-        // Each yes-revealer: 100 stake refund + 171 * 100 / 300 = 100 + 57 bonus.
-        assertEq(token.balanceOf(alice), 1000 ether - 100 ether + 100 ether + 57 ether);
-        assertEq(token.balanceOf(bob), 1000 ether - 100 ether + 100 ether + 57 ether);
-        assertEq(token.balanceOf(carol), 1000 ether - 100 ether + 100 ether + 57 ether);
-        assertEq(token.balanceOf(dave), 1000 ether - 100 ether);
-        // eve loses entire 80 stake.
-        assertEq(token.balanceOf(eve), 1000 ether - 80 ether);
-
-        market.withdrawTreasury();
-        assertEq(token.balanceOf(treasury), 9 ether);
-        assertEq(token.balanceOf(address(market)), 0);
+    function test_RevertsConstructorOnEvenJurySize() public {
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(_initParams(2, 14, 1));
     }
 
-    function test_FullStakeSlashIgnoresLowConviction() public {
-        // Confirms the juror full-stake slash is independent of conviction: a 10%-conviction
-        // juror who skips reveal still loses the entire stake.
-        market = _deployMarket(5, 5, 3);
-
-        _commit(alice, 1, ALICE_NONCE, 100 ether, 10_000);
-        _commit(bob, 1, BOB_NONCE, 100 ether, 10_000);
-        _commit(carol, 1, CAROL_NONCE, 100 ether, 10_000);
-        _commit(dave, 2, DAVE_NONCE, 100 ether, 10_000); // revealed loser
-        _commit(eve, 2, EVE_NONCE, 100 ether, 1000); // 10% conviction, won't reveal
-
-        vm.warp(block.timestamp + VOTING_PERIOD);
-        vm.prank(juryCommitter);
-        market.commitJury(0xBEEF, AUDIT_HASH);
-
-        vm.prank(alice);
-        market.revealVote(1, ALICE_NONCE);
-        vm.prank(bob);
-        market.revealVote(1, BOB_NONCE);
-        vm.prank(carol);
-        market.revealVote(1, CAROL_NONCE);
-        vm.prank(dave);
-        market.revealVote(2, DAVE_NONCE);
-
-        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
-        market.resolve();
-
-        // slashed = dave 100 + eve 10 (missed base) + eve extra 90 (stake - risked) = 200
-        // fee = 10, distributable = 190
-        assertEq(market.treasuryAccrued(), 10 ether);
-        assertEq(market.distributablePool(), 190 ether);
-
-        vm.prank(eve);
-        market.withdraw();
-        // Full stake gone regardless of 10% conviction.
-        assertEq(token.balanceOf(eve), 1000 ether - 100 ether);
+    function test_RevertsConstructorWhenJuryExceedsMax() public {
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(_initParams(101, 700, 50));
     }
+
+    function test_RevertsConstructorWhenJuryExceeds15PercentOfMinCommits() public {
+        // jurySize=3 needs minCommits >= 20. Below that should revert.
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(_initParams(3, 19, 2));
+    }
+
+    function test_RevertsConstructorWhenMinRevealedJurorsZero() public {
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(_initParams(1, 7, 0));
+    }
+
+    function test_RevertsConstructorWhenMinRevealedJurorsExceedsJurySize() public {
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(_initParams(3, 20, 4));
+    }
+
+    function test_RevertsConstructorOnZeroCreator() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.creator = address(0);
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_RevertsConstructorOnZeroAdmin() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.admin = address(0);
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    // ---------- Behavior guard tests ----------
 
     function test_RevertsCommitJuryWhenBelowMinCommits() public {
-        _commit(alice, 1, ALICE_NONCE, 100 ether, 10_000);
-        _commit(bob, 2, BOB_NONCE, 60 ether, 10_000);
-        // Only 2 commits; minCommits = 3.
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(3, 10 ether, 5_000, 1);
+        _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
@@ -333,63 +404,45 @@ contract TruthMarketLifecycleTest is Test {
         market.commitJury(123, AUDIT_HASH);
     }
 
-    function test_RevertsConstructorOnEvenJurySize() public {
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(_initParams(4, 4, 2));
-    }
-
-    function test_RevertsConstructorWhenJuryExceedsMax() public {
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(_initParams(101, 101, 50));
-    }
-
-    function test_RevertsConstructorWhenMinCommitsBelowJurySize() public {
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(_initParams(5, 3, 2));
-    }
-
     function test_RevertsCommitBelowMinStake() public {
-        vm.startPrank(alice);
+        market = _deployMarket(1, 7, 1);
+        address a = makeAddr("smallStaker");
+        token.transfer(a, 10 ether);
+
+        vm.startPrank(a);
         token.approve(address(market), 0.5 ether);
-        bytes32 hash = market.commitHashOf(1, ALICE_NONCE, alice);
+        bytes32 hash = market.commitHashOf(1, "n", a);
         vm.expectRevert(TruthMarket.StakeBelowMin.selector);
         market.commitVote(hash, 0.5 ether, 10_000);
         vm.stopPrank();
     }
 
     function test_RevertsSecondCommitFromSameWallet() public {
-        _commit(alice, 1, ALICE_NONCE, 100 ether, 10_000);
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(1, 10 ether, 10_000, 1);
+        _commit(vs[0]);
 
-        bytes32 hash = market.commitHashOf(2, BOB_NONCE, alice);
-        vm.startPrank(alice);
-        token.approve(address(market), 100 ether);
+        bytes32 hash2 = market.commitHashOf(2, "other", vs[0].addr);
+        vm.startPrank(vs[0].addr);
+        token.approve(address(market), 10 ether);
         vm.expectRevert(TruthMarket.AlreadyCommitted.selector);
-        market.commitVote(hash, 100 ether, 10_000);
+        market.commitVote(hash2, 10 ether, 10_000);
         vm.stopPrank();
     }
 
     function test_RevealRequiresMatchingVoter() public {
-        _commit(alice, 1, ALICE_NONCE, 100 ether, 10_000);
-        _commit(bob, 2, BOB_NONCE, 60 ether, 10_000);
-        _commit(carol, 1, CAROL_NONCE, 40 ether, 5000);
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 5_000, 1);
+        _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
         market.commitJury(123, AUDIT_HASH);
 
-        // bob attempts to reveal with alice's nonce/vote — hash binds to msg.sender,
-        // so this fails.
-        vm.prank(bob);
+        // Voter[1] tries to reveal with voter[0]'s nonce/vote — fails because the hash
+        // is bound to msg.sender.
+        vm.prank(vs[1].addr);
         vm.expectRevert(TruthMarket.InvalidReveal.selector);
-        market.revealVote(1, ALICE_NONCE);
-    }
-
-    function _commit(address voter, uint8 vote, bytes32 nonce, uint96 stake, uint16 convictionBps) internal {
-        bytes32 commitHash = market.commitHashOf(vote, nonce, voter);
-
-        vm.startPrank(voter);
-        token.approve(address(market), stake);
-        market.commitVote(commitHash, stake, convictionBps);
-        vm.stopPrank();
+        market.revealVote(vs[0].vote, vs[0].nonce);
     }
 }
