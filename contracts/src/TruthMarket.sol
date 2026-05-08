@@ -17,13 +17,15 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 ///         outcome. Stake and conviction do NOT influence the YES/NO decision.
 ///
 ///         Stake roles:
-///         - Slash: a voter on the losing side (or a non-revealing non-juror) forfeits
-///           their `riskedStake` (= stake × conviction).
+///         - Normal slash: a voter on the losing side, or a non-revealing non-juror,
+///           forfeits their `riskedStake` (= stake × conviction). At a typical 20%
+///           conviction this is roughly 20% of stake.
 ///         - Reward: winning revealers split the slashed pool in proportion to their
 ///           own `riskedStake`.
-///         - Juror penalty: a selected juror who fails to reveal forfeits their FULL
-///           stake — for jurors, conviction does not limit the slash. The extra (above
-///           the normal 1× riskedStake slash) joins the distributable pool on a Yes/No
+///         - Juror penalty: ~5× the normal slash. A selected juror who fails to reveal
+///           forfeits their FULL stake regardless of conviction — i.e. 100% of stake,
+///           which lines up with 5× a typical 20% normal slash. The extra (above the
+///           normal 1× riskedStake slash) joins the distributable pool on a Yes/No
 ///           outcome, or accrues to the treasury on Invalid.
 ///
 ///         Tie behavior: ties on juror count resolve to Invalid. Ties are impossible
