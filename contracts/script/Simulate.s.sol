@@ -189,6 +189,10 @@ contract SimulateScript is Script {
         vm.startPrank(DEPLOYER);
         token = new ExampleToken("Truth Stake", "TRUTH", 1_000_000 ether, 10_000_000 ether, DEPLOYER);
         vm.stopPrank();
+        string[] memory tags = new string[](3);
+        tags[0] = "demo";
+        tags[1] = "lifecycle";
+        tags[2] = "test";
         market = new TruthMarket(
             TruthMarket.InitParams({
                 stakeToken: IERC20(address(token)),
@@ -196,6 +200,9 @@ contract SimulateScript is Script {
                 admin: ADMIN_ADDR,
                 juryCommitter: JURY_COMMITTER_ADDR,
                 creator: CREATOR,
+                name: "Demo Claim",
+                description: "Will the test pass?",
+                tags: tags,
                 ipfsHash: IPFS_HASH,
                 votingPeriod: VOTING_PERIOD,
                 adminTimeout: ADMIN_TIMEOUT,
@@ -210,6 +217,9 @@ contract SimulateScript is Script {
 
         console2.log("Deployed TruthMarket at:", address(market));
         console2.log("Stake token:           ", address(token));
+        console2.log("Claim name:            ", market.name());
+        console2.log("Claim description:     ", market.description());
+        console2.log("Tags:                  ", market.getTags().length);
         console2.log("Voting deadline:       ", market.votingDeadline());
         console2.log("Jury commit deadline:  ", market.juryCommitDeadline());
         console2.log("Reveal deadline:       ", market.revealDeadline());

@@ -17,6 +17,8 @@ contract TruthMarketLifecycleTest is Test {
 
     bytes internal constant IPFS_HASH = bytes("ipfs://Qm-claim-doc");
     bytes32 internal constant AUDIT_HASH = keccak256("swarm://ctrng-output");
+    string internal constant CLAIM_NAME = "Test Claim";
+    string internal constant CLAIM_DESCRIPTION = "Will the test pass by 2030?";
     uint64 internal constant VOTING_PERIOD = 1 days;
     uint64 internal constant ADMIN_TIMEOUT = 12 hours;
     uint64 internal constant REVEAL_PERIOD = 1 days;
@@ -50,12 +52,18 @@ contract TruthMarketLifecycleTest is Test {
         view
         returns (TruthMarket.InitParams memory)
     {
+        string[] memory tags = new string[](2);
+        tags[0] = "demo";
+        tags[1] = "test";
         return TruthMarket.InitParams({
             stakeToken: IERC20(address(token)),
             treasury: treasury,
             admin: admin,
             juryCommitter: juryCommitter,
             creator: creator,
+            name: CLAIM_NAME,
+            description: CLAIM_DESCRIPTION,
+            tags: tags,
             ipfsHash: IPFS_HASH,
             votingPeriod: VOTING_PERIOD,
             adminTimeout: ADMIN_TIMEOUT,
@@ -444,5 +452,182 @@ contract TruthMarketLifecycleTest is Test {
         vm.prank(vs[1].addr);
         vm.expectRevert(TruthMarket.InvalidReveal.selector);
         market.revealVote(vs[0].vote, vs[0].nonce);
+    }
+
+    // ---------- Claim metadata tests ----------
+
+    function test_ClaimMetadataStoredOnChain() public {
+        market = _deployMarket(1, 7, 1);
+        assertEq(market.name(), CLAIM_NAME);
+        assertEq(market.description(), CLAIM_DESCRIPTION);
+        string[] memory tags = market.getTags();
+        assertEq(tags.length, 2);
+        assertEq(tags[0], "demo");
+        assertEq(tags[1], "test");
+    }
+
+    function test_RevertsConstructorOnEmptyName() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.name = "";
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_RevertsConstructorOnEmptyDescription() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.description = "";
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_RevertsConstructorWhenTooManyTags() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        string[] memory tags = new string[](6);
+        for (uint256 i = 0; i < 6; i++) tags[i] = "tag";
+        p.tags = tags;
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_AcceptsExactlyMaxTags() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        string[] memory tags = new string[](5);
+        tags[0] = "a";
+        tags[1] = "b";
+        tags[2] = "c";
+        tags[3] = "d";
+        tags[4] = "e";
+        p.tags = tags;
+        TruthMarket m = new TruthMarket(p);
+        assertEq(m.getTags().length, 5);
+    }
+
+    // ---------- Nonce-leak revocation tests ----------
+
+    function test_RevokeStakeTransfersFullStakeToClaimer() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 80 ether, 5_000, 1);
+        _commitAll(vs);
+
+        // Attacker (any non-voter address) learned vs[0]'s nonce and revokes their stake.
+        address attacker = makeAddr("attacker");
+        uint256 attackerBefore = token.balanceOf(attacker);
+
+        vm.prank(attacker);
+        market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
+
+        // Attacker now holds the revoked voter's full 80-ether stake.
+        assertEq(token.balanceOf(attacker), attackerBefore + 80 ether);
+        // Aggregates dropped by the revoked stake.
+        assertEq(market.totalCommittedStake(), 6 * 80 ether);
+        // Risked dropped by the revoked risked stake (= 80 * 50% = 40).
+        assertEq(market.totalRiskedStake(), 6 * 40 ether);
+    }
+
+    function test_RevokeStakeRequiresValidNonce() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 80 ether, 10_000, 1);
+        _commitAll(vs);
+
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        vm.expectRevert(TruthMarket.InvalidReveal.selector);
+        market.revokeStake(vs[0].addr, vs[0].vote, bytes32("wrong-nonce"));
+    }
+
+    function test_RevokeStakeRevertsAfterVotingDeadline() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 50 ether, 10_000, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        vm.expectRevert(TruthMarket.DeadlinePassed.selector);
+        market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
+    }
+
+    function test_RevokeStakeRevertsInRevealPhase() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 50 ether, 10_000, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(123, AUDIT_HASH);
+
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        // WrongPhase fires first (phase has advanced to Reveal).
+        vm.expectRevert(TruthMarket.WrongPhase.selector);
+        market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
+    }
+
+    function test_RevokeStakeBlocksSelfCall() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 50 ether, 10_000, 1);
+        _commitAll(vs);
+
+        // Voter cannot revoke their own commit (would let them bypass slashing).
+        vm.prank(vs[0].addr);
+        vm.expectRevert(TruthMarket.NotAuthorized.selector);
+        market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
+    }
+
+    function test_RevokedCommitCannotReveal() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 50 ether, 10_000, 1);
+        _commitAll(vs);
+
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(123, AUDIT_HASH);
+
+        // Revoked voter tries to reveal — fails.
+        vm.prank(vs[0].addr);
+        vm.expectRevert(TruthMarket.CommitRevoked.selector);
+        market.revealVote(vs[0].vote, vs[0].nonce);
+    }
+
+    function test_RevokedCommitCannotWithdraw() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 50 ether, 10_000, 1);
+        _commitAll(vs);
+
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
+
+        // Run the rest of the lifecycle.
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(123, AUDIT_HASH);
+        // Reveal everyone except the revoked voter.
+        for (uint256 i = 1; i < vs.length; i++) _reveal(vs[i]);
+        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        market.resolve();
+
+        vm.prank(vs[0].addr);
+        vm.expectRevert(TruthMarket.NothingToWithdraw.selector);
+        market.withdraw();
+    }
+
+    function test_DoubleRevokeReverts() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 50 ether, 10_000, 1);
+        _commitAll(vs);
+
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
+
+        vm.prank(attacker);
+        vm.expectRevert(TruthMarket.CommitRevoked.selector);
+        market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
     }
 }

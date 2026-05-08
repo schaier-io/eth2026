@@ -54,6 +54,9 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 ## Implementation Decisions
 
 - The product is a random-jury belief-resolution market, not a fact-checking oracle.
+- Claim metadata (name, description, up to 5 tags) is stored on-chain at deployment so the claim is self-describing without a separate fetch. The Swarm/IPFS rules document remains the authoritative long-form reference.
+- Voters may have a leaked nonce penalised during the voting phase: anyone who can produce a valid (vote, nonce) for another voter's commit can call `revokeStake` and claim that voter's full stake. After the voting deadline this is no longer callable. See [ADR 0007](./adr/0007-nonce-leak-revocation.md).
+- Self-revocation is blocked so it cannot be used as an early-exit bypass of the slash mechanics.
 - The protocol does not decide external truth. It resolves outcomes from selected juror reveals.
 - Swarm stores immutable claim/rules documents.
 - The contract stores the Swarm reference for each claim.

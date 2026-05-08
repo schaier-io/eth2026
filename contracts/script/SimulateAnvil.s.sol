@@ -82,6 +82,10 @@ contract SimulateAnvilScript is Script {
 
         vm.startBroadcast(DEPLOYER_PK);
         ExampleToken token = new ExampleToken("Truth Stake", "TRUTH", 100_000 ether, 1_000_000 ether, deployer);
+        string[] memory tags = new string[](3);
+        tags[0] = "anvil";
+        tags[1] = "demo";
+        tags[2] = "lifecycle";
         TruthMarket market = new TruthMarket(
             TruthMarket.InitParams({
                 stakeToken: IERC20(address(token)),
@@ -89,6 +93,9 @@ contract SimulateAnvilScript is Script {
                 admin: admin,
                 juryCommitter: juryCommitter,
                 creator: creator,
+                name: "Anvil Demo Claim",
+                description: "End-to-end TruthMarket lifecycle on a fresh anvil node.",
+                tags: tags,
                 ipfsHash: IPFS_HASH,
                 votingPeriod: VOTING_PERIOD,
                 adminTimeout: ADMIN_TIMEOUT,
@@ -111,6 +118,9 @@ contract SimulateAnvilScript is Script {
         console2.log("=== Phase: Deploy ===");
         console2.log("Token:                ", address(token));
         console2.log("Market:               ", address(market));
+        console2.log("Name:                 ", market.name());
+        console2.log("Description:          ", market.description());
+        console2.log("Tags count:           ", market.getTags().length);
         console2.log("Treasury:             ", treasury);
         console2.log("Admin:                ", admin);
         console2.log("Jury committer:       ", juryCommitter);

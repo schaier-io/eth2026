@@ -13,6 +13,18 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 ///         contract draws the resolving jury on-chain via Fisher-Yates from the set of
 ///         committed voters.
 ///
+///         Claim metadata: in addition to the immutable Swarm/IPFS rules document, the
+///         contract stores an on-chain `name`, `description`, and up to MAX_TAGS short
+///         `tags` so the claim is self-describing without a fetch.
+///
+///         Nonce-leak revocation (voting phase only): anyone who can produce a valid
+///         (vote, nonce) for another voter's commit may call `revokeStake(voter, ...)`
+///         and claim that voter's full stake. This is the on-chain deterrent against
+///         publishing/sharing a nonce — once leaked, anyone who learns it can take the
+///         stake. The function is gated to the voting phase: during or after reveal it
+///         is no longer callable. Voters cannot revoke themselves (would let them
+///         bypass the slash mechanics).
+///
 ///         Voting power: every selected juror counts as exactly 1 vote toward the
 ///         outcome. Stake and conviction do NOT influence the YES/NO decision.
 ///
@@ -48,6 +60,8 @@ contract TruthMarket is ReentrancyGuard {
     ///         construction via `minCommits × MAX_JURY_PERCENTAGE ≥ jurySize × 100`, so
     ///         once `commitCount ≥ minCommits` the rule holds for the actual draw too.
     uint256 public constant MAX_JURY_PERCENTAGE = 15;
+    /// @notice Maximum number of claim tags storable on-chain.
+    uint256 public constant MAX_TAGS = 5;
 
     // ---------- Types ----------
 
@@ -73,6 +87,8 @@ contract TruthMarket is ReentrancyGuard {
     ///      `revealedVote` carries 1 (YES) or 2 (NO) once `revealed` flips true; while
     ///      `revealed == false` the field stays 0 and must not be read as a vote.
     ///      `revealed == false` and `revealedVote == 0` together mean "not revealed".
+    ///      `revoked == true` means the commit's nonce was leaked and someone called
+    ///      `revokeStake` to claim the stake; the slot is permanently disabled.
     struct Commit {
         bytes32 hash;
         uint96 stake;
@@ -81,6 +97,7 @@ contract TruthMarket is ReentrancyGuard {
         uint8 revealedVote;
         bool revealed;
         bool withdrawn;
+        bool revoked;
     }
 
     /// @dev Constructor params bundled to avoid stack-too-deep with the deployment config.
@@ -90,6 +107,9 @@ contract TruthMarket is ReentrancyGuard {
         address admin;
         address juryCommitter;
         address creator;
+        string name;
+        string description;
+        string[] tags;
         bytes ipfsHash;
         uint64 votingPeriod;
         uint64 adminTimeout;
@@ -125,6 +145,9 @@ contract TruthMarket is ReentrancyGuard {
     address public treasury;
     Phase public phase;
     Outcome public outcome;
+    string public name;
+    string public description;
+    string[] public tags;
     bytes public ipfsHash;
     uint32 public commitCount;
     uint32 public revealedJurorCount;
@@ -157,6 +180,9 @@ contract TruthMarket is ReentrancyGuard {
     // ---------- Events ----------
 
     event MarketStarted(
+        string name,
+        string description,
+        string[] tags,
         bytes ipfsHash,
         uint64 votingDeadline,
         uint64 juryCommitDeadline,
@@ -178,6 +204,7 @@ contract TruthMarket is ReentrancyGuard {
     event TreasuryUpdated(address indexed treasury);
     event TreasuryWithdrawn(address indexed treasury, uint256 amount);
     event CreatorWithdrawn(address indexed creator, uint256 amount);
+    event StakeRevoked(address indexed voter, address indexed claimer, uint96 stake);
 
     // ---------- Errors ----------
 
@@ -194,6 +221,7 @@ contract TruthMarket is ReentrancyGuard {
     error BadParams();
     error InsufficientCommits();
     error StakeBelowMin();
+    error CommitRevoked();
 
     // ---------- Modifiers ----------
 
@@ -223,12 +251,20 @@ contract TruthMarket is ReentrancyGuard {
         if (uint256(p.minCommits) * MAX_JURY_PERCENTAGE < uint256(p.jurySize) * 100) revert BadParams();
         if (p.minRevealedJurors == 0) revert BadParams();
         if (p.minRevealedJurors > p.jurySize) revert BadParams();
+        if (bytes(p.name).length == 0) revert BadParams();
+        if (bytes(p.description).length == 0) revert BadParams();
+        if (p.tags.length > MAX_TAGS) revert BadParams();
 
         stakeToken = p.stakeToken;
         treasury = p.treasury;
         admin = p.admin;
         juryCommitter = p.juryCommitter;
         creator = p.creator;
+        name = p.name;
+        description = p.description;
+        for (uint256 i = 0; i < p.tags.length; i++) {
+            tags.push(p.tags[i]);
+        }
         ipfsHash = p.ipfsHash;
 
         uint64 deployTime = uint64(block.timestamp);
@@ -247,6 +283,9 @@ contract TruthMarket is ReentrancyGuard {
         phase = Phase.Voting;
 
         emit MarketStarted(
+            p.name,
+            p.description,
+            p.tags,
             p.ipfsHash,
             _votingDeadline,
             _juryCommitDeadline,
@@ -299,11 +338,51 @@ contract TruthMarket is ReentrancyGuard {
             convictionBps: convictionBps,
             revealedVote: 0,
             revealed: false,
-            withdrawn: false
+            withdrawn: false,
+            revoked: false
         });
         _committers.push(msg.sender);
 
         emit VoteCommitted(msg.sender, commitHash, actualStake, convictionBps, riskedStake);
+    }
+
+    // ---------- Nonce-leak revocation (voting phase only) ----------
+
+    /// @notice Slash a voter whose nonce has leaked. Anyone able to produce a valid
+    ///         (vote, nonce) pair for `voter` may call this during the voting phase to
+    ///         claim that voter's full stake. After the voting deadline (and during
+    ///         and after the reveal phase) this function is no longer callable.
+    ///         The mechanism is the on-chain deterrent against publishing/sharing a
+    ///         nonce: once it is known by a third party, that party can take the stake
+    ///         themselves. Voters cannot revoke their own commit (they would otherwise
+    ///         use it as an early withdrawal that bypasses slashing).
+    /// @param voter The address whose commit is being revoked.
+    /// @param vote  The voter's committed vote (1 = YES, 2 = NO).
+    /// @param nonce The leaked nonce that opens the commit.
+    function revokeStake(address voter, uint8 vote, bytes32 nonce) external nonReentrant {
+        if (phase != Phase.Voting) revert WrongPhase();
+        if (block.timestamp >= votingDeadline) revert DeadlinePassed();
+        if (msg.sender == voter) revert NotAuthorized();
+
+        Commit storage k = commits[voter];
+        if (k.hash == bytes32(0)) revert CommitNotFound();
+        if (k.revoked) revert CommitRevoked();
+
+        bytes32 expected = _commitHash(vote, nonce, voter);
+        if (expected != k.hash) revert InvalidReveal();
+
+        uint96 stake = k.stake;
+        uint96 risked = k.riskedStake;
+
+        k.revoked = true;
+        k.stake = 0;
+        k.riskedStake = 0;
+
+        totalCommittedStake -= stake;
+        totalRiskedStake -= risked;
+
+        stakeToken.safeTransfer(msg.sender, stake);
+        emit StakeRevoked(voter, msg.sender, stake);
     }
 
     // ---------- Jury commit + on-chain selection ----------
@@ -339,6 +418,7 @@ contract TruthMarket is ReentrancyGuard {
 
         Commit storage k = commits[msg.sender];
         if (k.hash == bytes32(0)) revert CommitNotFound();
+        if (k.revoked) revert CommitRevoked();
         if (k.revealed) revert AlreadyRevealed();
 
         bytes32 expected = _commitHash(vote, nonce, msg.sender);
@@ -412,6 +492,7 @@ contract TruthMarket is ReentrancyGuard {
         if (phase != Phase.Resolved) revert WrongPhase();
         Commit storage k = commits[msg.sender];
         if (k.hash == bytes32(0)) revert CommitNotFound();
+        if (k.revoked) revert NothingToWithdraw(); // stake was already taken by a revoker
         if (k.withdrawn) revert NothingToWithdraw();
 
         uint256 payout = _payoutFor(k, _isJuror[msg.sender]);
@@ -467,6 +548,10 @@ contract TruthMarket is ReentrancyGuard {
 
     function commitHashOf(uint8 vote, bytes32 nonce, address voter) external view returns (bytes32) {
         return _commitHash(vote, nonce, voter);
+    }
+
+    function getTags() external view returns (string[] memory) {
+        return tags;
     }
 
     // ---------- Admin ----------

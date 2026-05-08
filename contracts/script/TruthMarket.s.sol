@@ -15,6 +15,9 @@ contract TruthMarketScript is Script {
         address admin = vm.envOr("ADMIN", deployer);
         address juryCommitter = vm.envOr("JURY_COMMITTER", deployer);
         address creator = vm.envOr("CREATOR", deployer);
+        string memory name = vm.envString("CLAIM_NAME");
+        string memory description = vm.envString("CLAIM_DESCRIPTION");
+        string[] memory tags = _envTags();
         bytes memory ipfsHash = vm.envBytes("IPFS_HASH");
         uint64 votingPeriod = uint64(vm.envUint("VOTING_PERIOD"));
         uint64 adminTimeout = uint64(vm.envUint("ADMIN_TIMEOUT"));
@@ -33,6 +36,9 @@ contract TruthMarketScript is Script {
                 admin: admin,
                 juryCommitter: juryCommitter,
                 creator: creator,
+                name: name,
+                description: description,
+                tags: tags,
                 ipfsHash: ipfsHash,
                 votingPeriod: votingPeriod,
                 adminTimeout: adminTimeout,
@@ -52,5 +58,58 @@ contract TruthMarketScript is Script {
         console2.log("Admin:         ", admin);
         console2.log("Jury committer:", juryCommitter);
         console2.log("Creator:       ", creator);
+        console2.log("Name:          ", name);
+        console2.log("Tags count:    ", tags.length);
+    }
+
+    /// @dev Reads CLAIM_TAGS as a comma-separated string (e.g. "demo,test,prediction"),
+    ///      filtering out empty entries. Up to MAX_TAGS (5) entries.
+    function _envTags() internal view returns (string[] memory) {
+        string memory raw;
+        try this.readEnvString("CLAIM_TAGS") returns (string memory v) {
+            raw = v;
+        } catch {
+            return new string[](0);
+        }
+        return _splitCsv(raw);
+    }
+
+    function readEnvString(string calldata key) external view returns (string memory) {
+        return vm.envString(key);
+    }
+
+    function _splitCsv(string memory s) internal pure returns (string[] memory) {
+        bytes memory b = bytes(s);
+        if (b.length == 0) return new string[](0);
+
+        // First pass: count non-empty entries.
+        uint256 count = 1;
+        for (uint256 i = 0; i < b.length; i++) {
+            if (b[i] == ",") count++;
+        }
+        string[] memory parts = new string[](count);
+
+        uint256 partIdx;
+        uint256 start;
+        for (uint256 i = 0; i <= b.length; i++) {
+            if (i == b.length || b[i] == ",") {
+                bytes memory piece = new bytes(i - start);
+                for (uint256 j = 0; j < piece.length; j++) piece[j] = b[start + j];
+                parts[partIdx++] = string(piece);
+                start = i + 1;
+            }
+        }
+
+        // Filter empties.
+        uint256 nonEmpty;
+        for (uint256 i = 0; i < parts.length; i++) {
+            if (bytes(parts[i]).length > 0) nonEmpty++;
+        }
+        string[] memory out = new string[](nonEmpty);
+        uint256 oi;
+        for (uint256 i = 0; i < parts.length; i++) {
+            if (bytes(parts[i]).length > 0) out[oi++] = parts[i];
+        }
+        return out;
     }
 }

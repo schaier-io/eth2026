@@ -18,6 +18,7 @@ This is the entry point for project context. Teammates and agents should use the
 - [ADR 0004](./adr/0004-conviction-weighting.md): conviction concept and square-root weighting (superseded by 0006).
 - [ADR 0005](./adr/0005-spacecomputer-first-sponsor-strategy.md): prioritize SpaceComputer as the core sponsor integration.
 - [ADR 0006](./adr/0006-count-based-jury-voting.md): one-juror-one-vote outcome with full-stake juror non-reveal penalty.
+- [ADR 0007](./adr/0007-nonce-leak-revocation.md): voting-phase `revokeStake` lets anyone with a leaked nonce claim the voter's stake.
 
 ## Local Skill Provenance
 

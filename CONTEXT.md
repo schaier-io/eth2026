@@ -52,6 +52,14 @@ _Avoid_: loser pool
 Each selected juror contributes one vote (1) to the YES/NO outcome. Stake and conviction do not influence the YES/NO decision.
 _Avoid_: weighted vote, square-root vote, stake-based vote
 
+**Claim metadata**:
+The on-chain `name`, `description`, and up to five short `tags` stored at deployment so the claim is discoverable and self-describing without an off-chain fetch.
+_Avoid_: confusing this with the Swarm/IPFS claim/rules document, which is the authoritative long-form reference
+
+**Nonce-leak revocation**:
+The `revokeStake` mechanism. Anyone who can prove knowledge of another voter's nonce during the voting phase can claim that voter's full stake. Disabled after the voting deadline; voters cannot revoke themselves. The on-chain deterrent against publishing or sharing a nonce.
+_Avoid_: "early withdrawal" — it is not a refund path for the original voter
+
 **SpaceComputer randomness**:
 The cTRNG output used to select the resolving jury from committed voters.
 _Avoid_: oracle result
