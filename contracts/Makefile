@@ -1,10 +1,11 @@
 -include .env
 export
 
-.PHONY: help install update build test test-gas coverage fmt fmt-check snapshot clean anvil deploy-market simulate
+.PHONY: help setup install update build test test-gas coverage fmt fmt-check snapshot clean anvil anvil-up anvil-down deploy-market simulate simulate-anvil new-key new-key-write
 
 help:
 	@echo "Targets:"
+	@echo "  setup           - one-shot bootstrap (creates .env, builds)"
 	@echo "  install         - install/update git submodule libs"
 	@echo "  update          - bump libs to latest tags"
 	@echo "  build           - compile contracts"
@@ -19,12 +20,16 @@ help:
 	@echo "  new-key         - generate fresh keypair (bin/new-key)"
 	@echo "  new-key-write   - generate keypair AND write to .env"
 	@echo "  deploy-market  NETWORK=anvil  - deploy TruthMarket"
-	@echo "  simulate        - run lifecycle scenario in-process"
+	@echo "  simulate        - run lifecycle scenario in-process (no anvil)"
+	@echo "  simulate-anvil  - run full lifecycle against fresh anvil (bin/sim-anvil)"
 	@echo "  clean           - remove build artifacts"
 
 NETWORK ?= anvil
 BROADCAST ?= --broadcast
 FORGE ?= $(shell if [ -x "$$HOME/.foundry/bin/forge" ]; then printf "%s" "$$HOME/.foundry/bin/forge"; else command -v forge; fi)
+
+setup:
+	./bin/setup
 
 install:
 	$(FORGE) install
@@ -73,6 +78,9 @@ deploy-market:
 
 simulate:
 	$(FORGE) script script/Simulate.s.sol --sig 'lifecycle()' -vv
+
+simulate-anvil:
+	./bin/sim-anvil
 
 clean:
 	$(FORGE) clean

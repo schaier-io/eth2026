@@ -19,10 +19,12 @@ contracts/
 ├── sim.sh                # scenario runner for script/Simulate.s.sol
 ├── .env.example          # copy to .env, fill in
 ├── bin/                  # CLI helpers (bash)
+│   ├── setup             # one-shot bootstrap (.env + build)
 │   ├── new-key           # generate keypair (--write to save to .env)
 │   ├── anvil-up          # start anvil in background
 │   ├── anvil-down        # stop background anvil
-│   └── deploy            # deploy market [network]
+│   ├── deploy            # deploy market [network]
+│   └── sim-anvil         # full lifecycle against fresh anvil
 ├── src/
 │   ├── TruthMarket.sol   # random-jury belief-resolution market
 │   └── ExampleToken.sol  # ERC20 stake-token fixture, used inline by tests + sim
@@ -30,8 +32,9 @@ contracts/
 │   ├── TruthMarketLifecycle.t.sol
 │   └── ExampleToken.t.sol
 ├── script/
-│   ├── TruthMarket.s.sol # production deploy
-│   └── Simulate.s.sol    # local end-to-end scenarios (no broadcast)
+│   ├── TruthMarket.s.sol      # production deploy
+│   ├── Simulate.s.sol         # in-process scenarios (no broadcast)
+│   └── SimulateAnvil.s.sol    # broadcast-based phases for bin/sim-anvil
 └── lib/
     ├── forge-std/
     └── openzeppelin-contracts/
@@ -52,10 +55,16 @@ The `Makefile` and `bin/deploy` prefer `$HOME/.foundry/bin/forge` when it exists
 
 ```sh
 cd contracts
-cp .env.example .env
-forge install        # pulls submodules (already done if you cloned)
-forge build
+./bin/setup          # creates .env, runs forge build
 forge test -vv
+```
+
+`bin/setup` is the one-shot bootstrap: it copies `.env.example → .env` if missing and builds. Equivalent manual steps:
+
+```sh
+cp .env.example .env
+forge install
+forge build
 ```
 
 ## Local emulation (anvil)
@@ -80,7 +89,9 @@ Same script works against any configured network: `bin/deploy market sepolia`, e
 
 ### Local end-to-end simulation
 
-`script/Simulate.s.sol` runs full market scenarios in-process — no anvil, no broadcast. Use the `sim.sh` runner or call `forge script` directly:
+Two modes:
+
+**1. In-process** (`script/Simulate.s.sol` + `sim.sh`) — no anvil, no broadcast. Cheatcodes drive everything in a forge-script EVM. Fast, ephemeral state.
 
 ```sh
 ./sim.sh                           # default: lifecycle (Yes outcome)
@@ -91,6 +102,15 @@ Same script works against any configured network: `bin/deploy market sepolia`, e
 ./sim.sh random 0xDEADBEEF         # seeded random votes/stakes/reveals
 ./sim.sh all                       # all scenarios back to back
 ```
+
+**2. Anvil-backed** (`script/SimulateAnvil.s.sol` + `bin/sim-anvil`) — actually deploys to a fresh anvil node, broadcasts each phase as the matching anvil account, advances chain time between phases via `cast rpc evm_increaseTime`. Anvil keeps running afterwards so you can poke state with `cast`.
+
+```sh
+./bin/sim-anvil                    # spins up anvil, runs full lifecycle, prints state
+./bin/anvil-down                   # stop anvil when finished
+```
+
+Each phase is a separate forge-script sig (`deploy() / commit() / commitJury() / reveal() / resolve()`); the bash driver advances anvil time between them.
 
 ### Generating keys
 
@@ -140,8 +160,10 @@ anvil --fork-url $MAINNET_RPC_URL --fork-block-number 19000000
 | `make fmt` / `fmt-check` | format / check formatting                 |
 | `make snapshot`          | gas snapshot to `.gas-snapshot`           |
 | `make anvil`             | local node on `:8545`                     |
+| `make setup`             | bootstrap (.env, build)                   |
 | `make deploy-market`     | deploy `TruthMarket` (default `NETWORK=anvil`) |
 | `make simulate`          | run the lifecycle scenario in-process     |
+| `make simulate-anvil`    | run the full lifecycle against a fresh anvil |
 | `make clean`             | remove build artifacts                    |
 
 Override the RPC: `make deploy-market NETWORK=sepolia`.

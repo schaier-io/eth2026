@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# One-shot project setup: ensure .env, install forge libs, build.
+#
+# Usage:
+#   ./bin/setup
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+export PATH="$HOME/.foundry/bin:$PATH"
+
+if ! command -v forge >/dev/null 2>&1; then
+  echo "forge not found on PATH. Install foundry: https://book.getfoundry.sh/" >&2
+  exit 1
+fi
+
+if [ ! -f .env ]; then
+  cp .env.example .env
+  echo "created .env from .env.example"
+fi
+
+echo ">>> forge build"
+forge build
+
+echo
+echo "setup complete."
+echo
+echo "Next:"
+echo "  ./bin/anvil-up         # start local anvil"
+echo "  ./bin/sim-anvil        # run end-to-end TruthMarket simulation"
+echo "  ./bin/deploy market    # deploy TruthMarket via env config"
+echo "  ./bin/anvil-down       # stop local anvil"
