@@ -17,14 +17,14 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 ///         outcome. Stake and conviction do NOT influence the YES/NO decision.
 ///
 ///         Stake roles:
-///         - Slash: a voter on the losing side (or a non-revealing voter) forfeits
+///         - Slash: a voter on the losing side (or a non-revealing non-juror) forfeits
 ///           their `riskedStake` (= stake × conviction).
 ///         - Reward: winning revealers split the slashed pool in proportion to their
 ///           own `riskedStake`.
-///         - Juror penalty: a selected juror who fails to reveal is slashed 5×
-///           riskedStake, capped at their full stake. The extra (above the normal 1×
-///           slash) joins the distributable pool on a Yes/No outcome, or accrues to
-///           the treasury on Invalid.
+///         - Juror penalty: a selected juror who fails to reveal forfeits their FULL
+///           stake — for jurors, conviction does not limit the slash. The extra (above
+///           the normal 1× riskedStake slash) joins the distributable pool on a Yes/No
+///           outcome, or accrues to the treasury on Invalid.
 ///
 ///         Tie behavior: ties on juror count resolve to Invalid. Ties are impossible
 ///         when `minRevealedJurors == jurySize` (all jurors reveal, odd count); they
@@ -37,10 +37,6 @@ contract TruthMarket is ReentrancyGuard {
     uint16 public constant MAX_CONVICTION_BPS = 10_000;
     uint96 public constant MAX_PROTOCOL_FEE_BPS = 1000;
     uint32 public constant MAX_JURY_SIZE = 100;
-    /// @dev Multiplier on `riskedStake` for jurors who fail to reveal. The penalty is
-    ///      capped at the juror's full `stake`, so a 100%-conviction juror cannot lose
-    ///      more than they put in.
-    uint256 public constant NON_REVEAL_PENALTY_MULTIPLIER = 5;
 
     // ---------- Types ----------
 
@@ -343,10 +339,10 @@ contract TruthMarket is ReentrancyGuard {
     ///         Resolves Invalid if the admin missed the jury-commit deadline, if too few
     ///         jurors revealed, or if juror counts tie (only possible when an even number
     ///         of jurors actually revealed).
-    ///         Selected jurors who fail to reveal lose 5x their risked stake (capped at
-    ///         their full stake — a 100%-conviction juror cannot lose more than they put in).
-    ///         The extra (above the normal 1× risked-stake slash) joins the distributable
-    ///         pool on a Yes/No outcome, or accrues to the treasury on Invalid.
+    ///         Selected jurors who fail to reveal lose their FULL stake — conviction is
+    ///         ignored for the juror penalty. The extra (above the normal 1× riskedStake
+    ///         slash) joins the distributable pool on a Yes/No outcome, or accrues to
+    ///         the treasury on Invalid.
     function resolve() external nonReentrant {
         if (phase == Phase.Resolved) revert WrongPhase();
 
@@ -376,8 +372,8 @@ contract TruthMarket is ReentrancyGuard {
         if (out != Outcome.Invalid) {
             (slashedRiskedStake, fee) = _settleSlashedPool(out);
         } else {
-            // Jury was drawn but outcome Invalid: slash non-revealing jurors with the full
-            // 5× penalty; accrue to treasury (no winners to distribute to).
+            // Jury was drawn but outcome Invalid: slash each non-revealing juror's full
+            // stake; accrue to treasury (no winners to distribute to).
             uint96 jurorPenalty = _accrueNonRevealingJurorPenalty();
             fee = jurorPenalty;
         }
@@ -516,30 +512,25 @@ contract TruthMarket is ReentrancyGuard {
     }
 
     /// @dev Returns (totalPenalty, totalExtra) summed over jurors who failed to reveal.
-    ///      penalty = min(NON_REVEAL_PENALTY_MULTIPLIER × riskedStake, stake);
-    ///      extra   = penalty - riskedStake.
+    ///      penalty = full `stake` (conviction ignored for jurors).
+    ///      extra   = stake - riskedStake (the slash beyond what's already counted in
+    ///                missedRisked).
     function _jurorNoRevealAccounting() internal view returns (uint96 totalPenalty, uint96 totalExtra) {
         address[] memory jury = _jury;
         for (uint256 i = 0; i < jury.length; i++) {
             Commit storage k = commits[jury[i]];
             if (!k.revealed) {
-                uint256 multiplied = uint256(k.riskedStake) * NON_REVEAL_PENALTY_MULTIPLIER;
-                uint256 capped = multiplied > k.stake ? k.stake : multiplied;
-                // forge-lint: disable-next-line(unsafe-typecast)
-                totalPenalty += uint96(capped);
-                // forge-lint: disable-next-line(unsafe-typecast)
-                totalExtra += uint96(capped - k.riskedStake);
+                totalPenalty += k.stake;
+                totalExtra += k.stake - k.riskedStake;
             }
         }
     }
 
     function _payoutFor(Commit storage k, bool jurorAddr) internal view returns (uint256) {
-        // Selected juror who failed to reveal: lose NON_REVEAL_PENALTY_MULTIPLIER × risked,
-        // capped at full stake. Applies on any post-jury-draw outcome.
+        // Selected juror who failed to reveal: lose full stake regardless of conviction.
+        // Applies on any post-jury-draw outcome.
         if (jurorAddr && !k.revealed && randomness != 0) {
-            uint256 multiplied = uint256(k.riskedStake) * NON_REVEAL_PENALTY_MULTIPLIER;
-            uint256 penalty = multiplied > k.stake ? k.stake : multiplied;
-            return uint256(k.stake) - penalty;
+            return 0;
         }
         if (outcome == Outcome.Invalid) {
             return k.stake;
