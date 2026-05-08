@@ -80,6 +80,9 @@ contract TruthMarket is ReentrancyGuard {
     /// @notice Minimum permitted value for each phase period. Prevents a misconfigured
     ///         deploy from setting unusable single-second windows.
     uint64 public constant MIN_PERIOD = 1 minutes;
+    /// @notice Maximum permitted value for each phase period. Caps the absolute window
+    ///         a misconfigured deploy can lock voter stake into the contract.
+    uint64 public constant MAX_PERIOD = 365 days;
     /// @notice Upper bound on active commits processed by one `forceSweepDust` call.
     uint32 public constant MAX_DUST_SWEEP_ITERS = 200;
 
@@ -360,6 +363,9 @@ contract TruthMarket is ReentrancyGuard {
         if (p.admin == address(0) || p.juryCommitter == address(0) || p.creator == address(0)) revert BadParams();
         if (p.ipfsHash.length == 0) revert BadParams();
         if (p.votingPeriod < MIN_PERIOD || p.adminTimeout < MIN_PERIOD || p.revealPeriod < MIN_PERIOD) {
+            revert BadParams();
+        }
+        if (p.votingPeriod > MAX_PERIOD || p.adminTimeout > MAX_PERIOD || p.revealPeriod > MAX_PERIOD) {
             revert BadParams();
         }
         if (p.protocolFeePercent > MAX_PROTOCOL_FEE_PERCENT) revert BadParams();
