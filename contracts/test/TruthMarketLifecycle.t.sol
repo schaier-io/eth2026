@@ -133,7 +133,7 @@ contract TruthMarketLifecycleTest is Test {
     function _commit(uint256 id, address voter, uint8 vote, bytes32 nonce, uint96 stake, uint16 convictionBps)
         internal
     {
-        bytes32 commitHash = market.commitHashOf(id, vote, nonce, stake, convictionBps, voter);
+        bytes32 commitHash = market.commitHashOf(vote, nonce);
 
         vm.startPrank(voter);
         token.approve(address(market), stake);

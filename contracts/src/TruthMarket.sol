@@ -86,6 +86,7 @@ contract TruthMarket is AccessControl, ReentrancyGuard {
     mapping(uint256 => address[]) private _committers;
     mapping(uint256 => address[]) private _jury;
     mapping(uint256 => mapping(address => bool)) private _isJurorMap;
+    mapping(uint256 => mapping(bytes32 => bool)) private _commitHashUsed;
     mapping(uint256 => string) public juryAuditRef;
 
     // ---------- Events ----------
@@ -132,6 +133,7 @@ contract TruthMarket is AccessControl, ReentrancyGuard {
     error JuryAlreadyFulfilled();
     error NothingToWithdraw();
     error BadParams();
+    error CommitHashTaken();
 
     // ---------- Constructor ----------
 
@@ -175,15 +177,22 @@ contract TruthMarket is AccessControl, ReentrancyGuard {
     // ---------- Phase 2: Commit (hidden vote + stake + conviction) ----------
 
     /// @notice Commit a hidden YES/NO belief with stake and conviction.
-    ///         commitHash = keccak256(abi.encode(id, vote, nonce, stake, convictionBps, voter, address(this)))
+    ///         commitHash = keccak256(abi.encode(vote, nonce)).
     ///         vote: 1 = YES, 2 = NO. Conviction is basis points; 10_000 = 100% at risk.
+    ///         Stake, conviction, and voter are bound by contract state at commit time, so they
+    ///         do not need to be inside the hash. Hash uniqueness per claim is enforced to block
+    ///         a copier from mirroring another voter's commit.
+    ///         The nonce MUST be a high-entropy 256-bit secret: vote space is {1,2}, so a
+    ///         guessable nonce makes the hash brute-forceable.
     function commitVote(uint256 id, bytes32 commitHash, uint96 stake, uint16 convictionBps) external nonReentrant {
         Claim storage c = _claims[id];
         if (c.phase != Phase.Voting) revert WrongPhase();
         if (block.timestamp >= c.votingDeadline) revert DeadlinePassed();
         if (stake == 0) revert BadParams();
         if (convictionBps == 0 || convictionBps > MAX_CONVICTION_BPS) revert BadParams();
+        if (commitHash == bytes32(0)) revert BadParams();
         if (commits[id][msg.sender].hash != bytes32(0)) revert AlreadyCommitted();
+        if (_commitHashUsed[id][commitHash]) revert CommitHashTaken();
 
         uint96 riskedStake = _riskedStake(stake, convictionBps);
         if (riskedStake == 0) revert BadParams();
@@ -203,6 +212,7 @@ contract TruthMarket is AccessControl, ReentrancyGuard {
             withdrawn: false
         });
         _committers[id].push(msg.sender);
+        _commitHashUsed[id][commitHash] = true;
 
         emit VoteCommitted(id, msg.sender, commitHash, stake, convictionBps, riskedStake);
     }
@@ -258,7 +268,7 @@ contract TruthMarket is AccessControl, ReentrancyGuard {
         if (k.hash == bytes32(0)) revert CommitNotFound();
         if (k.revealed) revert AlreadyRevealed();
 
-        bytes32 expected = _commitHash(id, vote, nonce, k.stake, k.convictionBps, msg.sender);
+        bytes32 expected = _commitHash(vote, nonce);
         if (expected != k.hash) revert InvalidReveal();
 
         k.revealed = true;
@@ -318,12 +328,8 @@ contract TruthMarket is AccessControl, ReentrancyGuard {
         return _committers[id];
     }
 
-    function commitHashOf(uint256 id, uint8 vote, bytes32 nonce, uint96 stake, uint16 convictionBps, address voter)
-        external
-        view
-        returns (bytes32)
-    {
-        return _commitHash(id, vote, nonce, stake, convictionBps, voter);
+    function commitHashOf(uint8 vote, bytes32 nonce) external pure returns (bytes32) {
+        return _commitHash(vote, nonce);
     }
 
     function isJuror(uint256 id, address who) external view returns (bool) {
@@ -433,12 +439,8 @@ contract TruthMarket is AccessControl, ReentrancyGuard {
         return uint256(k.stake) + bonus;
     }
 
-    function _commitHash(uint256 id, uint8 vote, bytes32 nonce, uint96 stake, uint16 convictionBps, address voter)
-        internal
-        view
-        returns (bytes32)
-    {
-        return keccak256(abi.encode(id, vote, nonce, stake, convictionBps, voter, address(this)));
+    function _commitHash(uint8 vote, bytes32 nonce) internal pure returns (bytes32) {
+        return keccak256(abi.encode(vote, nonce));
     }
 
     function _riskedStake(uint96 stake, uint16 convictionBps) internal pure returns (uint96) {
