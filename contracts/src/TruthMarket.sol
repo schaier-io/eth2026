@@ -6,26 +6,20 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title TruthMarket
-/// @notice Single-market random-jury belief-resolution contract. The market parameters are
-///         locked at deployment (no separate setup tx); admins are hardcoded as constants.
-///         Voters privately commit YES/NO beliefs with stake and conviction. After the
-///         voting deadline, the jury committer posts SpaceComputer cTRNG randomness plus
-///         an audit hash. The contract uses that randomness to draw the resolving jury
-///         on-chain via Fisher-Yates from the set of committed voters.
+/// @notice Single-market random-jury belief-resolution contract. Market parameters are
+///         locked at deployment (no separate setup tx). Voters privately commit YES/NO
+///         beliefs with stake and conviction. After the voting deadline, the jury
+///         committer posts SpaceComputer cTRNG randomness plus an audit hash; the
+///         contract draws the resolving jury on-chain via Fisher-Yates from the set of
+///         committed voters.
 contract TruthMarket is ReentrancyGuard {
     using SafeERC20 for IERC20;
-
-    // ---------- Static admins (replace before deployment) ----------
-
-    /// @dev Replace with the production admin address before deployment.
-    address public constant ADMIN = 0x000000000000000000000000000000000000a001;
-    /// @dev Replace with the production jury-committer address before deployment.
-    address public constant JURY_COMMITTER = 0x000000000000000000000000000000000000A002;
 
     // ---------- Constants ----------
 
     uint16 public constant MAX_CONVICTION_BPS = 10_000;
     uint96 public constant MAX_PROTOCOL_FEE_BPS = 1000;
+    uint32 public constant MAX_JURY_SIZE = 100;
 
     // ---------- Types ----------
 
@@ -35,6 +29,11 @@ contract TruthMarket is ReentrancyGuard {
         Resolved
     }
 
+    /// @dev Outcome values:
+    ///      Unresolved (0) is the default storage value while the market is in Voting/Reveal.
+    ///      Yes (1)/No (2) are set by `resolve()` on a decisive jury weight.
+    ///      Invalid (3) is set by `resolve()` on missed deadline, too few revealing jurors,
+    ///      or jury weight tie.
     enum Outcome {
         Unresolved,
         Yes,
@@ -42,6 +41,10 @@ contract TruthMarket is ReentrancyGuard {
         Invalid
     }
 
+    /// @dev Per-voter commit record.
+    ///      `revealedVote` carries 1 (YES) or 2 (NO) once `revealed` flips true; while
+    ///      `revealed == false` the field stays 0 and must not be read as a vote.
+    ///      `revealed == false` and `revealedVote == 0` together mean "not revealed".
     struct Commit {
         bytes32 hash;
         uint96 stake;
@@ -52,14 +55,35 @@ contract TruthMarket is ReentrancyGuard {
         bool withdrawn;
     }
 
+    /// @dev Constructor params bundled to avoid stack-too-deep with the deployment config.
+    struct InitParams {
+        IERC20 stakeToken;
+        address treasury;
+        address admin;
+        address juryCommitter;
+        bytes ipfsHash;
+        uint64 votingPeriod;
+        uint64 adminTimeout;
+        uint64 revealPeriod;
+        uint96 protocolFeeBps;
+        uint96 minStake;
+        uint32 jurySize;
+        uint32 minCommits;
+        uint32 minRevealedJurors;
+    }
+
     // ---------- Immutable deployment config ----------
 
     IERC20 public immutable stakeToken;
-    bytes32 public immutable ipfsHash;
+    /// @dev TODO: replace `admin` and `juryCommitter` with hardcoded constants once the
+    ///      production addresses are finalized.
+    address public immutable admin;
+    address public immutable juryCommitter;
     uint64 public immutable votingDeadline;
     uint64 public immutable juryCommitDeadline;
     uint64 public immutable revealDeadline;
     uint96 public immutable protocolFeeBps;
+    uint96 public immutable minStake;
     uint32 public immutable jurySize;
     uint32 public immutable minCommits;
     uint32 public immutable minRevealedJurors;
@@ -69,8 +93,10 @@ contract TruthMarket is ReentrancyGuard {
     address public treasury;
     Phase public phase;
     Outcome public outcome;
+    bytes public ipfsHash;
     uint32 public commitCount;
     uint32 public revealedJurorCount;
+    uint32 public withdrawnCount;
     uint96 public totalCommittedStake;
     uint96 public totalRiskedStake;
     uint96 public revealedYesStake;
@@ -83,10 +109,10 @@ contract TruthMarket is ReentrancyGuard {
     uint256 public totalYesRewardWeight;
     uint256 public totalNoRewardWeight;
     uint256 public randomness;
+    uint256 public treasuryAccrued;
     bytes32 public juryAuditHash;
 
     mapping(address => Commit) public commits;
-    mapping(bytes32 => bool) private _commitHashUsed;
     address[] private _committers;
     address[] private _jury;
     mapping(address => bool) private _isJuror;
@@ -94,13 +120,14 @@ contract TruthMarket is ReentrancyGuard {
     // ---------- Events ----------
 
     event MarketStarted(
-        bytes32 ipfsHash,
+        bytes ipfsHash,
         uint64 votingDeadline,
         uint64 juryCommitDeadline,
         uint64 revealDeadline,
         uint32 jurySize,
         uint32 minCommits,
-        uint32 minRevealedJurors
+        uint32 minRevealedJurors,
+        uint96 minStake
     );
     event VoteCommitted(
         address indexed voter, bytes32 commitHash, uint96 stake, uint16 convictionBps, uint96 riskedStake
@@ -111,6 +138,8 @@ contract TruthMarket is ReentrancyGuard {
         Outcome outcome, uint256 winningJuryWeight, uint96 slashedRiskedStake, uint256 fee, uint96 distributablePool
     );
     event Withdrawn(address indexed voter, uint256 payout);
+    event TreasuryUpdated(address indexed treasury);
+    event TreasuryWithdrawn(address indexed treasury, uint256 amount);
 
     // ---------- Errors ----------
 
@@ -125,95 +154,105 @@ contract TruthMarket is ReentrancyGuard {
     error JuryAlreadyFulfilled();
     error NothingToWithdraw();
     error BadParams();
-    error CommitHashTaken();
     error InsufficientCommits();
+    error StakeBelowMin();
 
     // ---------- Modifiers ----------
 
     modifier onlyAdmin() {
-        if (msg.sender != ADMIN) revert NotAuthorized();
+        if (msg.sender != admin) revert NotAuthorized();
         _;
     }
 
     modifier onlyJuryCommitter() {
-        if (msg.sender != JURY_COMMITTER) revert NotAuthorized();
+        if (msg.sender != juryCommitter) revert NotAuthorized();
         _;
     }
 
     // ---------- Constructor (also opens the market) ----------
 
-    constructor(
-        IERC20 _stakeToken,
-        address _treasury,
-        bytes32 _ipfsHash,
-        uint64 votingPeriod,
-        uint64 adminTimeout,
-        uint64 revealPeriod,
-        uint96 _protocolFeeBps,
-        uint32 _jurySize,
-        uint32 _minCommits,
-        uint32 _minRevealedJurors
-    ) {
-        if (address(_stakeToken) == address(0) || _treasury == address(0)) revert BadParams();
-        if (_ipfsHash == bytes32(0)) revert BadParams();
-        if (votingPeriod == 0 || adminTimeout == 0 || revealPeriod == 0) revert BadParams();
-        if (_protocolFeeBps > MAX_PROTOCOL_FEE_BPS) revert BadParams();
-        if (_jurySize == 0) revert BadParams();
-        if (_minCommits == 0) revert BadParams();
-        if (_minRevealedJurors > _jurySize) revert BadParams();
+    constructor(InitParams memory p) {
+        if (address(p.stakeToken) == address(0) || p.treasury == address(0)) revert BadParams();
+        if (p.admin == address(0) || p.juryCommitter == address(0)) revert BadParams();
+        if (p.ipfsHash.length == 0) revert BadParams();
+        if (p.votingPeriod == 0 || p.adminTimeout == 0 || p.revealPeriod == 0) revert BadParams();
+        if (p.protocolFeeBps > MAX_PROTOCOL_FEE_BPS) revert BadParams();
+        if (p.minStake == 0) revert BadParams();
+        if (p.jurySize == 0 || p.jurySize > MAX_JURY_SIZE) revert BadParams();
+        if (p.jurySize % 2 == 0) revert BadParams(); // jury size must be odd
+        if (p.minCommits < p.jurySize) revert BadParams(); // ensures full jury can always be drawn
+        if (p.minRevealedJurors > p.jurySize) revert BadParams();
 
-        stakeToken = _stakeToken;
-        treasury = _treasury;
-        ipfsHash = _ipfsHash;
+        stakeToken = p.stakeToken;
+        treasury = p.treasury;
+        admin = p.admin;
+        juryCommitter = p.juryCommitter;
+        ipfsHash = p.ipfsHash;
 
         uint64 deployTime = uint64(block.timestamp);
-        uint64 _votingDeadline = deployTime + votingPeriod;
-        uint64 _juryCommitDeadline = _votingDeadline + adminTimeout;
-        uint64 _revealDeadline = _juryCommitDeadline + revealPeriod;
+        uint64 _votingDeadline = deployTime + p.votingPeriod;
+        uint64 _juryCommitDeadline = _votingDeadline + p.adminTimeout;
+        uint64 _revealDeadline = _juryCommitDeadline + p.revealPeriod;
         votingDeadline = _votingDeadline;
         juryCommitDeadline = _juryCommitDeadline;
         revealDeadline = _revealDeadline;
 
-        protocolFeeBps = _protocolFeeBps;
-        jurySize = _jurySize;
-        minCommits = _minCommits;
-        minRevealedJurors = _minRevealedJurors;
+        protocolFeeBps = p.protocolFeeBps;
+        minStake = p.minStake;
+        jurySize = p.jurySize;
+        minCommits = p.minCommits;
+        minRevealedJurors = p.minRevealedJurors;
         phase = Phase.Voting;
 
         emit MarketStarted(
-            _ipfsHash, _votingDeadline, _juryCommitDeadline, _revealDeadline, _jurySize, _minCommits, _minRevealedJurors
+            p.ipfsHash,
+            _votingDeadline,
+            _juryCommitDeadline,
+            _revealDeadline,
+            p.jurySize,
+            p.minCommits,
+            p.minRevealedJurors,
+            p.minStake
         );
     }
 
     // ---------- Commit (hidden vote + stake + conviction) ----------
 
     /// @notice Commit a hidden YES/NO belief with stake and conviction.
-    ///         commitHash = keccak256(abi.encode(vote, nonce)).
-    ///         Stake, conviction, and voter are bound by contract state at commit time, so they
-    ///         do not need to live inside the hash. Hash uniqueness per market is enforced to
-    ///         block a copier from mirroring another voter's commit.
-    ///         The nonce MUST be a high-entropy 256-bit secret: vote space is {1,2}, so a
+    ///         commitHash = keccak256(abi.encode(vote, nonce, voter, address(this))).
+    ///         The voter and contract address are bound into the hash so that copying
+    ///         someone else's hash yields a useless commit (the copier can't reveal it),
+    ///         and so that nonces are not correlated across markets.
+    ///         Each wallet may commit at most once.
+    ///         The actual received balance (after any token-transfer fee) is what gets
+    ///         recorded; the `stake` argument is just the spend authorization.
+    ///         Nonce MUST be a high-entropy 256-bit secret: vote space is {1,2}, so a
     ///         guessable nonce makes the hash brute-forceable.
     function commitVote(bytes32 commitHash, uint96 stake, uint16 convictionBps) external nonReentrant {
         if (phase != Phase.Voting) revert WrongPhase();
         if (block.timestamp >= votingDeadline) revert DeadlinePassed();
-        if (stake == 0) revert BadParams();
+        if (stake < minStake) revert StakeBelowMin();
         if (convictionBps == 0 || convictionBps > MAX_CONVICTION_BPS) revert BadParams();
         if (commitHash == bytes32(0)) revert BadParams();
         if (commits[msg.sender].hash != bytes32(0)) revert AlreadyCommitted();
-        if (_commitHashUsed[commitHash]) revert CommitHashTaken();
 
-        uint96 riskedStake = _riskedStake(stake, convictionBps);
+        // Use the actual received balance to defend against fee-on-transfer / rebasing tokens.
+        uint256 balanceBefore = stakeToken.balanceOf(address(this));
+        stakeToken.safeTransferFrom(msg.sender, address(this), stake);
+        uint256 received = stakeToken.balanceOf(address(this)) - balanceBefore;
+        if (received < minStake) revert StakeBelowMin();
+        if (received > type(uint96).max) revert BadParams();
+        uint96 actualStake = uint96(received);
+
+        uint96 riskedStake = _riskedStake(actualStake, convictionBps);
         if (riskedStake == 0) revert BadParams();
 
-        stakeToken.safeTransferFrom(msg.sender, address(this), stake);
-
         commitCount++;
-        totalCommittedStake += stake;
+        totalCommittedStake += actualStake;
         totalRiskedStake += riskedStake;
         commits[msg.sender] = Commit({
             hash: commitHash,
-            stake: stake,
+            stake: actualStake,
             riskedStake: riskedStake,
             convictionBps: convictionBps,
             revealedVote: 0,
@@ -221,9 +260,8 @@ contract TruthMarket is ReentrancyGuard {
             withdrawn: false
         });
         _committers.push(msg.sender);
-        _commitHashUsed[commitHash] = true;
 
-        emit VoteCommitted(msg.sender, commitHash, stake, convictionBps, riskedStake);
+        emit VoteCommitted(msg.sender, commitHash, actualStake, convictionBps, riskedStake);
     }
 
     // ---------- Jury commit + on-chain selection ----------
@@ -261,7 +299,7 @@ contract TruthMarket is ReentrancyGuard {
         if (k.hash == bytes32(0)) revert CommitNotFound();
         if (k.revealed) revert AlreadyRevealed();
 
-        bytes32 expected = _commitHash(vote, nonce);
+        bytes32 expected = _commitHash(vote, nonce, msg.sender);
         if (expected != k.hash) revert InvalidReveal();
 
         k.revealed = true;
@@ -282,7 +320,7 @@ contract TruthMarket is ReentrancyGuard {
     ///         Selected jurors who fail to reveal lose 2x their risked stake (capped at
     ///         their full stake — a 100%-conviction juror cannot lose more than they put in).
     ///         The extra (above the normal risked-stake slash) joins the distributable pool
-    ///         on a Yes/No outcome, or is sent to the treasury on Invalid.
+    ///         on a Yes/No outcome, or accrues to the treasury on Invalid.
     function resolve() external nonReentrant {
         if (phase == Phase.Resolved) revert WrongPhase();
 
@@ -312,9 +350,9 @@ contract TruthMarket is ReentrancyGuard {
         if (out != Outcome.Invalid) {
             (slashedRiskedStake, fee) = _settleSlashedPool(out);
         } else {
-            // Jury was drawn but outcome Invalid: still slash non-revealing jurors, full
-            // doubled penalty goes to treasury (no winners to distribute to).
-            uint96 jurorPenalty = _slashNonRevealingJurorsToTreasury();
+            // Jury was drawn but outcome Invalid: slash non-revealing jurors with the full
+            // doubled penalty; accrue to treasury (no winners to distribute to).
+            uint96 jurorPenalty = _accrueNonRevealingJurorPenalty();
             fee = jurorPenalty;
         }
 
@@ -331,8 +369,28 @@ contract TruthMarket is ReentrancyGuard {
 
         uint256 payout = _payoutFor(k, _isJuror[msg.sender]);
         k.withdrawn = true;
+        withdrawnCount++;
         if (payout > 0) stakeToken.safeTransfer(msg.sender, payout);
         emit Withdrawn(msg.sender, payout);
+    }
+
+    /// @notice Pull all treasury-bound funds. Permissionless: only the configured
+    ///         `treasury` address ever receives. Once every voter has withdrawn, also
+    ///         sweeps any rounding dust left in the contract.
+    function withdrawTreasury() external nonReentrant {
+        uint256 amount;
+        if (phase == Phase.Resolved && withdrawnCount == commitCount) {
+            // Sweep entire balance: accrued plus any bonus-rounding dust.
+            amount = stakeToken.balanceOf(address(this));
+            treasuryAccrued = 0;
+        } else {
+            amount = treasuryAccrued;
+            if (amount == 0) revert NothingToWithdraw();
+            treasuryAccrued = 0;
+        }
+        if (amount == 0) revert NothingToWithdraw();
+        stakeToken.safeTransfer(treasury, amount);
+        emit TreasuryWithdrawn(treasury, amount);
     }
 
     // ---------- Views ----------
@@ -349,8 +407,8 @@ contract TruthMarket is ReentrancyGuard {
         return _isJuror[who];
     }
 
-    function commitHashOf(uint8 vote, bytes32 nonce) external pure returns (bytes32) {
-        return _commitHash(vote, nonce);
+    function commitHashOf(uint8 vote, bytes32 nonce, address voter) external view returns (bytes32) {
+        return _commitHash(vote, nonce, voter);
     }
 
     // ---------- Admin ----------
@@ -358,6 +416,7 @@ contract TruthMarket is ReentrancyGuard {
     function setTreasury(address _treasury) external onlyAdmin {
         if (_treasury == address(0)) revert BadParams();
         treasury = _treasury;
+        emit TreasuryUpdated(_treasury);
     }
 
     // ---------- Internals ----------
@@ -395,6 +454,9 @@ contract TruthMarket is ReentrancyGuard {
         }
     }
 
+    /// @dev Returns Invalid on weight tie. Note: an odd `jurySize` does not strictly
+    ///      prevent a tie because jury weight is `sqrt(riskedStake)` — distinct stake
+    ///      configurations can still produce equal aggregate weights.
     function _juryOutcome() internal view returns (Outcome out, uint256 winningJuryWeight) {
         if (juryYesWeight > juryNoWeight) {
             return (Outcome.Yes, juryYesWeight);
@@ -414,16 +476,16 @@ contract TruthMarket is ReentrancyGuard {
 
         if (slashedRiskedStake > 0) {
             fee = (uint256(slashedRiskedStake) * protocolFeeBps) / 10_000;
-            if (fee > 0) stakeToken.safeTransfer(treasury, fee);
+            if (fee > 0) treasuryAccrued += fee;
             // forge-lint: disable-next-line(unsafe-typecast)
             distributablePool = slashedRiskedStake - uint96(fee);
         }
     }
 
-    function _slashNonRevealingJurorsToTreasury() internal returns (uint96 totalPenalty) {
+    function _accrueNonRevealingJurorPenalty() internal returns (uint96 totalPenalty) {
         (totalPenalty,) = _jurorNoRevealAccounting();
         if (totalPenalty > 0) {
-            stakeToken.safeTransfer(treasury, totalPenalty);
+            treasuryAccrued += totalPenalty;
         }
     }
 
@@ -467,8 +529,8 @@ contract TruthMarket is ReentrancyGuard {
         return uint256(k.stake) + bonus;
     }
 
-    function _commitHash(uint8 vote, bytes32 nonce) internal pure returns (bytes32) {
-        return keccak256(abi.encode(vote, nonce));
+    function _commitHash(uint8 vote, bytes32 nonce, address voter) internal view returns (bytes32) {
+        return keccak256(abi.encode(vote, nonce, voter, address(this)));
     }
 
     function _riskedStake(uint96 stake, uint16 convictionBps) internal pure returns (uint96) {
