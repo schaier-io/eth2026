@@ -151,11 +151,6 @@
                   <button id="chooseDown" class="direction-button down" type="button">Down</button>
                 </div>
 
-                <label class="field">
-                  <span>Conviction <b id="convictionValue">25%</b></span>
-                  <input id="convictionInput" type="range" min="1" max="100" value="25" />
-                </label>
-
                 <label class="field stake-field">
                   <span>Stake</span>
                   <input id="stakeInput" type="number" min="10" step="1" inputmode="decimal" value="100" />
@@ -163,14 +158,15 @@
 
                 <div class="risk-preview" aria-live="polite">
                   <div>
-                    <span>At risk</span>
-                    <strong id="riskedStake">25 TMT</strong>
+                    <span>Normal loss (20%)</span>
+                    <strong id="riskedStake">20 TMT</strong>
                   </div>
                   <div>
                     <span>Protected</span>
-                    <strong id="refundStake">75 TMT</strong>
+                    <strong id="refundStake">80 TMT</strong>
                   </div>
                 </div>
+                <p class="risk-note">Losing voters and non-revealing non-jurors lose 20%. Selected jurors who skip reveal forfeit their full stake.</p>
 
                 <button id="commitButton" class="primary-action" type="submit">Commit position</button>
                 <p id="commitStatus" class="inline-status" role="status"></p>

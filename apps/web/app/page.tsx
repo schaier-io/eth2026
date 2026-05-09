@@ -37,10 +37,11 @@ type Position = {
   marketId: string;
   direction: Direction;
   stake: number;
-  conviction: number;
   risked: number;
   commitmentHash: string;
 };
+
+const RISK_PERCENT = 20;
 
 const initialMarkets: Market[] = [
   {
@@ -289,7 +290,6 @@ export default function TruthMarketApp() {
   const [currentPosition, setCurrentPosition] = useState<Position | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [createImageData, setCreateImageData] = useState<string | null>(null);
-  const [conviction, setConviction] = useState(25);
   const [stake, setStake] = useState(100);
   const [commitStatus, setCommitStatus] = useState({ message: "", kind: "" as StatusKind });
   const [createStatus, setCreateStatus] = useState({ message: "", kind: "" as StatusKind });
@@ -298,7 +298,7 @@ export default function TruthMarketApp() {
 
   const selectedMarket = markets.find((market) => market.id === selectedMarketId) || markets[0];
   const positionForSelected = currentPosition?.marketId === selectedMarket.id ? currentPosition : null;
-  const risked = Math.max(0, (stake * conviction) / 100);
+  const risked = Math.max(0, (stake * RISK_PERCENT) / 100);
   const refundable = Math.max(0, stake - risked);
 
   const visibleMarkets = useMemo(() => {
@@ -437,7 +437,7 @@ export default function TruthMarketApp() {
           nonce,
           commitmentHash,
           stake,
-          convictionBps: conviction * 100,
+          riskPercent: RISK_PERCENT,
         },
         wallet,
       );
@@ -447,7 +447,6 @@ export default function TruthMarketApp() {
         marketId: selectedMarket.id,
         direction,
         stake,
-        conviction,
         risked,
         commitmentHash,
       });
@@ -697,13 +696,6 @@ export default function TruthMarketApp() {
                     </button>
                   </div>
 
-                  <label className="field">
-                    <span>
-                      Conviction <b>{conviction}%</b>
-                    </span>
-                    <input type="range" min={1} max={100} value={conviction} onChange={(event) => setConviction(Number(event.currentTarget.value))} />
-                  </label>
-
                   <label className="field stake-field">
                     <span>Stake</span>
                     <input type="number" min={10} step={1} inputMode="decimal" value={stake} onChange={(event) => setStake(Number(event.currentTarget.value))} />
@@ -711,7 +703,7 @@ export default function TruthMarketApp() {
 
                   <div className="risk-preview" aria-live="polite">
                     <div>
-                      <span>At risk</span>
+                      <span>Normal loss ({RISK_PERCENT}%)</span>
                       <strong>{formatToken(risked.toFixed(2))}</strong>
                     </div>
                     <div>
@@ -719,6 +711,7 @@ export default function TruthMarketApp() {
                       <strong>{formatToken(refundable.toFixed(2))}</strong>
                     </div>
                   </div>
+                  <p className="risk-note">Losing voters and non-revealing non-jurors lose 20%. Selected jurors who skip reveal forfeit their full stake.</p>
 
                   <button className="primary-action" type="submit" disabled={isCommitting} aria-busy={isCommitting}>
                     {isCommitting ? "Committing..." : "Commit position"}
@@ -758,11 +751,7 @@ export default function TruthMarketApp() {
                           <strong>{formatToken(positionForSelected.stake)}</strong>
                         </div>
                         <div>
-                          <span>Conviction</span>
-                          <strong>{positionForSelected.conviction}%</strong>
-                        </div>
-                        <div>
-                          <span>At risk</span>
+                          <span>Normal loss</span>
                           <strong>{formatToken(positionForSelected.risked.toFixed(2))}</strong>
                         </div>
                         <div>

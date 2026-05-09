@@ -107,6 +107,8 @@ const state = {
   createImageData: null,
 };
 
+const RISK_PERCENT = 20;
+
 const els = {
   homeButton: document.getElementById("homeButton"),
   marketsNav: document.getElementById("marketsNav"),
@@ -144,8 +146,6 @@ const els = {
   stakeDownMeaning: document.getElementById("stakeDownMeaning"),
   chooseUp: document.getElementById("chooseUp"),
   chooseDown: document.getElementById("chooseDown"),
-  convictionInput: document.getElementById("convictionInput"),
-  convictionValue: document.getElementById("convictionValue"),
   stakeInput: document.getElementById("stakeInput"),
   riskedStake: document.getElementById("riskedStake"),
   refundStake: document.getElementById("refundStake"),
@@ -373,10 +373,8 @@ function renderStakeScreen() {
 
 function renderRiskPreview() {
   const stake = Number.parseFloat(els.stakeInput.value || "0");
-  const conviction = Number.parseInt(els.convictionInput.value, 10);
-  const risked = Math.max(0, (stake * conviction) / 100);
+  const risked = Math.max(0, (stake * RISK_PERCENT) / 100);
   const refund = Math.max(0, stake - risked);
-  els.convictionValue.textContent = `${conviction}%`;
   els.riskedStake.textContent = formatToken(risked.toFixed(2));
   els.refundStake.textContent = formatToken(refund.toFixed(2));
 }
@@ -407,8 +405,7 @@ function renderDashboard() {
     els.positionSummary.innerHTML = `
       <div><span>Direction</span><strong class="${position.direction.toLowerCase()}">${position.direction}</strong></div>
       <div><span>Stake</span><strong>${formatToken(position.stake)}</strong></div>
-      <div><span>Conviction</span><strong>${position.conviction}%</strong></div>
-      <div><span>At risk</span><strong>${formatToken(position.risked.toFixed(2))}</strong></div>
+      <div><span>Normal loss</span><strong>${formatToken(position.risked.toFixed(2))}</strong></div>
       <div><span>Reveal</span><strong>${state.revealed ? "Done" : "Required later"}</strong></div>
       <div><span>Juror status</span><strong>${market.jurors.includes(state.wallet) ? "Selected" : "Not selected yet"}</strong></div>
     `;
@@ -586,7 +583,6 @@ async function handleCommit(event) {
   event.preventDefault();
   const market = selectedMarket();
   const stake = Number.parseFloat(els.stakeInput.value || "0");
-  const conviction = Number.parseInt(els.convictionInput.value, 10);
 
   if (!state.wallet) {
     setStatus(els.commitStatus, "Connect wallet first.", "error");
@@ -604,7 +600,7 @@ async function handleCommit(event) {
     const nonce = `0x${bytesToHex(nonceBytes)}`;
     const vote = state.direction === "Up" ? 1 : 2;
     const commitmentHash = await sha256Hex(`${vote}|${nonce}|${state.wallet}|${market.id}`);
-    const risked = (stake * conviction) / 100;
+    const risked = (stake * RISK_PERCENT) / 100;
     const encrypted = await encryptVaultPayload({
       marketId: market.id,
       wallet: state.wallet,
@@ -613,7 +609,7 @@ async function handleCommit(event) {
       nonce,
       commitmentHash,
       stake,
-      convictionBps: conviction * 100,
+      riskPercent: RISK_PERCENT,
     });
 
     localStorage.setItem(vaultKey(market.id), JSON.stringify(encrypted));
@@ -621,7 +617,6 @@ async function handleCommit(event) {
       marketId: market.id,
       direction: state.direction,
       stake,
-      conviction,
       risked,
       commitmentHash,
     };
@@ -673,7 +668,6 @@ els.chooseDown.addEventListener("click", () => {
   state.direction = "Down";
   renderStakeScreen();
 });
-els.convictionInput.addEventListener("input", renderRiskPreview);
 els.stakeInput.addEventListener("input", renderRiskPreview);
 els.createImage.addEventListener("change", handleCreateImage);
 els.createForm.addEventListener("submit", handleCreateMarket);

@@ -584,6 +584,13 @@ h2 {
   font-size: 20px;
 }
 
+.risk-note {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .inline-status {
   min-height: 22px;
   margin: 0;
