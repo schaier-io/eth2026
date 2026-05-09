@@ -2,11 +2,45 @@
 
 Standalone CLI + TUI for interacting with the [`TruthMarket`](../../contracts/src/TruthMarket.sol) contract. Built for autonomous agents and headless operators that need to commit, reveal, watch deadlines, and auto-resolve participation, mirroring the on-chain commit-reveal flow used by [`apps/web`](../web/).
 
+## Five-minute first run
+
+Three commands, ~5 minutes from a fresh checkout to a working agent against a local mock chain.
+
+```sh
+cd apps/cli
+./skills.sh bootstrap          # installs CLI, spawns anvil, deploys mock contract, writes .env, sets policy
+truthmarket market info        # reads from your fresh mock market
+./skills.sh clean              # tear it down
+```
+
+Prerequisites: Node ≥ 20 and Foundry on PATH. Run `./skills.sh doctor` to verify.
+
+What `bootstrap` actually does:
+
+1. `npm install && npm run build && npm link` — globally exposes the `truthmarket` binary.
+2. Spawns `anvil --accounts 12 --silent` detached and waits for the RPC.
+3. Runs `forge script script/SimulateAnvil.s.sol --sig "deploy()" --broadcast` — deploys MockERC20 + TruthMarket at deterministic addresses.
+4. Writes `apps/cli/.env` with `TM_CHAIN`, `TM_RPC_URL`, `TM_CONTRACT_ADDRESS`, and the anvil deterministic deployer key.
+5. Installs a permissive default policy at `~/.truthmarket/policy.json` (allows commits up to 100 tokens; swarm verification off).
+
+After that you have a real local agent environment. Try:
+
+```sh
+truthmarket wallet balance              # ETH + stake-token balance
+truthmarket erc20 approve               # approve stake token for the contract
+truthmarket vote commit --vote yes --stake 1000000000000000000
+truthmarket vault list                  # encrypted local nonce vault
+truthmarket tui                         # interactive dashboard (q to quit)
+```
+
+See [`skills.sh`](#skillssh-bootstrapper) for all subcommands and [Common workflows](#common-workflows) for end-to-end patterns.
+
 ## Contents
 
-- [Install](#install)
-- [Quickstart (local anvil)](#quickstart-local-anvil)
-- [Quickstart (Base Sepolia / Sepolia)](#quickstart-base-sepolia--sepolia)
+- [Five-minute first run](#five-minute-first-run)
+- [`skills.sh` bootstrapper](#skillssh-bootstrapper)
+- [Manual install](#manual-install)
+- [Quickstart against a remote chain](#quickstart-against-a-remote-chain)
 - [Configuration & `.env`](#configuration--env)
 - [Wallets & passphrases](#wallets--passphrases)
 - [Vault](#vault)
@@ -20,7 +54,34 @@ Standalone CLI + TUI for interacting with the [`TruthMarket`](../../contracts/sr
 
 ---
 
-## Install
+## `skills.sh` bootstrapper
+
+[`apps/cli/skills.sh`](skills.sh) is the single entry point for setup, demos, and teardown. Every subcommand is idempotent — re-run it any time.
+
+| Subcommand | What it does |
+|------------|--------------|
+| `./skills.sh doctor` | Checks `node`, `npm`, `forge`, `anvil`, `cast` are on PATH. Run this first if anything looks off. |
+| `./skills.sh install` | One-time `npm install` + `npm run build` + `npm link`. Exposes `truthmarket` globally. Falls back to a clear note if `npm link` lacks permission. |
+| `./skills.sh bootstrap` | `install` (if needed) + `truthmarket dev up` + writes a permissive default policy. Leaves you in a state where every `truthmarket` command works. |
+| `./skills.sh demo` | `bootstrap` + a read-only tour: `market info`, `wallet balance`, `market phase`, `erc20 approve`, `erc20 allowance`. Useful for a screenshare or sanity check. |
+| `./skills.sh clean` | `truthmarket dev down`, `rm -rf dist`, removes the generated `.env` only if it points at `127.0.0.1:8545`. |
+| `./skills.sh help` | Print this table. |
+
+Recommended first run:
+
+```sh
+./skills.sh doctor
+./skills.sh bootstrap
+truthmarket market info
+truthmarket vote commit --vote yes --stake 1000000000000000000
+./skills.sh clean
+```
+
+If you'd rather not symlink the binary globally, run via `node dist/cli.js` instead — `skills.sh` falls back to that automatically when `npm link` isn't available.
+
+---
+
+## Manual install
 
 ```sh
 cd apps/cli
@@ -42,45 +103,22 @@ node dist/cli.js --help
 Requirements:
 
 - Node 20+
-- For `truthmarket dev *`: [Foundry](https://book.getfoundry.sh/getting-started/installation) (`anvil` and `forge` on PATH)
+- For `truthmarket dev *` and `skills.sh`: [Foundry](https://book.getfoundry.sh/getting-started/installation) (`anvil`, `forge`, `cast` on PATH).
 
----
-
-## Quickstart (local anvil)
-
-The CLI ships a one-shot bootstrapper that spawns `anvil`, deploys the contract via the existing `SimulateAnvil.s.sol::deploy()` script, and writes a working `.env` for you:
+If you'd rather not run `skills.sh`, the equivalent low-level flow is:
 
 ```sh
-cd apps/cli
-truthmarket dev up
-# anvil up at http://127.0.0.1:8545 (pid 12345)
-# contract: 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
-# stake token: 0x5FbDB2315678afecb367f032d93F642f64180aa3
-# wrote env: /…/apps/cli/.env
-
-# the .env is auto-loaded on every truthmarket call from this directory
-truthmarket market info
-truthmarket erc20 approve
-echo '{ "autoReveal":true,"revealBufferMinutes":30,"autoWithdraw":true,"maxStake":"100000000000000000000","requireSwarmVerification":false,"allowCreateMarkets":false,"allowJuryCommit":false,"pollIntervalSeconds":30 }' \
-  > /tmp/policy.json
-truthmarket policy set --file /tmp/policy.json
+truthmarket dev up                               # anvil + deploy + .env
+truthmarket policy set --file ./policy.json      # see "Agent policy" below
 truthmarket vote commit --vote yes --stake 1000000000000000000
-truthmarket vault list
-# advance the chain past votingDeadline, run jury commit, advance past reveal phase, then:
-truthmarket vote reveal
-truthmarket withdraw
-
-# tear it all down
 truthmarket dev down
 ```
 
-`dev up` is idempotent: if anvil is already running on the configured port and the PID file matches, it just re-runs the deploy and rewrites `.env`. Pass `--rpc-port` to use a different port. Pass `--skip-deploy` to spawn anvil without redeploying.
-
-You can also run `dev up --skip-deploy`, do your own deploys, and let the CLI just manage anvil + .env wiring.
+`dev up` is idempotent — re-running it reuses an existing managed anvil and just rewrites `.env`. Pass `--rpc-port` to use a different port; `--skip-deploy` to spawn anvil only.
 
 ---
 
-## Quickstart (Base Sepolia / Sepolia)
+## Quickstart against a remote chain
 
 ```sh
 cd apps/cli
