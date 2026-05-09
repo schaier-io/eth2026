@@ -28,6 +28,106 @@ Avoid this framing:
 10. SpaceComputer randomness selects the resolving jury.
 11. Selected jurors reveal; the market resolves by count-based jury belief.
 
+## Automated Generator
+
+The live demo should run an automated generator loop:
+
+```txt
+schedule tick
+  -> run Apify Reddit scrape
+  -> score ambiguous/viral candidates
+  -> draft claim-rules.json for the best candidate
+  -> apply policy gates
+  -> create market through CLI
+  -> publish market to Swarm discovery
+  -> start agent watcher for commits, jury commit, reveal, and withdraw
+```
+
+Recommended first implementation: keep the scheduler local to the CLI or agent daemon. Do not add a web backend unless the demo needs remote hosted control.
+
+### Timing Modes
+
+Use one of these modes instead of deciding timing ad hoc during the demo:
+
+| Mode | Creation cadence | Voting period | Jury commit timeout | Reveal period | Contract params |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `demo-fast` | manual or every 15 min | 5 min | 2 min | 5 min | `jurySize=1`, `minCommits=7`, `minRevealedJurors=1` |
+| `live-mini` | every 60 min | 20 min | 5 min | 25 min | `jurySize=1`, `minCommits=7`, `minRevealedJurors=1` |
+| `public-hourly` | every 3 hours | 60 min | 10 min | 50 min | `jurySize=3`, `minCommits=20`, `minRevealedJurors=2` |
+
+The current contract requires `minCommits * 15 >= jurySize * 100`, so a 3-person jury requires at least 20 commits. Use `jurySize=1` for a fast demo unless we have enough agent wallets to reliably create 20 commits per market.
+
+## Generator Policy
+
+Use a policy file so the generator can run unattended without creating bad markets:
+
+```json
+{
+  "enabled": true,
+  "mode": "live-mini",
+  "scheduleCron": "0 * * * *",
+  "maxMarketsCreatedPerRun": 1,
+  "maxOpenGeneratedMarkets": 3,
+  "requireHumanReviewForCreatedMarkets": false,
+  "allowedSources": ["reddit"],
+  "allowedSubreddits": ["AskReddit", "NoStupidQuestions", "OutOfTheLoop", "technology"],
+  "blockedSubreddits": ["medical", "legaladvice"],
+  "keywords": ["real", "fake", "scam", "true", "AI", "proof", "rumor"],
+  "minRedditScore": 100,
+  "minCommentCount": 25,
+  "minAmbiguityScore": 0.65,
+  "stake": "100000000000000000",
+  "marketDefaults": {
+    "protocolFeePercent": 5,
+    "minStake": "100000000000000000",
+    "jurySize": 1,
+    "minCommits": 7,
+    "minRevealedJurors": 1
+  }
+}
+```
+
+For the hackathon demo, `requireHumanReviewForCreatedMarkets` can be false if the candidate filters are conservative and the generated market is previewed in the terminal before signing. For public use, default it to true.
+
+## Candidate Scoring
+
+Score candidates before creating markets:
+
+- Virality: Reddit score, comment count, and recent velocity.
+- Ambiguity: title or comments contain disagreement, uncertainty, competing interpretations, or unresolved claims.
+- Public resolvability: jurors can judge from public context linked in the claim/rules document.
+- Safety: no doxxing, harassment target, medical/legal/financial determinations, private evidence, or illegal instructions.
+- Market clarity: YES and NO meanings are short, symmetric, and defined before staking.
+
+Only create one market per tick. If no candidate passes threshold, skip the tick.
+
+## Apify API Use
+
+Use Apify's Actor API as the generator input surface:
+
+1. Start the Reddit scraper Actor with JSON input:
+
+```txt
+POST https://api.apify.com/v2/acts/<actorId>/runs
+Authorization: Bearer <APIFY_TOKEN>
+Content-Type: application/json
+```
+
+2. Read `id` and `defaultDatasetId` from the returned run object.
+3. Poll the run:
+
+```txt
+GET https://api.apify.com/v2/actor-runs/<runId>?waitForFinish=30
+```
+
+4. Fetch results:
+
+```txt
+GET https://api.apify.com/v2/datasets/<defaultDatasetId>/items?format=json&clean=1
+```
+
+For short demo scrapes, a synchronous Actor call can be used, but Apify documents a 300-second limit for synchronous dataset-item endpoints. Prefer async run + poll for reliability.
+
 ## Apify Actor Role
 
 The simplest build can call an existing Reddit scraper Actor through the Apify API. A stronger bounty-facing build is a small custom Actor:
@@ -109,6 +209,8 @@ Reject candidates that require private evidence, doxxing, harassment, illegal in
 The teammate-built CLI should be the execution layer for agents. Recommended commands:
 
 ```txt
+truthmarket generator run --policy generator-policy.json --json
+truthmarket generator daemon --policy generator-policy.json --json
 truthmarket market draft-from-reddit --apify-run <run-id> --json
 truthmarket market create --claim-rules claim-rules.json --json
 truthmarket market verify --market <address> --json
@@ -119,6 +221,8 @@ truthmarket withdraw --market <address> --json
 ```
 
 The CLI should return stable JSON with `ok`, `action`, `market`, `txHash`, `swarmReference`, `claimRulesHash`, and `error` fields where applicable. It must not require private keys, nonces, or unrevealed votes in command-line arguments.
+
+Generator commands should also return `apifyRunId`, `datasetId`, `candidateId`, `skippedReason`, and `createdMarketCount`.
 
 ## Swarm Artifacts
 
@@ -140,3 +244,10 @@ This creates a visible Apify integration while preserving TruthMarket's random-j
 - Agents and users participating with commit-reveal.
 
 The result is not a Reddit fact-checker. It is an agent-generated belief market from public web context.
+
+## References
+
+- Apify API overview: https://docs.apify.com/api
+- Run Actor endpoint: https://docs.apify.com/api/v2/act-runs-post
+- Run Actor and retrieve data guide: https://docs.apify.com/academy/api/run-actor-and-retrieve-data-via-api
+- Dataset items endpoint: https://docs.apify.com/api/v2/dataset-items-get

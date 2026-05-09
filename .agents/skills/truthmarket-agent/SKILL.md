@@ -38,7 +38,8 @@ Require an explicit local policy before an agent commits:
   "requireSwarmVerification": true,
   "allowCreateMarkets": true,
   "allowJuryCommit": true,
-  "allowScrapedMarketCreation": false
+  "allowScrapedMarketCreation": false,
+  "allowScheduledMarketGeneration": false
 }
 ```
 
@@ -52,10 +53,13 @@ Recommended additional policy fields when implementing a daemon:
   "minRevealSafetySeconds": 300,
   "maxMarketsWatched": 100,
   "maxMarketsCreatedPerRun": 3,
+  "maxOpenGeneratedMarkets": 3,
   "requireHumanReviewForCreatedMarkets": true,
   "allowedSources": ["reddit"],
   "allowedSubreddits": [],
   "blockedSubreddits": [],
+  "generatorMode": "live-mini",
+  "generatorCron": "0 * * * *",
   "vaultPath": ".truthmarket/agent-vault.json"
 }
 ```
@@ -115,6 +119,26 @@ Bad market shapes:
 - "Did this objectively happen?" when the rules require unavailable private evidence.
 - "Does Apify prove this is true?"
 - Any claim where YES/NO meaning is not defined before staking.
+
+## Scheduled Market Generator
+
+When `allowScheduledMarketGeneration` is true, run at most one generated market per scheduler tick:
+
+1. Check `maxOpenGeneratedMarkets` and skip if too many generated markets are still active.
+2. Run the Apify Reddit scrape through the CLI or configured Actor endpoint.
+3. Score candidates for virality, ambiguity, public resolvability, safety, and market clarity.
+4. Skip the tick when no candidate passes policy thresholds.
+5. Generate `claim-rules.json`, preview it, and require approval when policy says so.
+6. Create the market through the CLI using a timing mode.
+7. Publish the market to discovery and start the watcher.
+
+Recommended timing modes:
+
+- `demo-fast`: manual or every 15 minutes; 5 minute voting, 2 minute jury commit timeout, 5 minute reveal; `jurySize=1`, `minCommits=7`, `minRevealedJurors=1`.
+- `live-mini`: every 60 minutes; 20 minute voting, 5 minute jury commit timeout, 25 minute reveal; `jurySize=1`, `minCommits=7`, `minRevealedJurors=1`.
+- `public-hourly`: every 3 hours; 60 minute voting, 10 minute jury commit timeout, 50 minute reveal; `jurySize=3`, `minCommits=20`, `minRevealedJurors=2`.
+
+The current contract requires `minCommits * 15 >= jurySize * 100`. Use a 1-person jury for fast live demos unless the agent swarm can reliably produce at least 20 commits.
 
 ## Eligibility Or Registry
 
@@ -210,6 +234,8 @@ When a TruthMarket CLI exists, prefer it over hand-written transaction scripts. 
 
 Useful command surface:
 
+- `truthmarket generator run --policy <file> --json`
+- `truthmarket generator daemon --policy <file> --json`
 - `truthmarket markets discover --json`
 - `truthmarket market verify --market <address> --json`
 - `truthmarket market draft-from-reddit --source <url-or-apify-run> --json`
