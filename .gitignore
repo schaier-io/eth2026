@@ -27,3 +27,4 @@ packages/swarm-kv/.env.swarm
 packages/swarm-kv/.e2e/live-registry-references.json
 .pnpm-store/v10/projects/c55c163961ef2590ab06789217ee7cd3
 .pnpm-store/v10/projects/c03888112fe44997cf5e5f5ba9196597
+tsconfig.tsbuildinfo

@@ -407,6 +407,98 @@ function MarketArtwork({ market }: { market: Market }) {
   );
 }
 
+function RegistryMarketsPanel({
+  activeAddress,
+  onSelect,
+}: {
+  activeAddress: Address | undefined;
+  onSelect: (addr: Address) => void;
+}) {
+  const enabled = Boolean(registryAddress);
+  const { data: marketAddresses, isLoading: addressesLoading } = useReadContract({
+    address: registryAddress,
+    abi: marketRegistryAbi,
+    functionName: "getMarkets",
+    args: [0n, 50n],
+    query: { enabled, refetchInterval: 5000 },
+  });
+
+  const list = (marketAddresses ?? []) as Address[];
+  const reads = useReadContracts({
+    contracts: list.flatMap((addr) => [
+      { address: addr, abi: truthMarketAbi, functionName: "name" },
+      { address: addr, abi: truthMarketAbi, functionName: "phase" },
+      { address: addr, abi: truthMarketAbi, functionName: "outcome" },
+    ]),
+    query: { enabled: list.length > 0, refetchInterval: 5000 },
+  });
+
+  if (!enabled) {
+    return (
+      <div className="registry-panel registry-panel-warn">
+        <p>
+          <strong>Registry not configured.</strong> Set <code>NEXT_PUBLIC_REGISTRY_ADDRESS</code>
+          {" "}in <code>.env</code> (run <code>truthmarket dev up</code> for anvil).
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="registry-panel">
+      <div className="registry-panel-header">
+        <p className="eyebrow">Registry markets</p>
+        <h2>{list.length} on-chain {list.length === 1 ? "market" : "markets"}</h2>
+        <p className="registry-panel-sub">Sourced live from <code>{registryAddress}</code>.</p>
+      </div>
+      {addressesLoading && list.length === 0 ? (
+        <p className="registry-panel-empty">Loading registry…</p>
+      ) : list.length === 0 ? (
+        <p className="registry-panel-empty">
+          No markets yet. Run <code>truthmarket agent tick</code> to create one, or use{" "}
+          <code>truthmarket registry create-market</code> for a manual spec.
+        </p>
+      ) : (
+        <ul className="registry-list">
+          {list.map((addr, i) => {
+            const name = reads.data?.[i * 3]?.result as string | undefined;
+            const phase = reads.data?.[i * 3 + 1]?.result as number | undefined;
+            const outcome = reads.data?.[i * 3 + 2]?.result as number | undefined;
+            const active = activeAddress?.toLowerCase() === addr.toLowerCase();
+            return (
+              <li key={addr} className={`registry-row${active ? " is-active" : ""}`}>
+                <button type="button" onClick={() => onSelect(addr)} className="registry-row-button">
+                  <span className="registry-row-name">{name ?? "Loading…"}</span>
+                  <span className="registry-row-meta">
+                    <span className="phase-pill">{phaseFromContract(phase ?? 0)}</span>
+                    {outcome && outcome > 0 ? (
+                      <span className="phase-pill">Outcome: {outcomeLabel(outcome)}</span>
+                    ) : null}
+                    <span className="registry-row-addr">{shortAddress(addr)}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function outcomeLabel(n: number): string {
+  switch (n) {
+    case 1:
+      return "YES";
+    case 2:
+      return "NO";
+    case 3:
+      return "Invalid";
+    default:
+      return "Unresolved";
+  }
+}
+
 export default function TruthMarketApp() {
   const { address, isConnected } = useAccount();
   const { connectors, connect, isPending: isConnecting } = useConnect();
@@ -966,6 +1058,15 @@ export default function TruthMarketApp() {
                   Create market
                 </button>
               </div>
+
+              <RegistryMarketsPanel
+                activeAddress={activeMarketAddress}
+                onSelect={(addr) => {
+                  setActiveMarketAddress(addr);
+                  setSelectedMarketId(addr);
+                  showScreen("stake");
+                }}
+              />
 
               {visibleMarkets.length === 0 ? (
                 <div className="empty-state">
