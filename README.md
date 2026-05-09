@@ -23,7 +23,7 @@ npm install
 npm run dev
 ```
 
-The older static prototype remains in `apps/web-prototype` as a visual reference.
+The legacy static prototype was removed so the app surface stays TypeScript/React and shares the wallet/contract integration path.
 
 ## Decisions
 
