@@ -24,18 +24,11 @@ Create one canonical JSON document per market:
   "description": "A YES/NO claim resolved by selected staked juror belief under these rules.",
   "yesMeaning": "Agents close a higher count of qualifying tickets before the cutoff.",
   "noMeaning": "Humans close an equal or higher count of qualifying tickets before the cutoff.",
-  "resolutionRules": "Only tickets matching the locked queue and time window count.",
-  "createdAt": "2026-05-09T00:00:00Z",
-  "votingPeriod": 86400,
-  "adminTimeout": 43200,
-  "revealPeriod": 86400,
-  "jurySize": 5,
-  "minCommits": 34,
-  "minRevealedJurors": 3,
-  "stakeToken": "0x...",
-  "creator": "0x..."
+  "resolutionRules": "Only tickets matching the locked queue and time window count."
 }
 ```
+
+Do not duplicate contract-created parameters as canonical Swarm fields. Deadlines, jury size, minimum commits, minimum revealed jurors, stake token, creator, and risk percentage come from the deployed contract. The UI may display those values beside the Swarm document, but contract getters remain canonical.
 
 Upload the JSON to Swarm before deploying the market. Store the returned Swarm reference and the hash of the exact JSON bytes in the contract:
 
