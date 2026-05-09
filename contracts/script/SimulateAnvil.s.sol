@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import { Script, console2 } from "forge-std/Script.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { MarketRegistry } from "../src/MarketRegistry.sol";
 import { TruthMarket } from "../src/TruthMarket.sol";
 import { TruthMarketRegistry, ITruthMarketRegistry } from "../src/TruthMarketRegistry.sol";
 import { RegistryDeployment } from "./RegistryDeployment.sol";
@@ -47,11 +48,11 @@ contract SimulateAnvilScript is Script {
     // TOKEN at deployer-EOA nonce 0 (CREATE). Registry is deployed via CREATE2
     // through the canonical deterministic deployer, so its address is bytecode-
     // and salt-derived and identical on every network — see RegistryDeployment.
-    // MARKET at deployer-EOA nonce 2: nonce 1 is consumed by the EOA call into
-    // the CREATE2 deployer, so the market still lands at the same address as
-    // the previous deploy order.
+    // MARKET at deployer-EOA nonce 2 and MARKET_FACTORY at nonce 3: nonce 1 is
+    // consumed by the EOA call into the CREATE2 deployer.
     address internal constant TOKEN_ADDR = 0x5FbDB2315678afecb367f032d93F642f64180aa3;
     address internal constant MARKET_ADDR = 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0;
+    address internal constant MARKET_FACTORY_ADDR = 0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9;
 
     // ---------- Market config ----------
     bytes internal constant IPFS_HASH = bytes("ipfs://QmAnvilSimDemo");
@@ -85,15 +86,15 @@ contract SimulateAnvilScript is Script {
         // Deploy registry via CREATE2 if it isn't already at the predicted
         // address. Idempotent across reruns / chains.
         address predictedRegistry = RegistryDeployment.predict();
-        TruthMarketRegistry registry;
+        TruthMarketRegistry discoveryRegistry;
 
         vm.startBroadcast(DEPLOYER_PK);
         MockERC20 token = new MockERC20("Truth Stake", "TRUTH", 100_000 ether, deployer);
         if (predictedRegistry.code.length == 0) {
-            registry = new TruthMarketRegistry{ salt: RegistryDeployment.SALT }();
-            require(address(registry) == predictedRegistry, "CREATE2 drift");
+            discoveryRegistry = new TruthMarketRegistry{ salt: RegistryDeployment.SALT }();
+            require(address(discoveryRegistry) == predictedRegistry, "CREATE2 drift");
         } else {
-            registry = TruthMarketRegistry(predictedRegistry);
+            discoveryRegistry = TruthMarketRegistry(predictedRegistry);
         }
         string[] memory tags = new string[](3);
         tags[0] = "anvil";
@@ -103,7 +104,7 @@ contract SimulateAnvilScript is Script {
             TruthMarket.InitParams({
                 stakeToken: IERC20(address(token)),
                 treasury: treasury,
-                registry: ITruthMarketRegistry(address(registry)),
+                registry: ITruthMarketRegistry(address(discoveryRegistry)),
                 admin: admin,
                 juryCommitter: juryCommitter,
                 creator: creator,
@@ -123,6 +124,12 @@ contract SimulateAnvilScript is Script {
                 minRevealedJurors: MIN_REVEALED_JURORS
             })
         );
+        MarketRegistry marketFactory = new MarketRegistry(
+            IERC20(address(token)),
+            treasury,
+            admin,
+            juryCommitter
+        );
         for (uint256 i = 0; i < 7; i++) {
             token.transfer(_voterAddr(i), 1000 ether);
         }
@@ -130,11 +137,13 @@ contract SimulateAnvilScript is Script {
 
         require(address(token) == TOKEN_ADDR, "token addr drift");
         require(address(market) == MARKET_ADDR, "market addr drift");
+        require(address(marketFactory) == MARKET_FACTORY_ADDR, "market factory addr drift");
 
         console2.log("=== Phase: Deploy ===");
         console2.log("Token:                ", address(token));
-        console2.log("Registry:             ", address(registry));
+        console2.log("Registry:             ", address(discoveryRegistry));
         console2.log("Market:               ", address(market));
+        console2.log("Market factory:       ", address(marketFactory));
         console2.log("Name:                 ", market.name());
         console2.log("Description:          ", market.description());
         console2.log("Tags count:           ", market.getTags().length);
