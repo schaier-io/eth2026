@@ -288,7 +288,7 @@ export async function cmdDevUp(
           `discovery:   ${DETERMINISTIC_DISCOVERY_REGISTRY}\n` +
           `stake token: ${token}\n` +
           `wrote env:   ${envOut}\n` +
-          `next: source ${path.relative(process.cwd(), envOut)} && truthmarket registry info\n`,
+          `next: truthmarket registry info\n`,
       );
     },
   );

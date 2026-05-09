@@ -133,7 +133,7 @@ Each tick:
 2. Skips candidates whose Reddit `sourceUrl` or `id` already appears in `~/.truthmarket/agent-state.json` (capped at 200 entries; the file is the dedupe ledger).
 3. Gates the action on `policy.allowCreateMarkets`; pass `--ignore-policy` to override per call.
 4. Builds a `MarketSpec` from the candidate. The total lifetime is `--duration-seconds` (default 3600), split 40/20/40 across `votingPeriod`, `juryCommit`, and `revealPeriod` with a 60-second floor enforced.
-5. Calls `MarketRegistry.createMarket(spec)`. The wallet that signs becomes the market's on-chain creator and is entitled to the Invalid-route juror-penalty payout.
+5. Calls `MarketRegistry.createMarket(spec)`. The factory injects the configured discovery `TruthMarketRegistry` so the new market self-registers for UI/API discovery. The wallet that signs becomes the market's on-chain creator and is entitled to the Invalid-route juror-penalty payout.
 6. Appends `{ permalink, candidateId, marketAddress, txHash, ipfsHash, name, createdAt }` to the dedupe ledger.
 
 For MVP the on-chain `ipfsHash` is `keccak256(JSON.stringify(claimRulesDraft))` rather than a real Swarm reference; the agent emits `ipfsHashIsPlaceholder: true` so the boundary is visible. Voters with `requireSwarmVerification: true` should refuse to commit on these markets until a real Swarm upload is wired in.
@@ -193,7 +193,7 @@ Timer guidance:
 
 ## Create Market
 
-Markets are created through the `MarketRegistry` (ADR 0011). The registry is constructed once per organization with the operational addresses every market should share — `stakeToken`, `companyTreasury`, `admin`, `juryCommitter` — so the caller only supplies a topic-only `MarketSpec`. The caller of `createMarket` is recorded as the on-chain `creator`.
+Markets are created through the `MarketRegistry` factory (ADR 0011). The factory is constructed once per organization with the operational addresses every market should share — `stakeToken`, `companyTreasury`, discovery `TruthMarketRegistry`, `admin`, `juryCommitter` — so the caller only supplies a topic-only `MarketSpec`. The caller of `createMarket` is recorded as the on-chain `creator`.
 
 Two creation paths share the same registry, gated by `policy.allowCreateMarkets`:
 
@@ -205,7 +205,7 @@ When creating manually:
 1. Validate canonical `claim-rules.json`.
 2. Upload it to Swarm (when a gateway is configured) and use the Swarm reference as `ipfsHash`. For MVP without a gateway, the agent loop uses `keccak256(JSON.stringify(claim-rules))` as a placeholder; humans creating manually should still prefer a real reference where possible.
 3. Build a `MarketSpec` JSON file with `name`, `description`, `tags`, `ipfsHash`, `votingPeriod`, `adminTimeout`, `revealPeriod`, `protocolFeePercent`, `minStake`, `jurySize`, `minCommits`, `minRevealedJurors`.
-4. Run `truthmarket registry create-market --spec <path>`. The CLI prints the deployed market address and tx hash; both are also emitted as `MarketCreated(id, market, creator, name, ipfsHash)`.
+4. Run `truthmarket registry create-market --spec <path>`. The CLI prints the deployed market address and tx hash; both are also emitted as `MarketCreated(id, market, creator)`. Read the deployed market for name, description, phase, and rules reference.
 5. Store creator metadata, market address, Swarm reference, and claim-rules hash locally.
 6. Update mutable Swarm discovery index/feed when one exists.
 
