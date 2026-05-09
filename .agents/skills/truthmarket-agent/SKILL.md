@@ -25,6 +25,33 @@ TruthMarket is random-jury belief resolution, not fact-checking and not an oracl
 - **Jury committer**: fetches SpaceComputer randomness after voting closes, creates a replayable public audit artifact, and commits the selected jury when policy allows.
 - **Watcher**: runs a persisted timer or cron/heartbeat job for phase changes, reveal deadlines, juror selection, and withdrawal.
 
+## Agent Quick Paths
+
+Use the shipped CLI for agent access, creation, and voting whenever possible. It owns config loading, wallet loading, policy gates, contract calls, and vault storage.
+
+**Access / discover markets**
+
+1. Resolve config from env or flags: `TM_REGISTRY_ADDRESS` for registry flows and `TM_CONTRACT_ADDRESS` or `--address <market>` for single-market flows.
+2. List registry markets: `truthmarket registry list --json`.
+3. Inspect a market before acting: `truthmarket market info --address <market> --json`, `truthmarket market stats --address <market> --json`, and `truthmarket market jury --address <market> --json`.
+4. Treat the returned market address as a candidate only until the contract state and claim/rules document have been verified.
+
+**Create markets**
+
+1. Generated agent market: run `truthmarket agent tick --json` for one Apify-powered creation attempt, or `truthmarket agent run --json` for the scheduler loop.
+2. Manual market: build a `MarketSpec` JSON and run `truthmarket registry create-market --spec <path> --json`.
+3. Creation requires `policy.allowCreateMarkets` unless the operator intentionally passes `--ignore-policy`.
+4. For MVP generated markets, expect `ipfsHashIsPlaceholder: true`; those are not safe for policies that require real Swarm verification.
+
+**Vote / reveal / settle**
+
+1. Approve stake token allowance when needed: `truthmarket erc20 approve --address <market> --amount <base-units> --json`.
+2. Commit: `truthmarket vote commit --address <market> --vote yes|no --stake <base-units> --document <claim-rules.json> --json`.
+3. The commit command stores vote and nonce in the local encrypted vault. Do not pass nonces on the command line for normal reveal.
+4. Reveal from the vault: `truthmarket vote reveal --address <market> --json`.
+5. Withdraw after resolution: `truthmarket withdraw --address <market> --json`.
+6. For unattended operation, start `truthmarket heartbeat start --json` after commits so reveal and withdraw are restart-safe.
+
 ## Policy
 
 Require an explicit local policy before an agent commits:
@@ -67,11 +94,12 @@ Recommended additional policy fields when implementing a daemon:
 ## Verify Before Commit
 
 1. Read `getConfig()` or the individual getters from the market contract.
-2. Fetch the claim/rules document from `ipfsHash`/Swarm reference.
+2. Fetch the claim/rules document from `swarmReference()`/`ipfsHash`.
 3. If the contract exposes a separate `claimRulesHash`, verify `keccak256(fetchedBytes) == claimRulesHash`.
-4. In the current contract, only `ipfsHash` is exposed; treat this as reference verification, not exact-byte rules verification, until `claimRulesHash` is added.
-5. Decode JSON and compare any duplicated fields against contract getters.
-6. Only then decide whether the agent policy allows commit.
+4. The current contract exposes both `swarmReference()` and `claimRulesHash`; the CLI `vote commit` enforces this when `policy.requireSwarmVerification` is true and a `--document` path is supplied.
+5. For MVP generated markets whose `ipfsHash` is a placeholder hash, refuse to commit when `requireSwarmVerification` is true unless a local document is supplied and matches the on-chain `claimRulesHash`.
+6. Decode JSON and compare any duplicated fields against contract getters.
+7. Only then decide whether the agent policy allows commit.
 
 ## Find Markets
 
@@ -125,7 +153,7 @@ Bad market shapes:
 When `policy.allowCreateMarkets` is true, run at most one generated market per scheduler tick. The shipped path is the `agent` subcommand group (see ADR 0012):
 
 - `truthmarket agent run` — long-running loop, one market per `--interval-seconds`. NDJSON event stream when `--json`. Exits cleanly on SIGINT.
-- `truthmarket agent tick` — runs a single iteration and exits. This is the single-shot surface other agents and the operator should call for one-off generation; both share `runAgentTick` so behavior is identical.
+- `truthmarket agent tick` — runs a single iteration and exits. This is the single-shot surface other agents and the operator should call for one-off generation; both share `runApifyAgentTick` from `agents/apify` so behavior is identical.
 
 Each tick:
 
@@ -146,6 +174,8 @@ Recommended timing modes:
 
 The current contract requires `minCommits * 15 >= jurySize * 100`. Use a 1-person jury for fast live demos unless the agent swarm can reliably produce at least 20 commits.
 
+Implementation boundary: the Apify market-creation runtime lives in `agents/apify`; the CLI's `truthmarket agent run/tick` commands are host adapters that provide config, policy checks, wallet loading, and registry transactions.
+
 ## Eligibility Or Registry
 
 If a voter registry or identity adapter exists, check it before commit and before accepting a juror candidate. For hackathon demos, identity may be display-only; production markets need a real eligibility boundary.
@@ -162,7 +192,7 @@ Expected registry behavior:
 2. Generate a high-entropy nonce locally.
 3. Compute the contract commitment hash using vote, nonce, voter address, chain id, and contract address.
 4. Read `stakeToken()`, `minStake()`, `RISK_PERCENT()`, and existing ERC20 `allowance(agent, market)`.
-5. If allowance is below stake, call `approve(market, stake)` on the stake token.
+5. If allowance is below stake, run `truthmarket erc20 approve --address <market> --amount <stake> --json` or call `approve(market, stake)` on the stake token.
 6. Submit `commitVote(commitHash, stake)` to the market.
 7. Store vote, nonce, market, chain, wallet, commitment hash, stake, and deadlines in a local private vault.
 8. Create or update a persisted reveal timer for `revealDeadline - revealBufferMinutes`.
