@@ -1,5 +1,16 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { loadDotenv } from "./util/dotenv.js";
+
+// Auto-apply a .env file from cwd (or any ancestor up to 5 levels). Explicit
+// shell exports always win — we only fill missing keys. Everything else
+// downstream just reads process.env.
+loadDotenv();
+import {
+  cmdDevDown,
+  cmdDevStatus,
+  cmdDevUp,
+} from "./commands/dev.js";
 import {
   cmdErc20Allowance,
   cmdErc20Approve,
@@ -201,6 +212,22 @@ shared(heartbeat.command("start").description("start watcher (foreground; NDJSON
 
 shared(heartbeat.command("status").description("show static heartbeat config"))
   .action(async (opts) => run(() => cmdHeartbeatStatus(ctx(opts), opts), ctx(opts)));
+
+// -------- dev --------
+const dev = program.command("dev").description("local-development helpers (anvil + forge mock chain)");
+shared(dev.command("up").description("spawn anvil, run forge SimulateAnvil deploy(), write .env"))
+  .option("--contracts-dir <path>", "path to the contracts/ root (auto-detected if omitted)")
+  .option("--env-out <path>", "where to write the .env file", ".env")
+  .option("--rpc-port <n>", "anvil RPC port", (v) => Number(v), 8545)
+  .option("--accounts <n>", "anvil --accounts", (v) => Number(v), 12)
+  .option("--skip-deploy", "spawn anvil only, do not run the deploy script", false)
+  .action(async (opts) => run(() => cmdDevUp(ctx(opts), opts), ctx(opts)));
+
+shared(dev.command("down").description("kill the managed anvil process"))
+  .action(async (opts) => run(() => cmdDevDown(ctx(opts), opts), ctx(opts)));
+
+shared(dev.command("status").description("report whether managed anvil is running"))
+  .action(async (opts) => run(() => cmdDevStatus(ctx(opts), opts), ctx(opts)));
 
 // -------- tui --------
 shared(program.command("tui").description("launch the interactive TUI"))
