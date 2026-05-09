@@ -286,6 +286,7 @@ TruthMarket can become a venture because it monetizes belief-resolution markets 
 - Agent market creation still feels like an operator toolkit. The agent needs prepared env vars, policy files, wallet setup, a `MarketSpec`, and sometimes placeholder `ipfsHash` behavior before it can create a market.
 - Public artifact upload is not first-class. Agents should be able to upload their own claim/rules document, optional image, and public context artifact to Swarm/IPFS, then create a market from those references.
 - Manual market creation is too raw. A user or agent has to hand-build `MarketSpec` JSON instead of using a guided command that validates fields and shows what will be deployed.
+- Creator-controlled timing is not visible enough in the agent flow. Creators should be able to choose market lifecycle presets such as fast demo, 5 minutes, 1 hour, 24 hours, or custom voting/admin/reveal windows before deployment.
 - Stake/vote flow still exposes base-unit complexity. Agents should get token-decimal helpers, allowance checks, dry-run previews, and clear risk summaries before signing.
 - Verification is correct in principle but not packaged well. Agents need one clear create/verify/commit path that refuses unsafe placeholder markets when policy requires real Swarm verification.
 - The safe unattended-agent loop is not obvious enough. Policy, encrypted reveal vault, heartbeat, selected-juror urgency, and withdraw should feel like one operating mode, not separate concepts.
@@ -298,6 +299,8 @@ TruthMarket can become a venture because it monetizes belief-resolution markets 
 - [ ] Support optional image/context artifact upload and include those references in the claim/rules document, not as canonical contract state.
 - [ ] Compute and display `claimRulesHash` before market creation; after deployment, read the contract and verify the uploaded bytes still match.
 - [ ] Add a `--dry-run`/preview mode for market creation that prints the exact registry, creator, stake token, timings, jury size, min commits, uploaded references, and expected transaction target.
+- [ ] Add creator-configurable timing inputs with presets and custom values for `votingPeriod`, `adminTimeout`, and `revealPeriod`; validate against the on-chain 1 minute minimum and 365 day maximum per phase, and show the resulting absolute voting, jury-commit, and reveal deadlines before signing.
+- [ ] Decide whether "1 minute market" means 1 minute per phase or 1 minute total lifecycle. The current contract supports 1 minute minimum per phase, so a true 1 minute total market requires a contract/design change.
 - [ ] Add token-decimal helpers for stake input so agents can pass human amounts while the CLI safely converts to base units.
 - [ ] Add an approve-and-commit helper or guided sequence that checks allowance, shows normal 20% risk, previews the commitment action, then commits.
 - [ ] Return stable JSON for every agent action with `ok`, `action`, `marketAddress`, `txHash`, `artifactReferences`, `claimRulesHash`, `vaultPath`, and `error` where applicable.
@@ -309,6 +312,7 @@ TruthMarket can become a venture because it monetizes belief-resolution markets 
 
 - An agent can create a custom market from a local rules document plus optional image/context artifact without hand-writing a full `MarketSpec`.
 - The created market stores an immutable rules reference and a verifiable `claimRulesHash`.
+- The creator can choose lifecycle timing before deployment, including fast demo, 5 minute, 1 hour, 24 hour, and custom timing paths within protocol bounds.
 - Agents that require Swarm verification refuse to commit on placeholder-reference markets.
 - The CLI can preview create/approve/commit actions before signing.
 - Vote, nonce, and reveal data remain local/private and are never uploaded to Swarm/IPFS/Apify.
