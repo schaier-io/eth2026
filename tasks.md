@@ -277,6 +277,45 @@ TruthMarket can become a venture because it monetizes belief-resolution markets 
 
 ---
 
+## Stage 9 — Agentic Market Productization
+
+**Goal:** Make the agent experience feel like a complete product flow: an AI agent can create a market with its own public artifacts, discover/access markets, vote with stake, reveal from its local vault, and withdraw after settlement without hand-assembling low-level pieces.
+
+**Current issues to fix:**
+
+- Agent market creation still feels like an operator toolkit. The agent needs prepared env vars, policy files, wallet setup, a `MarketSpec`, and sometimes placeholder `ipfsHash` behavior before it can create a market.
+- Public artifact upload is not first-class. Agents should be able to upload their own claim/rules document, optional image, and public context artifact to Swarm/IPFS, then create a market from those references.
+- Manual market creation is too raw. A user or agent has to hand-build `MarketSpec` JSON instead of using a guided command that validates fields and shows what will be deployed.
+- Stake/vote flow still exposes base-unit complexity. Agents should get token-decimal helpers, allowance checks, dry-run previews, and clear risk summaries before signing.
+- Verification is correct in principle but not packaged well. Agents need one clear create/verify/commit path that refuses unsafe placeholder markets when policy requires real Swarm verification.
+- The safe unattended-agent loop is not obvious enough. Policy, encrypted reveal vault, heartbeat, selected-juror urgency, and withdraw should feel like one operating mode, not separate concepts.
+- The first target agent persona is still too broad. Optimize first for one concrete loop, such as a Reddit ambiguity agent that creates markets from public disputed posts and later votes/reveals under local policy.
+
+**Fix list:**
+
+- [ ] Add a single agent-native create command, for example `truthmarket market create --rules <claim-rules.json> --image <image> --context <artifact> --json`.
+- [ ] Upload claim/rules JSON to Swarm/IPFS and use the returned immutable reference in the market spec.
+- [ ] Support optional image/context artifact upload and include those references in the claim/rules document, not as canonical contract state.
+- [ ] Compute and display `claimRulesHash` before market creation; after deployment, read the contract and verify the uploaded bytes still match.
+- [ ] Add a `--dry-run`/preview mode for market creation that prints the exact registry, creator, stake token, timings, jury size, min commits, uploaded references, and expected transaction target.
+- [ ] Add token-decimal helpers for stake input so agents can pass human amounts while the CLI safely converts to base units.
+- [ ] Add an approve-and-commit helper or guided sequence that checks allowance, shows normal 20% risk, previews the commitment action, then commits.
+- [ ] Return stable JSON for every agent action with `ok`, `action`, `marketAddress`, `txHash`, `artifactReferences`, `claimRulesHash`, `vaultPath`, and `error` where applicable.
+- [ ] Make `policy.requireSwarmVerification` block generated placeholder markets by default unless a matching local document is supplied.
+- [ ] Add a single "safe agent mode" command or documented sequence that starts heartbeat monitoring after commit and handles reveal/withdraw according to local policy.
+- [ ] Add a dedicated README/demo for the first target agent persona: create a market from a public Reddit ambiguity, upload artifacts, create market, commit a vote, reveal, and withdraw.
+
+**Acceptance:**
+
+- An agent can create a custom market from a local rules document plus optional image/context artifact without hand-writing a full `MarketSpec`.
+- The created market stores an immutable rules reference and a verifiable `claimRulesHash`.
+- Agents that require Swarm verification refuse to commit on placeholder-reference markets.
+- The CLI can preview create/approve/commit actions before signing.
+- Vote, nonce, and reveal data remain local/private and are never uploaded to Swarm/IPFS/Apify.
+- The first persona demo runs end-to-end with machine-readable JSON output for every step.
+
+---
+
 ## Out Of Scope For Hackathon
 
 - Apify as core evidence tooling.
