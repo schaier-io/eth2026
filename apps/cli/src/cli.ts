@@ -35,6 +35,11 @@ import {
   cmdPolicyShow,
 } from "./commands/policy.js";
 import {
+  cmdRegistryCreateMarket,
+  cmdRegistryInfo,
+  cmdRegistryList,
+} from "./commands/registry.js";
+import {
   cmdSwarmShowHash,
   cmdSwarmVerify,
 } from "./commands/swarm.js";
@@ -73,6 +78,7 @@ function shared(cmd: Command): Command {
     .option("--chain <key>", "chain key: foundry | baseSepolia | sepolia")
     .option("--rpc <url>", "RPC URL override")
     .option("--address <addr>", "TruthMarket contract address override")
+    .option("--registry <addr>", "MarketRegistry contract address override")
     .option("--json", "machine-readable JSON output (single envelope; NDJSON for streaming commands)", false)
     .option("--yes", "skip confirmation prompts (use with --json for unattended runs)", false);
 }
@@ -126,6 +132,21 @@ shared(market.command("jury").description("jury list + active wallet's selection
 shared(market.command("watch").description("long-running phase/outcome tail (NDJSON when --json)"))
   .option("--interval-seconds <n>", "poll interval", (v) => Number(v), 10)
   .action(async (opts) => run(() => cmdMarketWatch(ctx(opts), opts), ctx(opts)));
+
+// -------- registry --------
+const registry = program.command("registry").description("MarketRegistry: read config, list markets, deploy new ones");
+shared(registry.command("info").description("registry config + market count"))
+  .action(async (opts) => run(() => cmdRegistryInfo(ctx(opts), opts), ctx(opts)));
+
+shared(registry.command("list").description("paginated list of deployed market addresses"))
+  .option("--offset <n>", "starting index", (v) => Number(v), 0)
+  .option("--limit <n>", "page size", (v) => Number(v), 50)
+  .action(async (opts) => run(() => cmdRegistryList(ctx(opts), opts), ctx(opts)));
+
+shared(registry.command("create-market").description("deploy a new TruthMarket via the registry from a JSON spec"))
+  .requiredOption("--spec <path>", "path to a market spec JSON file")
+  .option("--ignore-policy", "skip the policy.allowCreateMarkets gate", false)
+  .action(async (opts) => run(() => cmdRegistryCreateMarket(ctx(opts), opts), ctx(opts)));
 
 // -------- vote --------
 const vote = program.command("vote").description("commit-reveal flows");

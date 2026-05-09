@@ -79,6 +79,19 @@ export function assertJuryCommitAllowed(
   }
 }
 
+export function assertCreateMarketAllowed(
+  policy: Policy,
+  overrides: PolicyOverrides = {},
+): void {
+  if (overrides.ignorePolicy) return;
+  if (!policy.allowCreateMarkets) {
+    throw new CliError(
+      "POLICY_CREATE_MARKETS_DISABLED",
+      "policy.allowCreateMarkets is false; flip it in your policy file or pass --ignore-policy",
+    );
+  }
+}
+
 export async function loadPolicy(cfg: ResolvedConfig): Promise<Policy> {
   try {
     await stat(cfg.policyPath);
