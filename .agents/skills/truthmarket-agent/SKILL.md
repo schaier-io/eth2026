@@ -19,7 +19,7 @@ TruthMarket is random-jury belief resolution, not fact-checking and not an oracl
 
 ## Agent Roles
 
-- **Creator**: validates claim/rules JSON, uploads it to Swarm, creates the market, and publishes discovery-only indexes when policy allows.
+- **Creator**: validates claim/rules JSON, uploads it to Swarm (or computes a placeholder reference for MVP), and creates the market through `MarketRegistry.createMarket` (`truthmarket registry create-market` for manual flows, `truthmarket agent run/tick` for the Apify-driven loop). Publishes discovery-only indexes when policy allows.
 - **Participant**: verifies immutable rules, commits a YES/NO belief with stake, stores the nonce locally, and reveals later to settle.
 - **Selected juror**: reveals with highest urgency because selected juror non-reveal loses full stake, not only the fixed 20% risked stake.
 - **Jury committer**: fetches SpaceComputer randomness after voting closes, creates a replayable public audit artifact, and commits the selected jury when policy allows.
@@ -122,15 +122,21 @@ Bad market shapes:
 
 ## Scheduled Market Generator
 
-When `allowScheduledMarketGeneration` is true, run at most one generated market per scheduler tick:
+When `policy.allowCreateMarkets` is true, run at most one generated market per scheduler tick. The shipped path is the `agent` subcommand group (see ADR 0012):
 
-1. Check `maxOpenGeneratedMarkets` and skip if too many generated markets are still active.
-2. Run the Apify Reddit scrape through the CLI or configured Actor endpoint.
-3. Score candidates for virality, ambiguity, public resolvability, safety, and market clarity.
-4. Skip the tick when no candidate passes policy thresholds.
-5. Generate `claim-rules.json`, preview it, and require approval when policy says so.
-6. Create the market through the CLI using a timing mode.
-7. Publish the market to discovery and start the watcher.
+- `truthmarket agent run` — long-running loop, one market per `--interval-seconds`. NDJSON event stream when `--json`. Exits cleanly on SIGINT.
+- `truthmarket agent tick` — runs a single iteration and exits. This is the single-shot surface other agents and the operator should call for one-off generation; both share `runAgentTick` so behavior is identical.
+
+Each tick:
+
+1. POSTs the existing web route at `${TM_APIFY_ENDPOINT}` (default `http://localhost:3000/api/apify/generated-markets`) — the CLI does not duplicate the Apify scoring/drafting logic.
+2. Skips candidates whose Reddit `sourceUrl` or `id` already appears in `~/.truthmarket/agent-state.json` (capped at 200 entries; the file is the dedupe ledger).
+3. Gates the action on `policy.allowCreateMarkets`; pass `--ignore-policy` to override per call.
+4. Builds a `MarketSpec` from the candidate. The total lifetime is `--duration-seconds` (default 3600), split 40/20/40 across `votingPeriod`, `juryCommit`, and `revealPeriod` with a 60-second floor enforced.
+5. Calls `MarketRegistry.createMarket(spec)`. The wallet that signs becomes the market's on-chain creator and is entitled to the Invalid-route juror-penalty payout.
+6. Appends `{ permalink, candidateId, marketAddress, txHash, ipfsHash, name, createdAt }` to the dedupe ledger.
+
+For MVP the on-chain `ipfsHash` is `keccak256(JSON.stringify(claimRulesDraft))` rather than a real Swarm reference; the agent emits `ipfsHashIsPlaceholder: true` so the boundary is visible. Voters with `requireSwarmVerification: true` should refuse to commit on these markets until a real Swarm upload is wired in.
 
 Recommended timing modes:
 
@@ -187,14 +193,21 @@ Timer guidance:
 
 ## Create Market
 
-When policy allows market creation:
+Markets are created through the `MarketRegistry` (ADR 0011). The registry is constructed once per organization with the operational addresses every market should share — `stakeToken`, `companyTreasury`, `admin`, `juryCommitter` — so the caller only supplies a topic-only `MarketSpec`. The caller of `createMarket` is recorded as the on-chain `creator`.
+
+Two creation paths share the same registry, gated by `policy.allowCreateMarkets`:
+
+- `truthmarket agent tick` / `agent run` — Apify-driven, used by the product agent and other agents calling this skill. See *Scheduled Market Generator*.
+- `truthmarket registry create-market --spec <spec.json>` — manual single-market creation from a hand-edited spec file. Used for demo markets with custom timing or for human-curated topics.
+
+When creating manually:
 
 1. Validate canonical `claim-rules.json`.
-2. Upload it to Swarm.
-3. Compute `claimRulesHash` for clients and future contract support.
-4. Deploy/create market with the constructor `InitParams`: stake token, treasury, admin, jury committer, creator, name, description, tags, `ipfsHash`, voting period, admin timeout, reveal period, protocol fee, min stake, jury size, min commits, and min revealed jurors.
+2. Upload it to Swarm (when a gateway is configured) and use the Swarm reference as `ipfsHash`. For MVP without a gateway, the agent loop uses `keccak256(JSON.stringify(claim-rules))` as a placeholder; humans creating manually should still prefer a real reference where possible.
+3. Build a `MarketSpec` JSON file with `name`, `description`, `tags`, `ipfsHash`, `votingPeriod`, `adminTimeout`, `revealPeriod`, `protocolFeePercent`, `minStake`, `jurySize`, `minCommits`, `minRevealedJurors`.
+4. Run `truthmarket registry create-market --spec <path>`. The CLI prints the deployed market address and tx hash; both are also emitted as `MarketCreated(id, market, creator, name, ipfsHash)`.
 5. Store creator metadata, market address, Swarm reference, and claim-rules hash locally.
-6. Update mutable Swarm discovery index/feed.
+6. Update mutable Swarm discovery index/feed when one exists.
 
 Do not put deadlines, jury size, stake token, creator, or risk percentage into Swarm as canonical state. Those values come from the contract. The UI or agent may display them beside the Swarm document.
 
@@ -232,19 +245,21 @@ Current web client ABI is in `apps/web/lib/truthmarket.ts`; update it when contr
 
 When a TruthMarket CLI exists, prefer it over hand-written transaction scripts. The CLI should expose stable JSON output so agents can call it safely.
 
-Useful command surface:
+Shipped command surface (run `truthmarket --help` or `truthmarket <group> --help` for the live list):
 
-- `truthmarket generator run --policy <file> --json`
-- `truthmarket generator daemon --policy <file> --json`
-- `truthmarket markets discover --json`
-- `truthmarket market verify --market <address> --json`
-- `truthmarket market draft-from-reddit --source <url-or-apify-run> --json`
-- `truthmarket market create --claim-rules <file> --json`
-- `truthmarket vote commit --market <address> --vote yes|no --stake <amount> --json`
-- `truthmarket agent watch --policy <file> --json`
-- `truthmarket jury commit --market <address> --json`
-- `truthmarket vote reveal --market <address> --json`
-- `truthmarket withdraw --market <address> --json`
+- `truthmarket registry info --json` — registry-wide config + market count
+- `truthmarket registry list --offset <n> --limit <n> --json` — deployed market addresses
+- `truthmarket registry create-market --spec <path> --json` — manual market creation through the registry
+- `truthmarket agent tick --json` — one Apify-driven market creation iteration
+- `truthmarket agent run --interval-seconds <n> --duration-seconds <n> --json` — continuous loop, NDJSON event stream
+- `truthmarket market info | phase | stats | jury | watch --address <addr> --json` — read a deployed market
+- `truthmarket vote commit --vote yes|no --stake <amount> --address <addr> --json`
+- `truthmarket vote reveal --address <addr> --json`
+- `truthmarket jury commit --randomness <uint256> --audit-hash <hex> --address <addr> --json`
+- `truthmarket withdraw --address <addr> --json`
+- `truthmarket heartbeat start --json` — agent heartbeat watcher (foreground)
+- `truthmarket policy show | set --file <path> --json`
+- `truthmarket swarm verify --document <path> --address <addr>`
 
 CLI safety requirements:
 
