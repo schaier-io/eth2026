@@ -35,18 +35,26 @@ This:
 - Runs `SimulateAnvil.deploy()` which deploys `MockERC20` (nonce 0), the seed `TruthMarket` (nonce 1), and `MarketRegistry` (nonce 2) at deterministic addresses
 - Writes `TM_*` and `NEXT_PUBLIC_*` env vars to `.env` at the repo root
 
-Verify the registry is reachable:
+Verify the registry is reachable. The CLI walks up from cwd looking for `.env`, so no `source` is needed for `truthmarket *` commands run from inside the repo:
 
 ```sh
-source ../../.env && npx tsx src/cli.ts registry info
+npx tsx src/cli.ts registry info
 # expect: market count: 0
 ```
+
+(Forge / cast / shell scripts that aren't dotenv-aware still need `source ../../.env` first.)
 
 ### 2. Seed the agent policy
 
 ```sh
 npx tsx src/cli.ts dev seed-agent
 # writes ~/.truthmarket/policy.json with allowCreateMarkets=true and a generous maxStake
+```
+
+For non-interactive vote / reveal / withdraw flows (CLI runs without a TTY), also export a vault passphrase:
+
+```sh
+export TM_VAULT_PASSPHRASE=demo   # any value; encrypts local nonce vault
 ```
 
 ### 3. Start the web app
@@ -78,7 +86,35 @@ For a real Apify run instead, set `APIFY_TOKEN` and `APIFY_REDDIT_ACTOR_ID` in y
 
 The seed `TruthMarket` (`0xe7f1725...`) was deployed with `jurySize=1, minCommits=7, minRevealedJurors=1`. Use anvil voter accounts 5–11 (already funded with 1000 MockERC20 each) to commit through the CLI, advance time via cast, draw a juror, reveal, and resolve. This is documented per phase in [`contracts/README.md`](../contracts/README.md) under `bin/sim-anvil`.
 
-Agent-created markets default to `jurySize=1, minCommits=7, minRevealedJurors=1` and a 1-hour split window (24m voting / 12m jury / 24m reveal); identical lifecycle, just different parameters. The participating wallets need MockERC20 — top up via the same `bin/anvil` faucet account or `truthmarket erc20` flow.
+Agent-created markets default to `jurySize=1, minCommits=7, minRevealedJurors=1` and a 1-hour split window (24m voting / 12m jury / 24m reveal); identical lifecycle, just different parameters.
+
+#### Funding friend wallets
+
+Live-demo viewers connecting MetaMask to anvil arrive empty — they have no MockERC20 stake and no anvil ETH. Use the deployer wallet to fund them:
+
+```sh
+# from apps/cli, deployer PK is in the env
+npx tsx src/cli.ts dev fund --to 0xVIEWER_ADDRESS
+# default: 1000 TRUTH (1000e18) + 1 ETH (1e18). Override with --tokens / --eth.
+```
+
+The recipient can then approve + commit through the web app's stake screen, or via the CLI flow below.
+
+#### Vote / reveal via CLI
+
+```sh
+export TM_VAULT_PASSPHRASE=demo
+
+# approve a market for spending stake
+npx tsx src/cli.ts erc20 approve --address <market-addr> --amount 1000000000000000000000
+
+# commit a YES/NO vote (5 TRUTH stake)
+npx tsx src/cli.ts vote commit --address <market-addr> --vote yes --stake 5000000000000000000 --ignore-policy
+
+# (after voting deadline, jury committed, reveal phase open)
+npx tsx src/cli.ts vote reveal --address <market-addr>
+npx tsx src/cli.ts withdraw --address <market-addr>
+```
 
 ### 6. Run the agent on a loop (optional)
 
