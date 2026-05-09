@@ -42,19 +42,19 @@ The contract still encodes vote values as `1` and `2`; the app maps those values
 
 3. Monitoring dashboard
    - Only show after the user commits.
-   - Show the user's committed position, phase, commit count, jury size, pool, reveal action, and the next required step.
+   - Show the user's committed position, phase, commit count, target jury size, pool, reveal action, and the next required step.
    - Put randomness, audit hash, jury addresses, commitment hash, and local vault status in a developer settings panel.
 
 4. Create market
    - Keep as a secondary but first-class flow, not hidden in developer settings.
-   - Claim title, description, optional image/reference artifact, Up meaning, Down meaning, voting window, jury size, and minimum revealed jurors.
+   - Claim title, description, optional image/reference artifact, Up meaning, Down meaning, voting window, target jury size, and minimum revealed jurors.
    - Upload claim/rules document to Swarm before deploying/recording the market.
-   - Compute and preserve `claimRulesHash` from the exact claim/rules JSON bytes when the planned Swarm verification upgrade is implemented.
+   - Compute and preserve `claimRulesHash` from the exact claim/rules JSON bytes before deployment.
    - After creation, send the creator directly to the focused staking step for the new market.
 
 5. Swarm verification gate
-   - Read the current rules pointer from the contract (`ipfsHash` today; planned rename: `swarmReference`).
-   - Read `claimRulesHash` once the planned Swarm verification upgrade is implemented.
+   - Read the current rules pointer from the contract (`swarmReference()`; `ipfsHash()` remains the legacy storage-name getter).
+   - Read `claimRulesHash`.
    - Fetch the claim/rules document from Swarm.
    - Verify the fetched bytes against `claimRulesHash` when available.
    - Compare key JSON fields against contract parameters.
@@ -129,7 +129,7 @@ The app-level lifecycle maps to the current contract as:
 
 2. Jury selection
    - Contract: `phase() == Voting`, current time is after `votingDeadline()`, before `juryCommitDeadline()`, and `randomness() == 0`.
-   - Service action: jury committer fetches SpaceComputer randomness and calls `commitJury(randomness, auditHash)`.
+   - Service action: jury committer fetches SpaceComputer randomness from the public IPFS/IPNS beacon and calls `commitJury(randomness, metadata, auditHash)`, including the beacon IPFS address, sequence, timestamp, and cTRNG index.
    - UI state: show loading/progress state for randomness and jury draw.
 
 3. Reveal
@@ -150,12 +150,12 @@ The app-level lifecycle maps to the current contract as:
 Useful read model:
 
 - Market phase and deadlines: `phase`, `votingDeadline`, `juryCommitDeadline`, `revealDeadline`
-- Market parameters: `jurySize`, `minCommits`, `minRevealedJurors`, `minStake`, `protocolFeeBps`
-- Claim/rules document: `ipfsHash` today; planned Swarm verification fields are `swarmReference` and `claimRulesHash`
+- Market parameters: `targetJurySize`, `minCommits`, `minRevealedJurors`, `minStake`, `protocolFeeBps`
+- Claim/rules document: `swarmReference`, legacy `ipfsHash`, and `claimRulesHash`
 - Commit aggregate: `commitCount`, `totalCommittedStake`, `totalRiskedStake`
 - Wallet position: `commits(wallet)`, `isJuror(wallet)`
 - Jury state: `getJury()`, `revealedJurorCount`, `juryYesCount`, `juryNoCount`
-- Randomness audit: `randomness`, `juryAuditHash`
+- Randomness audit: `randomness`, `randomnessHash`, `randomnessIpfsAddress`, `randomnessSequence`, `randomnessTimestamp`, `randomnessIndex`, `juryAuditHash`
 - Settlement: `outcome`, `distributablePool`, `treasuryAccrued`, `creatorAccrued`, `withdrawnCount`
 
 Reminder triggers:

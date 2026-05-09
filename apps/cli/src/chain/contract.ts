@@ -19,16 +19,18 @@ export interface MarketConfig {
   description: string;
   tags: readonly string[];
   ipfsHash: Hex;
+  claimRulesHash: Hex;
   votingDeadline: bigint;
   juryCommitDeadline: bigint;
   revealDeadline: bigint;
   protocolFeePercent: number;
   minStake: bigint;
-  jurySize: number;
+  targetJurySize: number;
   minCommits: number;
+  maxCommits: number;
   minRevealedJurors: number;
-  maxJurySize: number;
-  maxJuryPercentage: bigint;
+  maxTargetJurySize: number;
+  maxTargetJurySizePercent: bigint;
   maxTags: bigint;
   maxNameBytes: bigint;
   maxDescriptionBytes: bigint;
@@ -86,6 +88,23 @@ export interface JurorVote {
   riskedStake: bigint;
 }
 
+export interface RandomnessEvidence {
+  randomness: bigint;
+  randomnessHash: Hex;
+  randomnessIpfsAddress: Hex;
+  randomnessSequence: bigint;
+  randomnessTimestamp: bigint;
+  randomnessIndex: number;
+  juryAuditHash: Hex;
+}
+
+export interface RandomnessMetadata {
+  ipfsAddress: Hex;
+  sequence: bigint;
+  timestamp: bigint;
+  valueIndex: number;
+}
+
 export function readConfig(
   client: PublicClient,
   cfg: ResolvedConfig,
@@ -130,6 +149,17 @@ export function readJurorVotes(
   }) as Promise<readonly JurorVote[]>;
 }
 
+export function readRandomnessEvidence(
+  client: PublicClient,
+  cfg: ResolvedConfig,
+): Promise<RandomnessEvidence> {
+  return client.readContract({
+    address: cfg.contractAddress,
+    abi: truthMarketAbi,
+    functionName: "getRandomnessEvidence",
+  }) as Promise<RandomnessEvidence>;
+}
+
 export async function readCommit(
   client: PublicClient,
   cfg: ResolvedConfig,
@@ -151,6 +181,19 @@ export async function readCommit(
     withdrawn: tuple[6],
     revoked: tuple[7],
   };
+}
+
+export async function readPreviewPayout(
+  client: PublicClient,
+  cfg: ResolvedConfig,
+  voter: Address,
+): Promise<bigint> {
+  return (await client.readContract({
+    address: cfg.contractAddress,
+    abi: truthMarketAbi,
+    functionName: "previewPayout",
+    args: [voter],
+  })) as bigint;
 }
 
 export async function readPhase(
@@ -291,13 +334,13 @@ export async function writeCommitJury(
   wallet: WalletClient,
   client: PublicClient,
   cfg: ResolvedConfig,
-  args: { randomness: bigint; auditHash: Hex },
+  args: { randomness: bigint; metadata: RandomnessMetadata; auditHash: Hex },
 ): Promise<{ txHash: Hex; blockNumber: bigint }> {
   const { request } = await client.simulateContract({
     address: cfg.contractAddress,
     abi: truthMarketAbi,
     functionName: "commitJury",
-    args: [args.randomness, args.auditHash],
+    args: [args.randomness, args.metadata, args.auditHash],
     account: wallet.account!,
   });
   const txHash = await wallet.writeContract(request);

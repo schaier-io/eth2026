@@ -6,10 +6,16 @@ import {
   unlinkSync,
 } from "node:fs";
 import path from "node:path";
-import { resolveConfig } from "../config.js";
+import { type Address, isAddress } from "viem";
+import { makePublicClient, makeWalletClient } from "../chain/client.js";
+import { readBalance, readSymbol, writeTransfer } from "../chain/erc20.js";
+import { readStakeToken } from "../chain/contract.js";
+import { type ConfigOverrides, resolveConfig } from "../config.js";
 import { CliError } from "../errors.js";
-import { type OutputContext, emitResult } from "../io.js";
+import { type OutputContext, emitResult, promptSecret } from "../io.js";
+import { DEFAULT_POLICY, type Policy, savePolicy } from "../policy/policy.js";
 import { atomicWriteFile } from "../util/atomic.js";
+import { loadWallet } from "../wallet/loader.js";
 
 /**
  * Local-development "mock chain" workflow built on top of forge + anvil.
@@ -30,7 +36,9 @@ const ANVIL_RPC = "http://127.0.0.1:8545";
 const DETERMINISTIC_DEPLOYER_PK =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const DETERMINISTIC_TOKEN = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-const DETERMINISTIC_MARKET = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+const DETERMINISTIC_DISCOVERY_REGISTRY = "0x68E90CfF0829C0d443949413de5076282B6f5220";
+const DETERMINISTIC_MARKET = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
+const DETERMINISTIC_REGISTRY = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
 
 function pidPath(homeDir: string): string {
   return path.join(homeDir, "dev-anvil.pid");
@@ -223,8 +231,9 @@ export async function cmdDevUp(
     await waitForRpc(rpc, 10_000);
   }
 
-  let market = DETERMINISTIC_MARKET;
-  let token = DETERMINISTIC_TOKEN;
+  const market = DETERMINISTIC_MARKET;
+  const token = DETERMINISTIC_TOKEN;
+  const registry = DETERMINISTIC_REGISTRY;
   if (!opts.skipDeploy) {
     const contractsDir = findContractsDir(process.cwd(), opts.contractsDir);
     const r = spawnSync(
@@ -252,6 +261,11 @@ export async function cmdDevUp(
     TM_CHAIN: "foundry",
     TM_RPC_URL: rpc,
     TM_CONTRACT_ADDRESS: market,
+    TM_REGISTRY_ADDRESS: registry,
+    TM_DISCOVERY_REGISTRY_ADDRESS: DETERMINISTIC_DISCOVERY_REGISTRY,
+    NEXT_PUBLIC_TRUTHMARKET_ADDRESS: market,
+    NEXT_PUBLIC_REGISTRY_ADDRESS: registry,
+    NEXT_PUBLIC_RPC_URL: rpc,
     PRIVATE_KEY: DETERMINISTIC_DEPLOYER_PK,
   });
 
@@ -261,6 +275,7 @@ export async function cmdDevUp(
       anvilPid: readPid(pidFile),
       rpc,
       contractAddress: market,
+      registryAddress: registry,
       stakeToken: token,
       privateKey: DETERMINISTIC_DEPLOYER_PK,
       envFile: envOut,
@@ -268,9 +283,12 @@ export async function cmdDevUp(
     () => {
       process.stdout.write(
         `anvil up at ${rpc} (pid ${readPid(pidFile)})\n` +
-          `contract: ${market}\nstake token: ${token}\n` +
-          `wrote env: ${envOut}\n` +
-          `next: source ${path.relative(process.cwd(), envOut)} && truthmarket market info\n`,
+          `seed market: ${market}\n` +
+          `registry:    ${registry}\n` +
+          `discovery:   ${DETERMINISTIC_DISCOVERY_REGISTRY}\n` +
+          `stake token: ${token}\n` +
+          `wrote env:   ${envOut}\n` +
+          `next: truthmarket registry info\n`,
       );
     },
   );
@@ -308,6 +326,152 @@ export async function cmdDevDown(
   emitResult(ctx, { stopped, pid }, () => {
     process.stdout.write(stopped ? `stopped pid ${pid}\n` : `pid ${pid} was already gone\n`);
   });
+}
+
+export interface DevSeedAgentOpts extends ConfigOverrides {
+  /** Override the maxStake written to the policy file (token base units). */
+  maxStake?: string;
+}
+
+/**
+ * Local-dev shortcut: write a permissive policy so `truthmarket agent run`
+ * and `truthmarket registry create-market` work end-to-end against anvil
+ * without flipping flags by hand. Uses defaultPolicy with allowCreateMarkets,
+ * allowJuryCommit, and a generous maxStake. Idempotent.
+ */
+export async function cmdDevSeedAgent(
+  ctx: OutputContext,
+  opts: DevSeedAgentOpts,
+): Promise<void> {
+  const cfg = resolveConfig(opts);
+  const policy: Policy = {
+    ...DEFAULT_POLICY,
+    allowCreateMarkets: true,
+    allowJuryCommit: true,
+    autoReveal: true,
+    autoWithdraw: true,
+    requireSwarmVerification: false,
+    maxStake: opts.maxStake ?? "1000000000000000000000",
+  };
+  const written = await savePolicy(cfg, policy);
+
+  emitResult(
+    ctx,
+    {
+      policyFile: written,
+      policy,
+      registryAddress: cfg.registryAddress,
+      agentStatePath: cfg.agentStatePath,
+    },
+    () => {
+      process.stdout.write(
+        `wrote policy: ${written}\n` +
+          `  allowCreateMarkets: true\n` +
+          `  allowJuryCommit:    true\n` +
+          `  maxStake:           ${policy.maxStake}\n` +
+          `next:\n` +
+          `  1. start the web app: (cd apps/web && npm run dev) — needed by 'agent tick'\n` +
+          `  2. truthmarket agent tick   # fetches Apify candidates and creates one market\n` +
+          `     (or: truthmarket agent tick --items-file <sample-items.json> for offline runs)\n` +
+          `\n` +
+          `for vote/reveal/withdraw to run non-interactively:\n` +
+          `  export TM_VAULT_PASSPHRASE=demo  # any value; required to encrypt local nonces\n`,
+      );
+    },
+  );
+}
+
+export interface DevFundOpts extends ConfigOverrides {
+  to?: string;
+  tokens?: string;
+  eth?: string;
+}
+
+/**
+ * Local-dev shortcut: send MockERC20 + ETH from the deployer wallet to a
+ * recipient address. Useful for friend wallets joining the live demo who
+ * connected MetaMask but have no stake token or anvil-issued ETH.
+ *
+ * The stake token is read from the seed TruthMarket (same token across
+ * registry-deployed markets), and the deployer wallet is taken from
+ * PRIVATE_KEY env (set by `dev up`).
+ */
+export async function cmdDevFund(
+  ctx: OutputContext,
+  opts: DevFundOpts,
+): Promise<void> {
+  if (!opts.to) {
+    throw new CliError("DEV_FUND_TO_REQUIRED", "missing --to <addr>");
+  }
+  if (!isAddress(opts.to)) {
+    throw new CliError("DEV_FUND_TO_INVALID", `--to '${opts.to}' is not a valid address`);
+  }
+  const recipient = opts.to as Address;
+  const tokenAmount = parseAmount(opts.tokens, "1000000000000000000000", "tokens");
+  const ethAmount = parseAmount(opts.eth, "1000000000000000000", "eth");
+
+  const cfg = resolveConfig(opts);
+  const wallet = await loadWallet(cfg, () => promptSecret("Keystore passphrase: "));
+  const publicClient = makePublicClient(cfg);
+  const walletClient = makeWalletClient(cfg, wallet.account);
+
+  const stakeToken = await readStakeToken(publicClient, cfg);
+  const symbol = await readSymbol(publicClient, stakeToken);
+
+  let tokenTx: { txHash: string; blockNumber: bigint } | null = null;
+  if (tokenAmount > 0n) {
+    tokenTx = await writeTransfer(walletClient, publicClient, stakeToken, recipient, tokenAmount);
+  }
+
+  let ethTx: string | null = null;
+  if (ethAmount > 0n) {
+    ethTx = await walletClient.sendTransaction({
+      account: wallet.account,
+      to: recipient,
+      value: ethAmount,
+      chain: cfg.chain,
+    });
+    await publicClient.waitForTransactionReceipt({ hash: ethTx as `0x${string}` });
+  }
+
+  const tokenBalance = await readBalance(publicClient, stakeToken, recipient);
+  const ethBalance = await publicClient.getBalance({ address: recipient });
+
+  emitResult(
+    ctx,
+    {
+      recipient,
+      stakeToken,
+      symbol,
+      tokensSent: tokenAmount,
+      ethSent: ethAmount,
+      tokenTxHash: tokenTx?.txHash ?? null,
+      ethTxHash: ethTx,
+      recipientTokenBalance: tokenBalance,
+      recipientEthBalance: ethBalance,
+    },
+    () => {
+      process.stdout.write(
+        `funded ${recipient}\n` +
+          `  tokens:  ${tokenAmount} ${symbol} (tx ${tokenTx?.txHash ?? "skipped"})\n` +
+          `  eth:     ${ethAmount} wei (tx ${ethTx ?? "skipped"})\n` +
+          `  recipient now holds ${tokenBalance} ${symbol} and ${ethBalance} wei\n`,
+      );
+    },
+  );
+}
+
+function parseAmount(raw: string | undefined, fallback: string, label: string): bigint {
+  const value = raw ?? fallback;
+  if (value === "0") return 0n;
+  try {
+    return BigInt(value);
+  } catch {
+    throw new CliError(
+      "DEV_FUND_INVALID_AMOUNT",
+      `--${label} '${value}' is not a valid integer (use base units, e.g. 1000000000000000000 for 1 ether)`,
+    );
+  }
 }
 
 export async function cmdDevStatus(

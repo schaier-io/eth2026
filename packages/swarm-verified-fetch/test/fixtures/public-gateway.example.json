@@ -21,7 +21,7 @@
         "createdAt": "2026-05-09T12:00:00.000Z",
         "votingDeadline": "2026-05-16T12:00:00.000Z",
         "revealDeadline": "2026-05-17T12:00:00.000Z",
-        "jurySize": 3,
+        "targetJurySize": 3,
         "fixedNormalRiskPercent": 20,
         "stakeToken": "TEST",
         "creator": "0x0000000000000000000000000000000000000000"
@@ -53,7 +53,7 @@
         "createdAt": "2026-05-09T12:00:00.000Z",
         "votingDeadline": "2026-05-16T12:00:00.000Z",
         "revealDeadline": "2026-05-17T12:00:00.000Z",
-        "jurySize": 3,
+        "targetJurySize": 3,
         "fixedNormalRiskPercent": 20,
         "stakeToken": "TEST",
         "creator": "0x0000000000000000000000000000000000000000"
@@ -81,7 +81,7 @@
         "createdAt": "2026-05-09T12:00:00.000Z",
         "votingDeadline": "2026-05-16T12:00:00.000Z",
         "revealDeadline": "2026-05-17T12:00:00.000Z",
-        "jurySize": 3,
+        "targetJurySize": 3,
         "fixedNormalRiskPercent": 20,
         "stakeToken": "TEST",
         "creator": "0x0000000000000000000000000000000000000000"

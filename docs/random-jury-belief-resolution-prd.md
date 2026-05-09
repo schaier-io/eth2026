@@ -17,7 +17,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 1. As a market creator, I want to create a claim with immutable rules, so that voters know the rules cannot be changed after staking.
 2. As a market creator, I want the claim document stored on decentralized storage, so that the market rules remain publicly available.
 3. As a market creator, I want to choose voting and reveal deadlines, so that the market has a clear lifecycle.
-4. As a market creator, I want to choose a jury size, so that the resolution process fits the claim's risk level.
+4. As a market creator, I want to choose a target jury size, so that the resolution process fits the claim's risk level.
 5. As a voter, I want to read the immutable claim rules before staking, so that I understand what YES and NO mean.
 6. As a voter, I want to commit a private vote, so that other voters cannot copy or react to my vote before the reveal phase.
 7. As a voter, I want to choose my stake amount, so that I can size my economic exposure.
@@ -45,7 +45,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 28. As a judge, I want to see SpaceComputer used in the core flow, so that the sponsor integration is meaningful.
 29. As a judge, I want to see Swarm used for immutable rules, so that decentralized storage is not a cosmetic add-on.
 30. As a judge, I want to understand the token story quickly, so that the Umia venture angle is credible.
-31. As a future operator, I want configurable market parameters, so that different claim classes can have different jury sizes and deadlines.
+31. As a future operator, I want configurable market parameters, so that different claim classes can have different target jury sizes and deadlines.
 32. As a future operator, I want identity and reputation hooks, so that reliable voters or agents can become recognizable over time.
 33. As an ENS-identified participant, I want my identity displayed in the UI, so that users can recognize me without reading raw addresses.
 34. As a developer, I want the contract source verified if practical, so that users can inspect the rules being enforced.
@@ -59,7 +59,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - Commitments are domain-separated by vote, nonce, voter address, chain id, and contract address so reveals cannot be replayed across chains or market contracts when a voter reuses a nonce.
 - Self-revocation is blocked so it cannot be used as an early-exit bypass of the slash mechanics.
 - The protocol does not decide external truth. It resolves outcomes from selected juror reveals.
-- Swarm stores immutable claim/rules documents.
+- Swarm stores immutable initial claim/rules documents and optional claim attachments.
 - The contract stores the Swarm reference and exact-byte claim/rules hash for each claim.
 - Voters, agents, and the UI verify the Swarm-fetched claim/rules document against the contract before committing.
 - Mutable Swarm feeds/KV may support market discovery, but must not define market rules, outcomes, votes, selected jurors, or payouts.
@@ -67,7 +67,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - Operator-encrypted votes are rejected for the hackathon design because they make the operator a privileged reveal service.
 - SpaceComputer randomness is the core sponsor integration and selects the resolving jury from committed voters.
 - Future production markets must require identity-backed or eligibility-backed Sybil resistance before address entries are treated as valid jury candidates. The hackathon contract remains address-based and demo-grade; see [ADR 0008](./adr/0008-identity-required-for-sybil-resistance.md).
-- The hackathon version uses a trusted off-chain `juryCommitter` to fetch SpaceComputer randomness and post it with an audit hash. The contract draws the jury on-chain from that posted randomness; the selection must be replayable, but the randomness proof is not verified on-chain in this scope.
+- The hackathon version uses a trusted off-chain `juryCommitter` to fetch SpaceComputer randomness from the public IPFS/IPNS beacon and post it with the beacon/audit IPFS address, sequence, timestamp, cTRNG index, and an audit hash. The contract computes and stores a queryable `randomnessHash`, draws the jury on-chain from the posted randomness, and exposes the randomness evidence for replay; the randomness proof is not verified on-chain in this scope.
 - Juror resolution is count-based: each selected juror contributes 1 vote, regardless of stake (see [ADR 0006](./adr/0006-count-based-jury-voting.md)).
 - Normal risk is fixed at 20% of stake.
 - Stake affects reward upside because winners' share of the slashed pool is weighted by their own risked stake, but stake does not affect the YES/NO outcome.
@@ -78,7 +78,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - Non-revealing non-juror voters lose the risked portion because unrevealed votes cannot be classified as winning or losing.
 - Selected jurors who fail to reveal forfeit their full stake (~5× a typical normal slash); the extra above the normal 1× risked portion joins the distributable pool on a Yes/No outcome or accrues to the claim creator on Invalid.
 - Winning voters receive stake back plus a share of slashed stake, weighted by their own risked stake.
-- Jury size is constrained to be odd (≤ 100). Even-count partial reveals can still tie → Invalid.
+- Target jury size is constrained to be odd (≤ 100). Even-count partial reveals can still tie → Invalid.
 - Minimum revealed jurors is a deployment-time market parameter. The contract permits low quorums as an intentional liveness trade-off, and the chosen quorum should be disclosed in the immutable claim/rules document.
 - The token story for the hackathon is limited to staking and protocol fee/revenue share.
 - Governance, claim-creation token requirements, and complex emissions are deferred.
@@ -94,7 +94,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - **Commitment module:** owns commitment hash construction and verification, including vote, nonce, voter, chain id, and contract address so commitments cannot be replayed or copied across contexts. Stake is recorded at commit time rather than hidden inside the hash.
 - **Risk accounting module:** owns fixed 20% risked stake, refundable stake, slashed-pool accounting (including the juror full-stake penalty extras), winner reward weights, and payout math.
 - **Jury voting module:** owns count-based outcome resolution from selected juror reveals (`juryYesCount`/`juryNoCount`), tie-to-Invalid behavior, and the minimum-revealed-jurors gate.
-- **Jury selection service:** fetches SpaceComputer randomness, reads committed voters, deterministically selects jurors, persists/references the randomness audit artifact, uploads the audit artifact to Swarm when available, and submits selected jurors on-chain.
+- **Jury selection service:** fetches SpaceComputer randomness from the IPFS/IPNS beacon, reads committed voters, deterministically selects jurors, persists/references the randomness audit artifact outside Swarm, and submits the cTRNG value, beacon IPFS address, sequence, timestamp, cTRNG index, and audit hash on-chain.
 - **Swarm claim document service:** creates, validates, uploads, fetches, and verifies immutable claim/rules documents. It computes `claimRulesHash` from the exact JSON bytes and never treats mutable feeds as canonical rules.
 - **Swarm discovery service:** maintains mutable market indexes and creator indexes for discovery only; opening a market still verifies the contract-stored immutable reference.
 - **Agent policy and heartbeat service:** enforces local participation policy, stores unrevealed votes/nonces in a private vault, monitors reveal deadlines and selected-juror status, auto-reveals when policy allows, and withdraws after resolution when policy allows.

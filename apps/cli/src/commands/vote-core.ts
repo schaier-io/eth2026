@@ -14,7 +14,7 @@ import { readAllowance } from "../chain/erc20.js";
 import type { ResolvedConfig } from "../config.js";
 import { CliError } from "../errors.js";
 import { type Policy, assertCommitAllowed } from "../policy/policy.js";
-import { readIpfsHash, verifyLocalDocument } from "../swarm/verify.js";
+import { verifyOnchainClaimRulesDocument, type ClaimRulesVerificationOptions } from "../swarm/verify.js";
 import { generateNonce, saveVaultEntry } from "../vault/vault.js";
 
 export interface CommitVoteCoreInput {
@@ -28,6 +28,7 @@ export interface CommitVoteCoreInput {
   stake: bigint;
   vaultPassphrase: string;
   documentPath?: string;
+  swarmVerification?: ClaimRulesVerificationOptions;
 }
 
 export interface CommitVoteCoreResult {
@@ -72,6 +73,7 @@ export async function commitVoteCore(
     stake,
     vaultPassphrase,
     documentPath,
+    swarmVerification,
   } = input;
 
   if (stake <= 0n) {
@@ -90,12 +92,12 @@ export async function commitVoteCore(
         "policy.requireSwarmVerification is true; supply a local copy of the rules document, or pass --ignore-policy",
       );
     }
-    const expected = await readIpfsHash(publicClient, cfg);
-    const verify = await verifyLocalDocument(expected, documentPath);
+    const verify = await verifyOnchainClaimRulesDocument(publicClient, cfg, documentPath, swarmVerification);
     if (!verify.match) {
+      const referenceDetail = verify.swarmReference ? ` and verified Swarm reference ${verify.swarmReference}` : "";
       throw new CliError(
         "SWARM_HASH_MISMATCH",
-        `local document ${documentPath} (${verify.computed}) does not match on-chain ipfsHash ${verify.expected}`,
+        `local document ${documentPath} (${verify.computed}) does not match on-chain claimRulesHash ${verify.expected}${referenceDetail}`,
       );
     }
   }

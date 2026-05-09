@@ -1,4 +1,5 @@
 import { mkdir, readFile, stat } from "node:fs/promises";
+import { createCipheriv, createDecipheriv, pbkdf2 } from "node:crypto";
 import path from "node:path";
 import {
   type Address,
@@ -54,27 +55,13 @@ function randomBytes(n: number): Uint8Array {
   return buf;
 }
 
-async function deriveKey(passphrase: string, salt: Uint8Array, iterations: number) {
-  const subtle = globalThis.crypto.subtle;
-  const baseKey = await subtle.importKey(
-    "raw",
-    new TextEncoder().encode(passphrase),
-    { name: "PBKDF2" },
-    false,
-    ["deriveKey"],
-  );
-  return subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt,
-      iterations,
-      hash: "SHA-256",
-    },
-    baseKey,
-    { name: "AES-GCM", length: KEY_LEN * 8 },
-    false,
-    ["encrypt", "decrypt"],
-  );
+async function deriveKey(passphrase: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
+  return await new Promise((resolve, reject) => {
+    pbkdf2(passphrase, salt, iterations, KEY_LEN, "sha256", (err, key) => {
+      if (err) reject(err);
+      else resolve(new Uint8Array(key.buffer, key.byteOffset, key.byteLength));
+    });
+  });
 }
 
 /**
@@ -138,17 +125,11 @@ export async function saveVaultEntry(
     cipher: "aes-256-gcm",
   };
 
-  const subtle = globalThis.crypto.subtle;
   const plaintext = new TextEncoder().encode(JSON.stringify(entry));
-  const ct = new Uint8Array(
-    await subtle.encrypt(
-      { name: "AES-GCM", iv, additionalData: canonicalAad(header) },
-      key,
-      plaintext,
-    ),
-  );
-  const ciphertext = ct.slice(0, ct.length - 16);
-  const authTag = ct.slice(ct.length - 16);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(canonicalAad(header));
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const authTag = cipher.getAuthTag();
 
   const file: VaultFileV2 = {
     ...header,
@@ -196,13 +177,12 @@ export async function loadVaultEntry(
   combined.set(tag, ct.length);
 
   const key = await deriveKey(passphrase, salt, v2.kdfparams.iterations);
-  let plain: ArrayBuffer;
+  let plain: Buffer;
   try {
-    plain = await globalThis.crypto.subtle.decrypt(
-      { name: "AES-GCM", iv, additionalData: canonicalAad(v2) },
-      key,
-      combined,
-    );
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAAD(canonicalAad(v2));
+    decipher.setAuthTag(tag);
+    plain = Buffer.concat([decipher.update(combined.slice(0, ct.length)), decipher.final()]);
   } catch {
     throw new CliError(
       "VAULT_BAD_PASSPHRASE",

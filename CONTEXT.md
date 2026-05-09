@@ -17,7 +17,7 @@ A YES/NO proposition with immutable rules that voters stake on.
 _Avoid_: fact, truth claim
 
 **Claim/rules document**:
-The immutable Swarm-hosted document defining the claim, YES/NO meaning, deadlines, jury size, and risk model.
+The immutable Swarm-hosted document defining the claim, YES/NO meaning, deadlines, target jury size, and risk model.
 _Avoid_: evidence bundle, mutable metadata
 
 **Committed vote**:

@@ -20,6 +20,7 @@ export interface VoteCommitOpts extends ConfigOverrides {
   vote: string;
   stake: string;
   document?: string;
+  swarmGateway?: string;
   ignorePolicy?: boolean;
 }
 
@@ -48,6 +49,9 @@ export async function cmdVoteCommit(
     stake,
     vaultPassphrase,
     documentPath: opts.document,
+    swarmVerification: {
+      ...(opts.swarmGateway ? { gatewayUrl: opts.swarmGateway } : {}),
+    },
   });
 
   emitResult(

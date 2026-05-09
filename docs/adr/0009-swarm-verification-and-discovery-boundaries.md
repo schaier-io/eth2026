@@ -4,7 +4,7 @@ Status: accepted
 
 TruthMarket uses Swarm in two distinct ways:
 
-1. Immutable Swarm content stores claim/rules documents and audit artifacts.
+1. Immutable Swarm content stores initial claim/rules documents and claim attachments.
 2. Mutable Swarm feeds/KV store discovery indexes and cached read models.
 
 The contract stores the immutable claim/rules Swarm reference and a hash of the exact claim/rules bytes. Voters, agents, and the UI must verify the fetched document against the contract before committing. Mutable Swarm feeds may help users discover markets, but they never define rules, outcomes, votes, selected jurors, or payouts.
@@ -18,8 +18,8 @@ The contract stores the immutable claim/rules Swarm reference and a hash of the 
 
 **Consequences**
 
-- `ipfsHash` naming should be replaced by `swarmReference`.
-- The contract should add `claimRulesHash`.
+- `ipfsHash` remains a legacy storage-name getter; `swarmReference()` exposes the same content reference under the intended product name.
+- The contract stores `claimRulesHash`.
 - Commit UX should be gated on claim/rules verification.
 - Swarm KV/feed is allowed only for discovery and read-model convenience.
 - Opening a market from a feed must still verify the contract-stored immutable reference.

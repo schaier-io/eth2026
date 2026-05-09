@@ -8,6 +8,8 @@ import { loadDotenv } from "./util/dotenv.js";
 loadDotenv();
 import {
   cmdDevDown,
+  cmdDevFund,
+  cmdDevSeedAgent,
   cmdDevStatus,
   cmdDevUp,
 } from "./commands/dev.js";
@@ -34,6 +36,15 @@ import {
   cmdPolicySet,
   cmdPolicyShow,
 } from "./commands/policy.js";
+import {
+  cmdRegistryCreateMarket,
+  cmdRegistryInfo,
+  cmdRegistryList,
+} from "./commands/registry.js";
+import {
+  cmdAgentRun,
+  cmdAgentTick,
+} from "./commands/agent.js";
 import {
   cmdSwarmShowHash,
   cmdSwarmVerify,
@@ -73,6 +84,7 @@ function shared(cmd: Command): Command {
     .option("--chain <key>", "chain key: foundry | baseSepolia | sepolia")
     .option("--rpc <url>", "RPC URL override")
     .option("--address <addr>", "TruthMarket contract address override")
+    .option("--registry <addr>", "MarketRegistry contract address override")
     .option("--json", "machine-readable JSON output (single envelope; NDJSON for streaming commands)", false)
     .option("--yes", "skip confirmation prompts (use with --json for unattended runs)", false);
 }
@@ -127,12 +139,50 @@ shared(market.command("watch").description("long-running phase/outcome tail (NDJ
   .option("--interval-seconds <n>", "poll interval", (v) => Number(v), 10)
   .action(async (opts) => run(() => cmdMarketWatch(ctx(opts), opts), ctx(opts)));
 
+// -------- registry --------
+const registry = program.command("registry").description("MarketRegistry: read config, list markets, deploy new ones");
+shared(registry.command("info").description("registry config + market count"))
+  .action(async (opts) => run(() => cmdRegistryInfo(ctx(opts), opts), ctx(opts)));
+
+shared(registry.command("list").description("paginated list of deployed market addresses"))
+  .option("--offset <n>", "starting index", (v) => Number(v), 0)
+  .option("--limit <n>", "page size", (v) => Number(v), 50)
+  .action(async (opts) => run(() => cmdRegistryList(ctx(opts), opts), ctx(opts)));
+
+shared(registry.command("create-market").description("deploy a new TruthMarket via the registry from a JSON spec"))
+  .requiredOption("--spec <path>", "path to a market spec JSON file")
+  .option("--ignore-policy", "skip the policy.allowCreateMarkets gate", false)
+  .action(async (opts) => run(() => cmdRegistryCreateMarket(ctx(opts), opts), ctx(opts)));
+
+// -------- agent --------
+const agent = program.command("agent").description("automated market-creation loop (Apify → registry)");
+const agentSharedOpts = (cmd: Command): Command =>
+  cmd
+    .option("--endpoint <url>", "apify generator endpoint (default: TM_APIFY_ENDPOINT or http://localhost:3000/api/apify/generated-markets)")
+    .option("--interval-seconds <n>", "seconds between iterations (run only)", (v) => Number(v), 3600)
+    .option("--duration-seconds <n>", "total market lifetime in seconds (split 40/20/40 across phases)", (v) => Number(v), 3600)
+    .option("--fee-percent <n>", "protocol fee percent (0–10)", (v) => Number(v), 5)
+    .option("--jury-size <n>", "jury draw size (odd)", (v) => Number(v))
+    .option("--min-commits <n>", "minimum committed voters", (v) => Number(v))
+    .option("--min-revealed-jurors <n>", "minimum jurors revealing for a decisive resolution", (v) => Number(v))
+    .option("--min-stake <amount>", "override candidate stake hint (token base units)")
+    .option("--items-file <path>", "JSON file with Reddit-items array; bypasses Apify (useful offline / for demos)")
+    .option("--ignore-policy", "skip the policy.allowCreateMarkets gate", false);
+
+shared(agentSharedOpts(agent.command("run").description("loop forever: fetch candidates, create one market per interval (NDJSON when --json)")))
+  .option("--once", "run a single iteration and exit", false)
+  .action(async (opts) => run(() => cmdAgentRun(ctx(opts), opts), ctx(opts)));
+
+shared(agentSharedOpts(agent.command("tick").description("run one iteration of the agent loop and exit")))
+  .action(async (opts) => run(() => cmdAgentTick(ctx(opts), opts), ctx(opts)));
+
 // -------- vote --------
 const vote = program.command("vote").description("commit-reveal flows");
 shared(vote.command("commit").description("commit a hidden vote with stake"))
   .requiredOption("--vote <yes|no>", "vote (1=yes, 2=no)")
   .requiredOption("--stake <amount>", "stake in token base units")
   .option("--document <path>", "local copy of the swarm rules document for verification (required when policy.requireSwarmVerification)")
+  .option("--swarm-gateway <url>", "Swarm gateway for claim/rules verification (else TM_SWARM_GATEWAY_URL or package default)")
   .option("--ignore-policy", "skip local policy gates (maxStake, requireSwarmVerification)", false)
   .action(async (opts) => run(() => cmdVoteCommit(ctx(opts), opts), ctx(opts)));
 
@@ -181,19 +231,18 @@ const jury = program.command("jury").description("jury operations");
 shared(jury.command("status").description("am I a juror? have I revealed?"))
   .action(async (opts) => run(() => cmdJuryStatus(ctx(opts), opts), ctx(opts)));
 
-shared(jury.command("commit").description("commit jury (juryCommitter only)"))
-  .requiredOption("--randomness <uint256>", "cTRNG randomness")
-  .requiredOption("--audit-hash <hex>", "audit hash (32-byte hex)")
+shared(jury.command("commit").description("fetch latest SpaceComputer beacon and commit jury (juryCommitter only)"))
   .option("--ignore-policy", "skip the policy.allowJuryCommit gate", false)
   .action(async (opts) => run(() => cmdJuryCommit(ctx(opts), opts), ctx(opts)));
 
 // -------- swarm --------
 const swarm = program.command("swarm").description("swarm document verification");
-shared(swarm.command("show-hash").description("print on-chain ipfsHash bytes"))
+shared(swarm.command("show-hash").description("print on-chain claim/rules reference fields"))
   .action(async (opts) => run(() => cmdSwarmShowHash(ctx(opts), opts), ctx(opts)));
 
-shared(swarm.command("verify").description("verify a local document against on-chain ipfsHash"))
+shared(swarm.command("verify").description("verify a local document against the on-chain Swarm reference and claimRulesHash"))
   .requiredOption("--document <path>", "path to local document")
+  .option("--gateway <url>", "Swarm gateway for verification (else TM_SWARM_GATEWAY_URL or package default)")
   .action(async (opts) => run(() => cmdSwarmVerify(ctx(opts), opts), ctx(opts)));
 
 // -------- policy --------
@@ -229,6 +278,16 @@ shared(dev.command("down").description("kill the managed anvil process"))
 shared(dev.command("status").description("report whether managed anvil is running"))
   .action(async (opts) => run(() => cmdDevStatus(ctx(opts), opts), ctx(opts)));
 
+shared(dev.command("seed-agent").description("write a permissive policy so 'agent run' and 'registry create-market' work end-to-end on dev"))
+  .option("--max-stake <amount>", "policy maxStake in token base units", "1000000000000000000000")
+  .action(async (opts) => run(() => cmdDevSeedAgent(ctx(opts), opts), ctx(opts)));
+
+shared(dev.command("fund").description("send MockERC20 + ETH from the deployer wallet to a friend wallet (dev only)"))
+  .requiredOption("--to <addr>", "recipient address")
+  .option("--tokens <amount>", "stake token base units to send (default 1000e18)", "1000000000000000000000")
+  .option("--eth <amount>", "wei to send (default 1e18)", "1000000000000000000")
+  .action(async (opts) => run(() => cmdDevFund(ctx(opts), opts), ctx(opts)));
+
 // -------- tui --------
 shared(program.command("tui").description("launch the interactive TUI"))
   .action(async (opts) => run(() => cmdTui(opts), ctx(opts)));
@@ -237,4 +296,3 @@ program.parseAsync(process.argv).catch((e) => {
   const err = asCliError(e);
   emitError({ json: false, yes: false }, err);
 });
-

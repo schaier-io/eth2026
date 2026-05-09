@@ -76,3 +76,22 @@ export async function writeApprove(
   const receipt = await client.waitForTransactionReceipt({ hash: txHash });
   return { txHash, blockNumber: receipt.blockNumber };
 }
+
+export async function writeTransfer(
+  wallet: WalletClient,
+  client: PublicClient,
+  token: Address,
+  to: Address,
+  amount: bigint,
+): Promise<{ txHash: Hex; blockNumber: bigint }> {
+  const { request } = await client.simulateContract({
+    address: token,
+    abi: erc20Abi,
+    functionName: "transfer",
+    args: [to, amount],
+    account: wallet.account!,
+  });
+  const txHash = await wallet.writeContract(request);
+  const receipt = await client.waitForTransactionReceipt({ hash: txHash });
+  return { txHash, blockNumber: receipt.blockNumber };
+}

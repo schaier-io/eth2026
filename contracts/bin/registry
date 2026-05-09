@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+# Manage and read the TruthMarket registry on a given network.
+#
+# Usage:
+#   bin/registry deploy [network]                    # CREATE2-deploy the registry
+#   bin/registry predict                             # print the deterministic CREATE2 address
+#   bin/registry discover [network]                  # resolve the live registry address
+#   bin/registry list [network]                      # all entries
+#   bin/registry by-creator <0xADDR> [network]       # filter by creator
+#   bin/registry by-tag <tag> [network]              # filter by tag string
+#   bin/registry page <offset> <limit> [network]     # paginated slice
+#   bin/registry info <0xMARKET> [network]           # single-market detail
+#
+# Default network: anvil. Reads PRIVATE_KEY from .env (for `deploy`).
+# REGISTRY_ADDRESS resolution order:
+#   1. env var (inline or in .env)
+#   2. most recent broadcast artifact for the chain (ABI-probed)
+#   3. deterministic CREATE2 prediction (`bin/registry predict`)
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+cmd="${1:-}"
+shift || true
+
+[ -f .env ] && { set -a && source .env && set +a; }
+
+forge_bin="${FORGE:-forge}"
+cast_bin="${CAST:-cast}"
+if [ -z "${FORGE:-}" ] && [ -x "$HOME/.foundry/bin/forge" ]; then
+  forge_bin="$HOME/.foundry/bin/forge"
+fi
+if [ -z "${CAST:-}" ] && [ -x "$HOME/.foundry/bin/cast" ]; then
+  cast_bin="$HOME/.foundry/bin/cast"
+fi
+
+# True iff the address responds to a function unique to the current registry
+# ABI. Older builds of the registry lacked `marketInfo`, and broadcast artifacts
+# from those builds still sit in `broadcast/`. Without this probe the discovery
+# would happily hand back a stale address whose `marketInfo` call reverts.
+verify_registry_abi() {
+  local addr="$1"
+  local network="$2"
+  "$cast_bin" call "$addr" "marketInfo(address)(address,uint64,uint32)" \
+    0x0000000000000000000000000000000000000000 \
+    --rpc-url "$network" >/dev/null 2>&1
+}
+
+# Walk forge broadcast artifacts on the given chain id and print the most
+# recently broadcast TruthMarketRegistry address that (a) still has code on
+# the live RPC and (b) matches the current registry ABI. Empty stdout means
+# nothing usable was found.
+discover_registry() {
+  local network="$1"
+  local chain_id
+  chain_id=$("$cast_bin" chain-id --rpc-url "$network" 2>/dev/null) || return 0
+  command -v jq >/dev/null || { echo "jq required for discovery" >&2; return 1; }
+
+  # Sort artifacts by file mtime (newest first), then drain TruthMarketRegistry
+  # addresses out of each.
+  local artifacts
+  artifacts=$(find broadcast -type f -path "*/${chain_id}/*-latest.json" 2>/dev/null \
+    | xargs -I{} stat -f '%m %N' {} 2>/dev/null \
+    | sort -rn | awk '{print $2}')
+
+  local seen=""
+  for f in $artifacts; do
+    local addrs
+    addrs=$(jq -r '.transactions[]? | select(.contractName == "TruthMarketRegistry") | .contractAddress' "$f" 2>/dev/null) || continue
+    for a in $addrs; do
+      [ -z "$a" ] || [ "$a" = "null" ] && continue
+      case " $seen " in *" $a "*) continue ;; esac
+      seen="$seen $a"
+      local code
+      code=$("$cast_bin" code "$a" --rpc-url "$network" 2>/dev/null || echo "0x")
+      if [ "$code" = "0x" ] || [ -z "$code" ]; then
+        continue
+      fi
+      if ! verify_registry_abi "$a" "$network"; then
+        echo "skipping $a — code present but ABI does not match (likely stale)" >&2
+        continue
+      fi
+      echo "$a"
+      return 0
+    done
+  done
+  return 0
+}
+
+# Print the deterministic CREATE2 address by invoking the `predict` view in
+# RegistryDeploy.s.sol. Pure call — needs no env vars, no private key, no
+# RPC. The salt + initCode hash live in RegistryDeployment.sol, so the answer
+# is the same on every chain.
+predict_registry() {
+  "$forge_bin" script script/RegistryDeploy.s.sol:RegistryDeployScript \
+    --sig 'predict()' 2>/dev/null \
+    | awk '/^0: address / { print $NF }' \
+    | tail -1
+}
+
+# Resolve REGISTRY_ADDRESS for run_sig:
+#   1. env var wins
+#   2. broadcast artifact for the chain (ABI-probed)
+#   3. CREATE2 deterministic address — accepted only if it has live code on the chain
+resolve_registry() {
+  local network="$1"
+  if [ -n "${REGISTRY_ADDRESS:-}" ]; then
+    echo "$REGISTRY_ADDRESS"
+    return 0
+  fi
+
+  local found
+  found=$(discover_registry "$network")
+  if [ -n "$found" ]; then
+    echo "$found"
+    return 0
+  fi
+
+  local predicted
+  predicted=$(predict_registry)
+  if [ -n "$predicted" ]; then
+    local code
+    code=$("$cast_bin" code "$predicted" --rpc-url "$network" 2>/dev/null || echo "0x")
+    if [ "$code" != "0x" ] && [ -n "$code" ]; then
+      echo "Using deterministic CREATE2 address: $predicted" >&2
+      echo "$predicted"
+      return 0
+    fi
+    echo "deterministic address $predicted has no code on $network — run \`bin/registry deploy $network\`" >&2
+  fi
+
+  cat >&2 <<EOF
+REGISTRY_ADDRESS is not set and no live registry was found.
+Either:
+  - set REGISTRY_ADDRESS in .env, or
+  - run \`bin/registry deploy $network\` (CREATE2 — same address on every chain)
+EOF
+  exit 1
+}
+
+run_sig() {
+  local sig="$1"
+  local network="$2"
+  REGISTRY_ADDRESS=$(resolve_registry "$network")
+  export REGISTRY_ADDRESS
+  echo "Using REGISTRY_ADDRESS=$REGISTRY_ADDRESS" >&2
+  "$forge_bin" script script/Registry.s.sol:RegistryScript \
+    --sig "$sig" --rpc-url "$network" -v
+}
+
+case "$cmd" in
+  deploy)
+    network="${1:-anvil}"
+    : "${PRIVATE_KEY:?PRIVATE_KEY must be set in .env}"
+    "$forge_bin" script script/RegistryDeploy.s.sol:RegistryDeployScript \
+      --rpc-url "$network" --broadcast -vvv
+    ;;
+  discover)
+    network="${1:-anvil}"
+    found=$(discover_registry "$network")
+    if [ -z "$found" ]; then
+      # Fall back to the CREATE2 prediction if it has live code.
+      predicted=$(predict_registry)
+      if [ -n "$predicted" ]; then
+        code=$("$cast_bin" code "$predicted" --rpc-url "$network" 2>/dev/null || echo "0x")
+        if [ "$code" != "0x" ] && [ -n "$code" ]; then
+          echo "$predicted"
+          exit 0
+        fi
+      fi
+      echo "no registry found on $network" >&2
+      exit 1
+    fi
+    echo "$found"
+    ;;
+  predict)
+    addr=$(predict_registry)
+    if [ -z "$addr" ]; then
+      echo "failed to predict address — run \`forge build\` first" >&2
+      exit 1
+    fi
+    echo "$addr"
+    ;;
+  list)
+    network="${1:-anvil}"
+    run_sig 'listAll()' "$network"
+    ;;
+  by-creator)
+    creator="${1:?creator address required}"
+    network="${2:-anvil}"
+    CREATOR="$creator" run_sig 'listByCreator()' "$network"
+    ;;
+  by-tag)
+    tag="${1:?tag string required}"
+    network="${2:-anvil}"
+    TAG="$tag" run_sig 'listByTag()' "$network"
+    ;;
+  page)
+    offset="${1:?offset required}"
+    limit="${2:?limit required}"
+    network="${3:-anvil}"
+    OFFSET="$offset" LIMIT="$limit" run_sig 'listPaginated()' "$network"
+    ;;
+  info)
+    market="${1:?market address required}"
+    network="${2:-anvil}"
+    MARKET="$market" run_sig 'info()' "$network"
+    ;;
+  -h|--help|"")
+    sed -n '2,18p' "$0"
+    echo
+    exit 0
+    ;;
+  *)
+    echo "unknown command: $cmd" >&2
+    sed -n '2,18p' "$0"
+    echo
+    exit 1
+    ;;
+esac

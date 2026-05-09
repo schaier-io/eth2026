@@ -1,4 +1,4 @@
-import type { Address } from "viem";
+import { hexToString, type Address, type Hex } from "viem";
 import { OUTCOME_LABELS, PHASE_LABELS, phaseLabel, outcomeLabel } from "../abi.js";
 import { makePublicClient } from "../chain/client.js";
 import {
@@ -6,6 +6,7 @@ import {
   readJurorVotes,
   readOutcome,
   readPhase,
+  readRandomnessEvidence,
   readRevealStats,
 } from "../chain/contract.js";
 import { type ConfigOverrides, resolveConfig } from "../config.js";
@@ -18,10 +19,11 @@ export async function cmdMarketInfo(
 ): Promise<void> {
   const cfg = resolveConfig(opts);
   const client = makePublicClient(cfg);
-  const [config, phase, outcome] = await Promise.all([
+  const [config, phase, outcome, randomnessEvidence] = await Promise.all([
     readConfig(client, cfg),
     readPhase(client, cfg),
     readOutcome(client, cfg),
+    readRandomnessEvidence(client, cfg),
   ]);
   const data = {
     address: cfg.contractAddress,
@@ -40,12 +42,24 @@ export async function cmdMarketInfo(
     juryCommitter: config.juryCommitter,
     creator: config.creator,
     minStake: config.minStake,
-    jurySize: config.jurySize,
+    targetJurySize: config.targetJurySize,
     minCommits: config.minCommits,
+    maxCommits: config.maxCommits,
     minRevealedJurors: config.minRevealedJurors,
     riskPercent: config.riskPercent,
     protocolFeePercent: config.protocolFeePercent,
     ipfsHashHex: config.ipfsHash,
+    claimRulesHash: config.claimRulesHash,
+    randomness: {
+      value: randomnessEvidence.randomness,
+      hash: randomnessEvidence.randomnessHash,
+      ipfsAddress: bytesHexToText(randomnessEvidence.randomnessIpfsAddress),
+      ipfsAddressHex: randomnessEvidence.randomnessIpfsAddress,
+      sequence: randomnessEvidence.randomnessSequence,
+      timestamp: randomnessEvidence.randomnessTimestamp,
+      index: randomnessEvidence.randomnessIndex,
+      auditHash: randomnessEvidence.juryAuditHash,
+    },
     deadlines: {
       voting: Number(config.votingDeadline),
       juryCommit: Number(config.juryCommitDeadline),
@@ -62,14 +76,31 @@ export async function cmdMarketInfo(
         `outcome:      ${outcomeLabel(outcome)} (${outcome})\n` +
         `stake token:  ${config.stakeToken}\n` +
         `min stake:    ${config.minStake}\n` +
-        `jury size:    ${config.jurySize} (min reveal ${config.minRevealedJurors}, min commits ${config.minCommits})\n` +
+        `target jury:  ${config.targetJurySize} (min reveal ${config.minRevealedJurors}, min commits ${config.minCommits}, max commits ${config.maxCommits || "uncapped"})\n` +
         `risk percent: ${config.riskPercent}\n` +
         `voting ends:  ${new Date(Number(config.votingDeadline) * 1000).toISOString()}\n` +
         `jury cutoff:  ${new Date(Number(config.juryCommitDeadline) * 1000).toISOString()}\n` +
         `reveal ends:  ${new Date(Number(config.revealDeadline) * 1000).toISOString()}\n` +
-        `ipfs hash:    ${config.ipfsHash}\n`,
+        `ipfs hash:    ${config.ipfsHash}\n` +
+        `rules hash:   ${config.claimRulesHash}\n` +
+        `randomness:   ${randomnessEvidence.randomness}\n` +
+        `random hash:  ${randomnessEvidence.randomnessHash}\n` +
+        `random ipfs:  ${bytesHexToText(randomnessEvidence.randomnessIpfsAddress)}\n` +
+        `beacon seq:   ${randomnessEvidence.randomnessSequence}\n` +
+        `beacon time:  ${randomnessEvidence.randomnessTimestamp}\n` +
+        `cTRNG index:  ${randomnessEvidence.randomnessIndex}\n` +
+        `audit hash:   ${randomnessEvidence.juryAuditHash}\n`,
     );
   });
+}
+
+function bytesHexToText(value: Hex): string {
+  if (!value || value === "0x") return "";
+  try {
+    return hexToString(value);
+  } catch {
+    return value;
+  }
 }
 
 export async function cmdMarketPhase(
@@ -203,4 +234,3 @@ export async function cmdMarketWatch(
     await new Promise((r) => setTimeout(r, interval));
   }
 }
-

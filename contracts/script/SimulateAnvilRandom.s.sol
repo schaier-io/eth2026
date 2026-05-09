@@ -4,11 +4,13 @@ pragma solidity 0.8.28;
 import { Script, console2 } from "forge-std/Script.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { TruthMarket } from "../src/TruthMarket.sol";
+import { TruthMarketRegistry, ITruthMarketRegistry } from "../src/TruthMarketRegistry.sol";
+import { RegistryDeployment } from "./RegistryDeployment.sol";
 import { MockERC20 } from "../test/MockERC20.sol";
 
 /// @notice Anvil-driven full simulation with seeded-random voter votes.
-///         175 voters, jurySize = 25, minRevealedJurors = 25 —
-///         odd jury size with all jurors revealing means the outcome is the
+///         175 voters, targetJurySize = 25, minRevealedJurors = 25 —
+///         odd target jury size with all jurors revealing means the outcome is the
 ///         simple majority of the 25 drawn jurors and ties are impossible.
 ///
 ///         All 25 jurors reveal. Of the 150 non-jurors, ~25 are randomly
@@ -63,6 +65,12 @@ contract SimulateAnvilRandomScript is Script {
 
     // ---------- Market config ----------
     bytes internal constant IPFS_HASH = bytes("ipfs://QmAnvilSimRandom");
+    bytes32 internal constant CLAIM_RULES_HASH = keccak256("anvil-random-claim-rules");
+    bytes internal constant RANDOMNESS_IPFS_ADDRESS =
+        bytes("https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f");
+    uint64 internal constant RANDOMNESS_SEQUENCE = 87_963;
+    uint64 internal constant RANDOMNESS_TIMESTAMP = 1_769_179_239;
+    uint16 internal constant RANDOMNESS_INDEX = 0;
     bytes32 internal constant AUDIT_HASH = keccak256("ctrng-anvil-random");
     uint64 internal constant VOTING_PERIOD = 1 days;
     uint64 internal constant ADMIN_TIMEOUT = 12 hours;
@@ -70,9 +78,9 @@ contract SimulateAnvilRandomScript is Script {
     uint8 internal constant FEE_PERCENT = 5;
     uint96 internal constant MIN_STAKE = 1 ether;
     uint96 internal constant VOTER_STAKE = 50 ether;
-    // Jury size must be odd (contract enforces).
-    uint32 internal constant JURY_SIZE = 25;
-    // 175 * 15 = 2625 ≥ 25 * 100 = 2500 → satisfies MAX_JURY_PERCENTAGE constraint.
+    // Target jury size must be odd (contract enforces).
+    uint32 internal constant TARGET_JURY_SIZE = 25;
+    // 175 * 15 = 2625 ≥ 25 * 100 = 2500 → satisfies MAX_TARGET_JURY_SIZE_PERCENT constraint.
     uint32 internal constant MIN_COMMITS = 175;
     // All 25 jurors must reveal so the count majority is decisive (odd → no ties).
     uint32 internal constant MIN_REVEALED_JURORS = 25;
@@ -87,9 +95,18 @@ contract SimulateAnvilRandomScript is Script {
         address juryCommitter = vm.addr(vm.deriveKey(MNEMONIC, JURY_COMMITTER_IDX));
         address creator = vm.addr(vm.deriveKey(MNEMONIC, CREATOR_IDX));
 
+        address predictedRegistry = RegistryDeployment.predict();
+        TruthMarketRegistry registry;
+
         vm.startBroadcast(deployerPk);
         // 500 voters * 100 ether starting balance + headroom for the deployer.
         MockERC20 token = new MockERC20("Truth Stake", "TRUTH", 1_000_000 ether, deployer);
+        if (predictedRegistry.code.length == 0) {
+            registry = new TruthMarketRegistry{ salt: RegistryDeployment.SALT }();
+            require(address(registry) == predictedRegistry, "CREATE2 drift");
+        } else {
+            registry = TruthMarketRegistry(predictedRegistry);
+        }
         string[] memory tags = new string[](3);
         tags[0] = "anvil";
         tags[1] = "demo";
@@ -98,6 +115,7 @@ contract SimulateAnvilRandomScript is Script {
             TruthMarket.InitParams({
                 stakeToken: IERC20(address(token)),
                 treasury: treasury,
+                registry: ITruthMarketRegistry(address(registry)),
                 admin: admin,
                 juryCommitter: juryCommitter,
                 creator: creator,
@@ -105,13 +123,15 @@ contract SimulateAnvilRandomScript is Script {
                 description: "Lifecycle simulation with seeded-random voter votes.",
                 tags: tags,
                 ipfsHash: IPFS_HASH,
+                claimRulesHash: CLAIM_RULES_HASH,
                 votingPeriod: VOTING_PERIOD,
                 adminTimeout: ADMIN_TIMEOUT,
                 revealPeriod: REVEAL_PERIOD,
                 protocolFeePercent: FEE_PERCENT,
                 minStake: MIN_STAKE,
-                jurySize: JURY_SIZE,
+                targetJurySize: TARGET_JURY_SIZE,
                 minCommits: MIN_COMMITS,
+                maxCommits: 0,
                 minRevealedJurors: MIN_REVEALED_JURORS
             })
         );
@@ -123,13 +143,7 @@ contract SimulateAnvilRandomScript is Script {
         // Persist deployed addresses for subsequent phases.
         vm.writeFile(
             ADDR_FILE,
-            string.concat(
-                '{"token":"',
-                vm.toString(address(token)),
-                '","market":"',
-                vm.toString(address(market)),
-                '"}'
-            )
+            string.concat('{"token":"', vm.toString(address(token)), '","market":"', vm.toString(address(market)), '"}')
         );
 
         console2.log("=== Phase: Deploy (random) ===");
@@ -137,7 +151,7 @@ contract SimulateAnvilRandomScript is Script {
         console2.log("Token:                ", address(token));
         console2.log("Market:               ", address(market));
         console2.log("Voters:               ", VOTER_COUNT);
-        console2.log("Jury size:            ", JURY_SIZE);
+        console2.log("Target jury size:     ", TARGET_JURY_SIZE);
         console2.log("Min revealed jurors:  ", MIN_REVEALED_JURORS);
         console2.log("Treasury:             ", treasury);
         console2.log("Admin:                ", admin);
@@ -178,7 +192,7 @@ contract SimulateAnvilRandomScript is Script {
 
         console2.log("=== Phase: CommitJury (random) ===");
         vm.startBroadcast(juryCommitterPk);
-        market.commitJury(randomness, AUDIT_HASH);
+        market.commitJury(randomness, _randomnessMetadata(), AUDIT_HASH);
         vm.stopBroadcast();
 
         address[] memory jury = market.getJury();
@@ -327,15 +341,7 @@ contract SimulateAnvilRandomScript is Script {
         console2.log("  YES jurors:         ", s.juryYesCount);
         console2.log("  NO  jurors:         ", s.juryNoCount);
         for (uint256 i = 0; i < jv.length; i++) {
-            console2.log(
-                string.concat(
-                    "  Juror ",
-                    vm.toString(i),
-                    ": ",
-                    _voteLabel(jv[i].vote)
-                ),
-                jv[i].juror
-            );
+            console2.log(string.concat("  Juror ", vm.toString(i), ": ", _voteLabel(jv[i].vote)), jv[i].juror);
         }
 
         // P&L is the headline: where did the value land?
@@ -441,7 +447,7 @@ contract SimulateAnvilRandomScript is Script {
     function _formatPct(uint256 numerator, uint256 denominator) internal pure returns (string memory) {
         if (denominator == 0) return "n/a";
         // bps = numerator/denominator * 10000 → "X.YY%" with two decimal precision
-        uint256 bps = (numerator * 10000) / denominator;
+        uint256 bps = (numerator * 10_000) / denominator;
         uint256 whole = bps / 100;
         uint256 frac = bps % 100;
         string memory fracStr = vm.toString(frac);
@@ -465,10 +471,10 @@ contract SimulateAnvilRandomScript is Script {
     ///      population` so the average run produces the requested skip count.
     function _shouldReveal(uint256 seed, uint256 i, bool juror) internal pure returns (bool) {
         if (juror) return true;
-        uint256 nonJurorPool = VOTER_COUNT - JURY_SIZE; // 175 - 25 = 150
+        uint256 nonJurorPool = VOTER_COUNT - TARGET_JURY_SIZE; // 175 - 25 = 150
         // basis-point threshold; integer math handles the ratio without floats.
-        uint256 bp = (NON_JUROR_NON_REVEALERS * 10000) / nonJurorPool;
-        uint256 r = uint256(keccak256(abi.encode(seed, "skip", i))) % 10000;
+        uint256 bp = (NON_JUROR_NON_REVEALERS * 10_000) / nonJurorPool;
+        uint256 r = uint256(keccak256(abi.encode(seed, "skip", i))) % 10_000;
         return r >= bp;
     }
 
@@ -495,8 +501,9 @@ contract SimulateAnvilRandomScript is Script {
         uint256 pk = vm.deriveKey(MNEMONIC, uint32(VOTER_BASE_IDX + i));
         vm.startBroadcast(pk);
         try market.withdraw() {
-            // ok
-        } catch {
+        // ok
+        }
+        catch {
             console2.log(string.concat("v", vm.toString(i), ": withdraw failed"));
         }
         vm.stopBroadcast();
@@ -523,10 +530,7 @@ contract SimulateAnvilRandomScript is Script {
 
         TruthMarket.JurorVote[] memory jv = market.getJurorVotes();
         for (uint256 i = 0; i < jv.length; i++) {
-            console2.log(
-                string.concat("Juror ", vm.toString(i), " ", _voteLabel(jv[i].vote)),
-                jv[i].juror
-            );
+            console2.log(string.concat("Juror ", vm.toString(i), " ", _voteLabel(jv[i].vote)), jv[i].juror);
         }
     }
 
@@ -549,6 +553,15 @@ contract SimulateAnvilRandomScript is Script {
 
     function _nonce(uint256 i) internal pure returns (bytes32) {
         return bytes32(uint256(keccak256(abi.encode("voter-nonce-random", i))));
+    }
+
+    function _randomnessMetadata() internal pure returns (TruthMarket.RandomnessMetadata memory) {
+        return TruthMarket.RandomnessMetadata({
+            ipfsAddress: RANDOMNESS_IPFS_ADDRESS,
+            sequence: RANDOMNESS_SEQUENCE,
+            timestamp: RANDOMNESS_TIMESTAMP,
+            valueIndex: RANDOMNESS_INDEX
+        });
     }
 
     function _voteLabel(uint8 v) internal pure returns (string memory) {

@@ -19,10 +19,9 @@ export const PolicySchema = z.object({
   maxStake: z
     .string()
     .regex(/^\d+$/, "maxStake must be a non-negative integer string"),
-  // Default: false. The current verifier only matches keccak-stored
-  // ipfsHash bytes; production deployments using CID/multihash will need
-  // multihash decoding (not implemented). Flip this to true once the
-  // verifier matches the deployment's reference format.
+  // Default: false so agents must opt into the extra network read. When true,
+  // commits verify the immutable Swarm reference and claimRulesHash before
+  // generating a local nonce.
   requireSwarmVerification: z.boolean().default(false),
   allowCreateMarkets: z.boolean().default(false),
   allowJuryCommit: z.boolean().default(false),
@@ -76,6 +75,19 @@ export function assertJuryCommitAllowed(
     throw new CliError(
       "POLICY_JURY_COMMIT_DISABLED",
       "policy.allowJuryCommit is false; flip it in your policy file or pass --ignore-policy",
+    );
+  }
+}
+
+export function assertCreateMarketAllowed(
+  policy: Policy,
+  overrides: PolicyOverrides = {},
+): void {
+  if (overrides.ignorePolicy) return;
+  if (!policy.allowCreateMarkets) {
+    throw new CliError(
+      "POLICY_CREATE_MARKETS_DISABLED",
+      "policy.allowCreateMarkets is false; flip it in your policy file or pass --ignore-policy",
     );
   }
 }
