@@ -64,7 +64,7 @@ In a second terminal:
 ```sh
 cd apps/web
 npm run dev
-# Next.js picks up NEXT_PUBLIC_REGISTRY_ADDRESS from the repo-root .env automatically
+# Next.js picks up repo-root NEXT_PUBLIC_* values written by dev up.
 ```
 
 Open `http://localhost:3000`. The "Registry markets" panel will show *0 on-chain markets* — that's the empty registry.
