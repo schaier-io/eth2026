@@ -4,6 +4,8 @@ pragma solidity 0.8.28;
 import { Script, console2 } from "forge-std/Script.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { TruthMarket } from "../src/TruthMarket.sol";
+import { ITruthMarketRegistry } from "../src/TruthMarketRegistry.sol";
+import { RegistryDeployment } from "./RegistryDeployment.sol";
 
 /// @notice Deploy a TruthMarket with its full configuration baked in at construction.
 contract TruthMarketScript is Script {
@@ -11,6 +13,11 @@ contract TruthMarketScript is Script {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
         address stakeToken = vm.envAddress("STAKE_TOKEN");
+        // REGISTRY_ADDRESS env var wins if set; otherwise fall back to the
+        // deterministic CREATE2 address. Run `RegistryDeploy.s.sol` first if
+        // the predicted address has no code yet.
+        address registry = vm.envOr("REGISTRY_ADDRESS", RegistryDeployment.predict());
+        require(registry.code.length > 0, "registry not deployed; run RegistryDeploy first");
         address treasury = vm.envOr("TREASURY", deployer);
         address admin = vm.envOr("ADMIN", deployer);
         address juryCommitter = vm.envOr("JURY_COMMITTER", deployer);
@@ -19,13 +26,15 @@ contract TruthMarketScript is Script {
         string memory description = vm.envString("CLAIM_DESCRIPTION");
         string[] memory tags = _envTags();
         bytes memory ipfsHash = vm.envBytes("IPFS_HASH");
+        bytes32 claimRulesHash = vm.envBytes32("CLAIM_RULES_HASH");
         uint64 votingPeriod = _envUint64("VOTING_PERIOD");
         uint64 adminTimeout = _envUint64("ADMIN_TIMEOUT");
         uint64 revealPeriod = _envUint64("REVEAL_PERIOD");
         uint8 protocolFeePercent = _envUint8("PROTOCOL_FEE_PERCENT");
         uint96 minStake = _envUint96("MIN_STAKE");
-        uint32 jurySize = _envUint32("JURY_SIZE");
+        uint32 targetJurySize = _envUint32("TARGET_JURY_SIZE");
         uint32 minCommits = _envUint32("MIN_COMMITS");
+        uint32 maxCommits = _envOrUint32("MAX_COMMITS", 0);
         uint32 minRevealedJurors = _envUint32("MIN_REVEALED_JURORS");
 
         vm.startBroadcast(pk);
@@ -33,6 +42,7 @@ contract TruthMarketScript is Script {
             TruthMarket.InitParams({
                 stakeToken: IERC20(stakeToken),
                 treasury: treasury,
+                registry: ITruthMarketRegistry(registry),
                 admin: admin,
                 juryCommitter: juryCommitter,
                 creator: creator,
@@ -40,13 +50,15 @@ contract TruthMarketScript is Script {
                 description: description,
                 tags: tags,
                 ipfsHash: ipfsHash,
+                claimRulesHash: claimRulesHash,
                 votingPeriod: votingPeriod,
                 adminTimeout: adminTimeout,
                 revealPeriod: revealPeriod,
                 protocolFeePercent: protocolFeePercent,
                 minStake: minStake,
-                jurySize: jurySize,
+                targetJurySize: targetJurySize,
                 minCommits: minCommits,
+                maxCommits: maxCommits,
                 minRevealedJurors: minRevealedJurors
             })
         );
@@ -54,12 +66,15 @@ contract TruthMarketScript is Script {
 
         console2.log("TruthMarket deployed at:", address(market));
         console2.log("Stake token:   ", stakeToken);
+        console2.log("Registry:      ", registry);
         console2.log("Treasury:      ", treasury);
         console2.log("Admin:         ", admin);
         console2.log("Jury committer:", juryCommitter);
         console2.log("Creator:       ", creator);
         console2.log("Name:          ", name);
         console2.log("Tags count:    ", tags.length);
+        console2.log("Claim rules hash:");
+        console2.logBytes32(claimRulesHash);
     }
 
     /// @dev Reads CLAIM_TAGS as a comma-separated string (e.g. "demo,test,prediction"),
@@ -79,6 +94,13 @@ contract TruthMarketScript is Script {
 
     function _envUint32(string memory key) internal view returns (uint32) {
         uint256 value = vm.envUint(key);
+        require(value <= type(uint32).max, string.concat(key, " too large"));
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint32(value);
+    }
+
+    function _envOrUint32(string memory key, uint32 fallbackValue) internal view returns (uint32) {
+        uint256 value = vm.envOr(key, uint256(fallbackValue));
         require(value <= type(uint32).max, string.concat(key, " too large"));
         // forge-lint: disable-next-line(unsafe-typecast)
         return uint32(value);
@@ -114,7 +136,9 @@ contract TruthMarketScript is Script {
         for (uint256 i = 0; i <= b.length; i++) {
             if (i == b.length || b[i] == ",") {
                 bytes memory piece = new bytes(i - start);
-                for (uint256 j = 0; j < piece.length; j++) piece[j] = b[start + j];
+                for (uint256 j = 0; j < piece.length; j++) {
+                    piece[j] = b[start + j];
+                }
                 parts[partIdx++] = string(piece);
                 start = i + 1;
             }

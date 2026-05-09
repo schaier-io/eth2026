@@ -6,7 +6,9 @@ import {
   type Hex,
   bytesToHex,
   keccak256,
+  stringToHex,
 } from "viem";
+import { makeContentAddressedChunk } from "@truth-market/swarm-verified-fetch";
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
 import { commitVoteCore } from "../src/commands/vote-core.js";
@@ -42,6 +44,7 @@ interface ReadOverrides {
   allowance?: bigint;
   commitHash?: Hex; // existing commit hash; defaults to zero (no commit)
   ipfsHash?: Hex;
+  claimRulesHash?: Hex;
 }
 
 function makePublicClient(overrides: ReadOverrides = {}) {
@@ -63,6 +66,8 @@ function makePublicClient(overrides: ReadOverrides = {}) {
             false,
             false,
           ];
+        case "claimRulesHash":
+          return overrides.claimRulesHash ?? "0x";
         case "ipfsHash":
           return overrides.ipfsHash ?? "0x";
         default:
@@ -166,7 +171,8 @@ describe("commitVoteCore", () => {
       await commitVoteCore({
         cfg: tempCfg(),
         publicClient: makePublicClient({
-          ipfsHash: keccak256(bytesToHex(new TextEncoder().encode("right content"))),
+          ipfsHash: `0x${"a".repeat(64)}`,
+          claimRulesHash: keccak256(bytesToHex(new TextEncoder().encode("right content"))),
         }),
         walletClient: makeWalletClient(),
         account: ACCOUNT,
@@ -263,14 +269,19 @@ describe("commitVoteCore", () => {
   it("happy path with swarm verification (matching document)", async () => {
     const cfg = tempCfg();
     const docContent = "the canonical rules document";
-    const expected = keccak256(bytesToHex(new TextEncoder().encode(docContent)));
+    const docBytes = new TextEncoder().encode(docContent);
+    const expected = keccak256(bytesToHex(docBytes));
+    const chunk = makeContentAddressedChunk(docBytes);
     const dir = mkdtempSync(path.join(tmpdir(), "tm-cli-doc-"));
     const docPath = path.join(dir, "doc");
     writeFileSync(docPath, docContent);
 
     const r = await commitVoteCore({
       cfg,
-      publicClient: makePublicClient({ ipfsHash: expected }),
+      publicClient: makePublicClient({
+        ipfsHash: stringToHex(`bzz://${chunk.reference}`),
+        claimRulesHash: expected,
+      }),
       walletClient: makeWalletClient(),
       account: ACCOUNT,
       policy: policy({ maxStake: "1000", requireSwarmVerification: true }),
@@ -278,6 +289,23 @@ describe("commitVoteCore", () => {
       stake: 50n,
       vaultPassphrase: "p",
       documentPath: docPath,
+      swarmVerification: {
+        gatewayUrl: "https://gateway.test",
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          async arrayBuffer() {
+            return chunk.bytes.buffer.slice(
+              chunk.bytes.byteOffset,
+              chunk.bytes.byteOffset + chunk.bytes.byteLength,
+            );
+          },
+          async text() {
+            return "";
+          },
+        }),
+      },
     });
     expect(r.txHash).toBe(TX_HASH);
   });

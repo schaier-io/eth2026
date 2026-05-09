@@ -1,6 +1,6 @@
 # Swarm Integration Plan
 
-TruthMarket should use Swarm where decentralized storage strengthens the product: immutable claim/rules documents, replayable audit artifacts, and decentralized discovery indexes. Swarm must not become an external truth source or mutable protocol state.
+TruthMarket should use Swarm where decentralized storage strengthens the product: immutable initial claim/rules documents, claim attachments, and decentralized discovery indexes. Swarm must not become an external truth source, randomness source, or mutable protocol state.
 
 ## Prize Targets
 
@@ -28,7 +28,7 @@ Create one canonical JSON document per market:
 }
 ```
 
-Do not duplicate contract-created parameters as canonical Swarm fields. Deadlines, jury size, minimum commits, minimum revealed jurors, stake token, creator, and risk percentage come from the deployed contract. The UI may display those values beside the Swarm document, but contract getters remain canonical.
+Do not duplicate contract-created parameters as canonical Swarm fields. Deadlines, target jury size, minimum commits, minimum revealed jurors, stake token, creator, and risk percentage come from the deployed contract. The UI may display those values beside the Swarm document, but contract getters remain canonical.
 
 Upload the JSON to Swarm before deploying the market. Store the returned Swarm reference and the hash of the exact JSON bytes in the contract:
 
@@ -89,15 +89,20 @@ Example market index:
 
 The index is convenience data. Opening a market must still read the contract and verify the immutable claim/rules document.
 
-### 4. Jury Audit Artifact
+### 4. SpaceComputer Jury Audit Metadata
 
-After SpaceComputer randomness selects jurors, upload an immutable audit bundle:
+SpaceComputer publishes cTRNG beacon blocks through IPFS/IPNS. After the jury committer fetches a beacon value, persist a replayable audit bundle off-chain and hash its exact bytes:
 
 ```json
 {
   "schema": "truthmarket.juryAudit.v1",
   "market": "0x...",
   "randomness": "0x...",
+  "randomnessHash": "0x...",
+  "randomnessIpfsAddress": "https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f",
+  "randomnessSequence": 87963,
+  "randomnessTimestamp": 1769179239,
+  "randomnessIndex": 0,
   "committerSet": ["0x..."],
   "selectedJurors": ["0x..."],
   "selectionAlgorithm": "fisher-yates-keccak256(seed,i)",
@@ -105,7 +110,7 @@ After SpaceComputer randomness selects jurors, upload an immutable audit bundle:
 }
 ```
 
-The contract already stores `juryAuditHash`. The service should compute this from the exact artifact bytes and pass it to `commitJury`. The UI can link to the Swarm audit artifact for replay.
+The contract stores `randomness`, `randomnessHash`, `randomnessIpfsAddress`, `randomnessSequence`, `randomnessTimestamp`, `randomnessIndex`, and `juryAuditHash`. The service should compute `juryAuditHash` from the exact artifact bytes and pass it with the SpaceComputer IPFS/IPNS beacon metadata to `commitJury(randomness, metadata, auditHash)`. Swarm is not part of this randomness path.
 
 ## CLI And Agent Flow
 
@@ -130,7 +135,7 @@ truthmarket watch --market 0x... --wallet 0x...
 
 ## Boundaries
 
-- Immutable Swarm content: claim/rules documents, jury audit artifacts, optional settlement reports.
+- Immutable Swarm content: initial claim/rules documents and claim attachments.
 - Mutable Swarm feeds/KV: market discovery, creator indexes, cached UI snapshots.
 - Contract: commitments, stakes, selected jurors, reveals, outcome, payout, treasury/creator accrual.
 - Agent-local vault: unrevealed vote, nonce, wallet key, private participation policy.

@@ -869,8 +869,10 @@ class SwarmKvStoreImpl implements SwarmKvStore {
   }
 
   async getString(key: SwarmKvKey, optionsOrReference?: GetOptions | SwarmReference): Promise<string | null> {
-    const result = await this.get<string>(key, optionsOrReference);
-    return result ? String(result.value) : null;
+    const result = await this.get(key, optionsOrReference);
+    if (!result) return null;
+    assertResultKind(key, result.kind, "string");
+    return result.value;
   }
 
   async getJson<TValue = JsonValue>(
@@ -878,12 +880,16 @@ class SwarmKvStoreImpl implements SwarmKvStore {
     optionsOrReference?: GetOptions | SwarmReference
   ): Promise<TValue | null> {
     const result = await this.get<TValue>(key, optionsOrReference);
-    return result ? result.value : null;
+    if (!result) return null;
+    assertResultKind(key, result.kind, "json");
+    return result.value;
   }
 
   async getBytes(key: SwarmKvKey, optionsOrReference?: GetOptions | SwarmReference): Promise<Uint8Array | null> {
     const result = await this.get<Uint8Array>(key, optionsOrReference);
-    return result ? result.bytes : null;
+    if (!result) return null;
+    assertResultKind(key, result.kind, "bytes");
+    return result.value;
   }
 
   async delete(key: SwarmKvKey, options: DeleteOptions = {}): Promise<DeleteResult> {
@@ -2279,11 +2285,21 @@ function normalizeReference(value: string): string {
 
   const normalized = normalizeHex(value);
 
-  if (normalized.length !== 64 && normalized.length !== 128) {
-    throw new SwarmKvConfigError("Swarm references must be 32-byte or 64-byte hex strings.");
+  if (normalized.length !== 64) {
+    throw new SwarmKvConfigError("Swarm references must be 32-byte hex strings.");
   }
 
   return normalized;
+}
+
+function assertResultKind<TExpected extends SwarmKvValueKind>(
+  key: SwarmKvKey,
+  actual: SwarmKvValueKind,
+  expected: TExpected
+): asserts actual is TExpected {
+  if (actual !== expected) {
+    throw new SwarmKvPayloadError(`Key "${key}" stores a ${actual} value; expected ${expected}.`);
+  }
 }
 
 function normalizeTopic(value: string): string {

@@ -4,6 +4,8 @@ pragma solidity 0.8.28;
 import { Script, console2 } from "forge-std/Script.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { TruthMarket } from "../src/TruthMarket.sol";
+import { TruthMarketRegistry, ITruthMarketRegistry } from "../src/TruthMarketRegistry.sol";
+import { RegistryDeployment } from "./RegistryDeployment.sol";
 import { MockERC20 } from "../test/MockERC20.sol";
 
 /// @notice Anvil-driven full simulation. Each phase is a separate sig so the shell
@@ -12,7 +14,7 @@ import { MockERC20 } from "../test/MockERC20.sol";
 ///
 /// Phases:
 ///   deploy()         — deploy MockERC20 + TruthMarket, fund 7 voters
-///   commit()         — 7 voters commit hidden votes (jurySize=1, minCommits=7)
+///   commit()         — 7 voters commit hidden votes (targetJurySize=1, minCommits=7)
 ///   commitJury()     — jury committer posts randomness; contract draws 1 juror
 ///   reveal()         — 7 voters reveal
 ///   resolve()        — anyone resolves; voters and treasury withdraw
@@ -26,46 +28,46 @@ import { MockERC20 } from "../test/MockERC20.sol";
 ///   anvil --accounts 12   (or higher)
 contract SimulateAnvilScript is Script {
     // ---------- Anvil deterministic accounts (mnemonic: "test test ... junk") ----------
-    uint256 internal constant DEPLOYER_PK =
-        0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
-    uint256 internal constant TREASURY_PK =
-        0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d;
-    uint256 internal constant ADMIN_PK =
-        0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a;
-    uint256 internal constant JURY_COMMITTER_PK =
-        0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6;
-    uint256 internal constant CREATOR_PK =
-        0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a;
+    uint256 internal constant DEPLOYER_PK = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
+    uint256 internal constant TREASURY_PK = 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d;
+    uint256 internal constant ADMIN_PK = 0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a;
+    uint256 internal constant JURY_COMMITTER_PK = 0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6;
+    uint256 internal constant CREATOR_PK = 0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a;
 
     // 7 voter keys — anvil accounts 5 through 11.
-    uint256 internal constant V0_PK =
-        0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba;
-    uint256 internal constant V1_PK =
-        0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e;
-    uint256 internal constant V2_PK =
-        0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356;
-    uint256 internal constant V3_PK =
-        0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97;
-    uint256 internal constant V4_PK =
-        0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6;
-    uint256 internal constant V5_PK =
-        0xf214f2b2cd398c806f84e317254e0f0b801d0643303237d97a22a48e01628897;
-    uint256 internal constant V6_PK =
-        0x701b615bbdfb9de65240bc28bd21bbc0d996645a3dd57e7b12bc2bdf6f192c82;
+    uint256 internal constant V0_PK = 0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba;
+    uint256 internal constant V1_PK = 0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e;
+    uint256 internal constant V2_PK = 0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356;
+    uint256 internal constant V3_PK = 0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97;
+    uint256 internal constant V4_PK = 0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6;
+    uint256 internal constant V5_PK = 0xf214f2b2cd398c806f84e317254e0f0b801d0643303237d97a22a48e01628897;
+    uint256 internal constant V6_PK = 0x701b615bbdfb9de65240bc28bd21bbc0d996645a3dd57e7b12bc2bdf6f192c82;
 
-    // ---------- Deterministic deploy addresses (deployer's first two contract nonces) ----------
+    // ---------- Deterministic deploy addresses ----------
+    // TOKEN at deployer-EOA nonce 0 (CREATE). Registry is deployed via CREATE2
+    // through the canonical deterministic deployer, so its address is bytecode-
+    // and salt-derived and identical on every network — see RegistryDeployment.
+    // MARKET at deployer-EOA nonce 2: nonce 1 is consumed by the EOA call into
+    // the CREATE2 deployer, so the market still lands at the same address as
+    // the previous deploy order.
     address internal constant TOKEN_ADDR = 0x5FbDB2315678afecb367f032d93F642f64180aa3;
-    address internal constant MARKET_ADDR = 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512;
+    address internal constant MARKET_ADDR = 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0;
 
     // ---------- Market config ----------
     bytes internal constant IPFS_HASH = bytes("ipfs://QmAnvilSimDemo");
+    bytes32 internal constant CLAIM_RULES_HASH = keccak256("anvil-demo-claim-rules");
+    bytes internal constant RANDOMNESS_IPFS_ADDRESS =
+        bytes("https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f");
+    uint64 internal constant RANDOMNESS_SEQUENCE = 87_963;
+    uint64 internal constant RANDOMNESS_TIMESTAMP = 1_769_179_239;
+    uint16 internal constant RANDOMNESS_INDEX = 0;
     bytes32 internal constant AUDIT_HASH = keccak256("ctrng-anvil-output");
     uint64 internal constant VOTING_PERIOD = 1 days;
     uint64 internal constant ADMIN_TIMEOUT = 12 hours;
     uint64 internal constant REVEAL_PERIOD = 1 days;
     uint8 internal constant FEE_PERCENT = 5;
     uint96 internal constant MIN_STAKE = 1 ether;
-    uint32 internal constant JURY_SIZE = 1;
+    uint32 internal constant TARGET_JURY_SIZE = 1;
     uint32 internal constant MIN_COMMITS = 7;
     uint32 internal constant MIN_REVEALED_JURORS = 1;
 
@@ -80,8 +82,19 @@ contract SimulateAnvilScript is Script {
         address juryCommitter = vm.addr(JURY_COMMITTER_PK);
         address creator = vm.addr(CREATOR_PK);
 
+        // Deploy registry via CREATE2 if it isn't already at the predicted
+        // address. Idempotent across reruns / chains.
+        address predictedRegistry = RegistryDeployment.predict();
+        TruthMarketRegistry registry;
+
         vm.startBroadcast(DEPLOYER_PK);
         MockERC20 token = new MockERC20("Truth Stake", "TRUTH", 100_000 ether, deployer);
+        if (predictedRegistry.code.length == 0) {
+            registry = new TruthMarketRegistry{ salt: RegistryDeployment.SALT }();
+            require(address(registry) == predictedRegistry, "CREATE2 drift");
+        } else {
+            registry = TruthMarketRegistry(predictedRegistry);
+        }
         string[] memory tags = new string[](3);
         tags[0] = "anvil";
         tags[1] = "demo";
@@ -90,6 +103,7 @@ contract SimulateAnvilScript is Script {
             TruthMarket.InitParams({
                 stakeToken: IERC20(address(token)),
                 treasury: treasury,
+                registry: ITruthMarketRegistry(address(registry)),
                 admin: admin,
                 juryCommitter: juryCommitter,
                 creator: creator,
@@ -97,18 +111,20 @@ contract SimulateAnvilScript is Script {
                 description: "End-to-end TruthMarket lifecycle on a fresh anvil node.",
                 tags: tags,
                 ipfsHash: IPFS_HASH,
+                claimRulesHash: CLAIM_RULES_HASH,
                 votingPeriod: VOTING_PERIOD,
                 adminTimeout: ADMIN_TIMEOUT,
                 revealPeriod: REVEAL_PERIOD,
                 protocolFeePercent: FEE_PERCENT,
                 minStake: MIN_STAKE,
-                jurySize: JURY_SIZE,
+                targetJurySize: TARGET_JURY_SIZE,
                 minCommits: MIN_COMMITS,
+                maxCommits: 0,
                 minRevealedJurors: MIN_REVEALED_JURORS
             })
         );
         for (uint256 i = 0; i < 7; i++) {
-            token.transfer(_voterAddr(i), 1_000 ether);
+            token.transfer(_voterAddr(i), 1000 ether);
         }
         vm.stopBroadcast();
 
@@ -117,6 +133,7 @@ contract SimulateAnvilScript is Script {
 
         console2.log("=== Phase: Deploy ===");
         console2.log("Token:                ", address(token));
+        console2.log("Registry:             ", address(registry));
         console2.log("Market:               ", address(market));
         console2.log("Name:                 ", market.name());
         console2.log("Description:          ", market.description());
@@ -128,7 +145,7 @@ contract SimulateAnvilScript is Script {
         console2.log("Voting deadline:      ", market.votingDeadline());
         console2.log("Jury commit deadline: ", market.juryCommitDeadline());
         console2.log("Reveal deadline:      ", market.revealDeadline());
-        console2.log("Jury size:            ", market.jurySize());
+        console2.log("Target jury size:     ", market.targetJurySize());
         console2.log("Min commits:          ", market.minCommits());
     }
 
@@ -149,7 +166,7 @@ contract SimulateAnvilScript is Script {
         console2.log("=== Phase: CommitJury ===");
 
         vm.startBroadcast(JURY_COMMITTER_PK);
-        market.commitJury(0xC0FFEE, AUDIT_HASH);
+        market.commitJury(0xC0FFEE, _randomnessMetadata(), AUDIT_HASH);
         vm.stopBroadcast();
 
         address[] memory jury = market.getJury();
@@ -268,8 +285,9 @@ contract SimulateAnvilScript is Script {
     function _withdraw(TruthMarket market, uint256 pk, uint256 i) internal {
         vm.startBroadcast(pk);
         try market.withdraw() {
-            // ok
-        } catch {
+        // ok
+        }
+        catch {
             console2.log(string.concat("v", vm.toString(i), ": withdraw failed"));
         }
         vm.stopBroadcast();
@@ -292,6 +310,15 @@ contract SimulateAnvilScript is Script {
 
     function _nonce(uint256 i) internal pure returns (bytes32) {
         return bytes32(uint256(keccak256(abi.encode("voter-nonce", i))));
+    }
+
+    function _randomnessMetadata() internal pure returns (TruthMarket.RandomnessMetadata memory) {
+        return TruthMarket.RandomnessMetadata({
+            ipfsAddress: RANDOMNESS_IPFS_ADDRESS,
+            sequence: RANDOMNESS_SEQUENCE,
+            timestamp: RANDOMNESS_TIMESTAMP,
+            valueIndex: RANDOMNESS_INDEX
+        });
     }
 
     function _outcomeLabel(TruthMarket.Outcome o) internal pure returns (string memory) {

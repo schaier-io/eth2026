@@ -4,17 +4,20 @@ pragma solidity 0.8.28;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { ITruthMarketRegistry } from "./TruthMarketRegistry.sol";
 
 /// @title TruthMarket
 /// @notice Single-market random-jury belief-resolution contract. Market parameters are
 ///         locked at deployment (no separate setup tx). Voters privately commit YES/NO
 ///         beliefs with stake. After the voting deadline, the jury committer posts
-///         SpaceComputer cTRNG randomness plus an audit hash; the contract draws the
-///         resolving jury on-chain via Fisher-Yates from the set of committed voters.
+///         SpaceComputer cTRNG randomness plus the IPFS/IPNS beacon reference and an
+///         audit hash; the contract draws the resolving jury on-chain via
+///         Fisher-Yates from the set of committed voters.
 ///
-///         Claim metadata: in addition to the immutable Swarm/IPFS rules document, the
-///         contract stores an on-chain `name`, `description`, and up to MAX_TAGS short
-///         `tags` so the claim is self-describing without a fetch.
+///         Claim metadata: in addition to the immutable initial claim/rules document
+///         reference and `claimRulesHash`, the contract stores an on-chain `name`,
+///         `description`, and up to MAX_TAGS short `tags` so the claim is
+///         self-describing without a fetch.
 ///
 ///         Stake token assumption: `stakeToken` must be a plain, non-rebasing,
 ///         no-fee ERC20. The contract measures the actual inbound amount received
@@ -49,11 +52,11 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 ///           other voter is fully refunded.
 ///
 ///         Jury composition limit: the jury is always a strict minority. The contract
-///         guarantees `jurySize ≤ MAX_JURY_PERCENTAGE × commitCount / 100`, enforced at
-///         construction by requiring `minCommits × MAX_JURY_PERCENTAGE ≥ jurySize × 100`.
+///         guarantees `targetJurySize ≤ MAX_TARGET_JURY_SIZE_PERCENT × commitCount / 100`, enforced at
+///         construction by requiring `minCommits × MAX_TARGET_JURY_SIZE_PERCENT ≥ targetJurySize × 100`.
 ///
 ///         Tie behavior: ties on juror count resolve to Invalid. Ties are impossible
-///         when `minRevealedJurors == jurySize` (all jurors reveal, odd count); they
+///         when `minRevealedJurors == targetJurySize` (all jurors reveal, odd count); they
 ///         remain possible whenever the revealed-juror count is even.
 contract TruthMarket is ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -68,11 +71,11 @@ contract TruthMarket is ReentrancyGuard {
     uint8 public constant RISK_PERCENT = 20;
     /// @notice Protocol fee on the slashed pool, expressed as a whole percent (0–10).
     uint8 public constant MAX_PROTOCOL_FEE_PERCENT = 10;
-    uint32 public constant MAX_JURY_SIZE = 100;
-    /// @notice Upper bound on jury size as a percentage of committed voters. Enforced at
-    ///         construction via `minCommits × MAX_JURY_PERCENTAGE ≥ jurySize × 100`, so
+    uint32 public constant MAX_TARGET_JURY_SIZE = 100;
+    /// @notice Upper bound on the target jury size as a percentage of committed voters. Enforced at
+    ///         construction via `minCommits × MAX_TARGET_JURY_SIZE_PERCENT ≥ targetJurySize × 100`, so
     ///         once `commitCount ≥ minCommits` the rule holds for the actual draw too.
-    uint256 public constant MAX_JURY_PERCENTAGE = 15;
+    uint256 public constant MAX_TARGET_JURY_SIZE_PERCENT = 15;
     /// @notice Maximum number of claim tags storable on-chain.
     uint256 public constant MAX_TAGS = 5;
     /// @notice Maximum bytes for the short on-chain claim name.
@@ -84,6 +87,13 @@ contract TruthMarket is ReentrancyGuard {
     /// @notice Maximum bytes for the on-chain Swarm/IPFS rules-document reference.
     ///         Sized to fit any common CID/Swarm hash plus a short scheme prefix.
     uint256 public constant MAX_IPFS_HASH_BYTES = 96;
+    /// @notice SpaceComputer's public IPFS/IPNS randomness beacon path. Orbitport
+    ///         publishes a new beacon block here every 60 seconds.
+    string public constant SPACE_COMPUTER_IPNS_BEACON =
+        "/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f";
+    /// @notice Maximum bytes for the SpaceComputer beacon path or resolved IPFS CID
+    ///         submitted with `commitJury`.
+    uint256 public constant MAX_RANDOMNESS_IPFS_ADDRESS_BYTES = 160;
     /// @notice Time after `revealDeadline` before residual dust may be force-swept to
     ///         treasury. Long enough that any voter has had ample time to withdraw.
     uint64 public constant DUST_SWEEP_GRACE = 30 days;
@@ -145,16 +155,18 @@ contract TruthMarket is ReentrancyGuard {
         string description;
         string[] tags;
         bytes ipfsHash;
+        bytes32 claimRulesHash;
         uint64 votingDeadline;
         uint64 juryCommitDeadline;
         uint64 revealDeadline;
         uint8 protocolFeePercent;
         uint96 minStake;
-        uint32 jurySize;
+        uint32 targetJurySize;
         uint32 minCommits;
+        uint32 maxCommits;
         uint32 minRevealedJurors;
-        uint32 maxJurySize;
-        uint256 maxJuryPercentage;
+        uint32 maxTargetJurySize;
+        uint256 maxTargetJurySizePercent;
         uint256 maxTags;
         uint256 maxNameBytes;
         uint256 maxDescriptionBytes;
@@ -204,10 +216,35 @@ contract TruthMarket is ReentrancyGuard {
         uint96 riskedStake;
     }
 
+    /// @dev SpaceComputer IPFS/IPNS beacon metadata for the cTRNG value consumed by
+    ///      `commitJury`. The full beacon/audit artifact stays off-chain; these fields
+    ///      make the exact source value replayable by indexers and reviewers.
+    struct RandomnessMetadata {
+        bytes ipfsAddress;
+        uint64 sequence;
+        uint64 timestamp;
+        uint16 valueIndex;
+    }
+
+    /// @dev SpaceComputer randomness evidence used for the jury draw. The contract
+    ///      cannot fetch IPFS/IPNS, so the trusted jury committer posts the cTRNG value
+    ///      and the beacon/audit references it fetched off-chain. `randomnessHash` is
+    ///      computed by the contract from the posted cTRNG seed.
+    struct RandomnessEvidence {
+        uint256 randomness;
+        bytes32 randomnessHash;
+        bytes randomnessIpfsAddress;
+        uint64 randomnessSequence;
+        uint64 randomnessTimestamp;
+        uint16 randomnessIndex;
+        bytes32 juryAuditHash;
+    }
+
     /// @dev Constructor params bundled to avoid stack-too-deep with the deployment config.
     struct InitParams {
         IERC20 stakeToken;
         address treasury;
+        ITruthMarketRegistry registry;
         address admin;
         address juryCommitter;
         address creator;
@@ -215,13 +252,18 @@ contract TruthMarket is ReentrancyGuard {
         string description;
         string[] tags;
         bytes ipfsHash;
+        bytes32 claimRulesHash;
         uint64 votingPeriod;
         uint64 adminTimeout;
         uint64 revealPeriod;
         uint8 protocolFeePercent;
         uint96 minStake;
-        uint32 jurySize;
+        uint32 targetJurySize;
         uint32 minCommits;
+        /// @dev Optional hard cap on the total number of `commitVote` calls. Set to 0 to
+        ///      disable. The cap counts every commit (active + revoked); revoking a stake
+        ///      does not free a slot, since the slot was already burned at commit time.
+        uint32 maxCommits;
         uint32 minRevealedJurors;
     }
 
@@ -241,8 +283,10 @@ contract TruthMarket is ReentrancyGuard {
     uint64 public immutable revealDeadline;
     uint8 public immutable protocolFeePercent;
     uint96 public immutable minStake;
-    uint32 public immutable jurySize;
+    uint32 public immutable targetJurySize;
     uint32 public immutable minCommits;
+    /// @notice Optional hard cap on total commit calls. 0 means uncapped.
+    uint32 public immutable maxCommits;
     uint32 public immutable minRevealedJurors;
 
     // ---------- Mutable state ----------
@@ -253,6 +297,7 @@ contract TruthMarket is ReentrancyGuard {
     string public description;
     string[] public tags;
     bytes public ipfsHash;
+    bytes32 public claimRulesHash;
     uint32 public commitCount;
     uint32 public revealedJurorCount;
     uint32 public withdrawnCount;
@@ -281,6 +326,11 @@ contract TruthMarket is ReentrancyGuard {
     uint256 public totalYesRewardWeight;
     uint256 public totalNoRewardWeight;
     uint256 public randomness;
+    bytes32 public randomnessHash;
+    bytes public randomnessIpfsAddress;
+    uint64 public randomnessSequence;
+    uint64 public randomnessTimestamp;
+    uint16 public randomnessIndex;
     uint256 public treasuryAccrued;
     /// @notice Pull-pattern accrual for the claim creator. Filled with the juror
     ///         non-reveal penalty when the market resolves Invalid after the jury draw.
@@ -313,16 +363,26 @@ contract TruthMarket is ReentrancyGuard {
         string description,
         string[] tags,
         bytes ipfsHash,
+        bytes32 claimRulesHash,
         uint64 votingDeadline,
         uint64 juryCommitDeadline,
         uint64 revealDeadline,
-        uint32 jurySize,
+        uint32 targetJurySize,
         uint32 minCommits,
         uint32 minRevealedJurors,
         uint96 minStake
     );
     event VoteCommitted(address indexed voter, bytes32 commitHash, uint96 stake, uint96 riskedStake);
-    event JuryCommitted(uint256 randomness, address[] jurors, bytes32 auditHash);
+    event JuryCommitted(
+        uint256 randomness,
+        bytes32 randomnessHash,
+        bytes randomnessIpfsAddress,
+        uint64 randomnessSequence,
+        uint64 randomnessTimestamp,
+        uint16 randomnessIndex,
+        address[] jurors,
+        bytes32 auditHash
+    );
     event VoteRevealed(address indexed voter, uint8 vote, uint96 stake, uint96 riskedStake);
     event Resolved(
         Outcome outcome,
@@ -355,6 +415,7 @@ contract TruthMarket is ReentrancyGuard {
     error InsufficientCommits();
     error StakeBelowMin();
     error CommitRevoked();
+    error MarketFull();
 
     // ---------- Modifiers ----------
 
@@ -367,8 +428,10 @@ contract TruthMarket is ReentrancyGuard {
 
     constructor(InitParams memory p) {
         if (address(p.stakeToken) == address(0) || p.treasury == address(0)) revert BadParams();
+        if (address(p.registry) == address(0)) revert BadParams();
         if (p.admin == address(0) || p.juryCommitter == address(0) || p.creator == address(0)) revert BadParams();
         if (p.ipfsHash.length == 0 || p.ipfsHash.length > MAX_IPFS_HASH_BYTES) revert BadParams();
+        if (p.claimRulesHash == bytes32(0)) revert BadParams();
         if (p.votingPeriod < MIN_PERIOD || p.adminTimeout < MIN_PERIOD || p.revealPeriod < MIN_PERIOD) {
             revert BadParams();
         }
@@ -377,13 +440,14 @@ contract TruthMarket is ReentrancyGuard {
         }
         if (p.protocolFeePercent > MAX_PROTOCOL_FEE_PERCENT) revert BadParams();
         if (p.minStake == 0) revert BadParams();
-        if (p.jurySize == 0 || p.jurySize > MAX_JURY_SIZE) revert BadParams();
-        if (p.jurySize % 2 == 0) revert BadParams(); // jury size must be odd
-        // Jury size must stay within MAX_JURY_PERCENTAGE of the minimum committer pool;
-        // this also implies minCommits >= jurySize, so the older subset check is subsumed.
-        if (uint256(p.minCommits) * MAX_JURY_PERCENTAGE < uint256(p.jurySize) * 100) revert BadParams();
+        if (p.targetJurySize == 0 || p.targetJurySize > MAX_TARGET_JURY_SIZE) revert BadParams();
+        if (p.targetJurySize % 2 == 0) revert BadParams(); // target jury size must be odd
+        // Target jury size must stay within MAX_TARGET_JURY_SIZE_PERCENT of the minimum committer pool;
+        // this also implies minCommits >= targetJurySize, so the older subset check is subsumed.
+        if (uint256(p.minCommits) * MAX_TARGET_JURY_SIZE_PERCENT < uint256(p.targetJurySize) * 100) revert BadParams();
         if (p.minRevealedJurors == 0) revert BadParams();
-        if (p.minRevealedJurors > p.jurySize) revert BadParams();
+        if (p.minRevealedJurors > p.targetJurySize) revert BadParams();
+        if (p.maxCommits != 0 && p.maxCommits < p.minCommits) revert BadParams();
         if (bytes(p.name).length == 0 || bytes(p.name).length > MAX_NAME_BYTES) revert BadParams();
         if (bytes(p.description).length == 0 || bytes(p.description).length > MAX_DESCRIPTION_BYTES) {
             revert BadParams();
@@ -404,6 +468,7 @@ contract TruthMarket is ReentrancyGuard {
             tags.push(p.tags[i]);
         }
         ipfsHash = p.ipfsHash;
+        claimRulesHash = p.claimRulesHash;
 
         uint64 deployTime = uint64(block.timestamp);
         uint64 _votingDeadline = deployTime + p.votingPeriod;
@@ -415,8 +480,9 @@ contract TruthMarket is ReentrancyGuard {
 
         protocolFeePercent = p.protocolFeePercent;
         minStake = p.minStake;
-        jurySize = p.jurySize;
+        targetJurySize = p.targetJurySize;
         minCommits = p.minCommits;
+        maxCommits = p.maxCommits;
         minRevealedJurors = p.minRevealedJurors;
         phase = Phase.Voting;
 
@@ -425,14 +491,17 @@ contract TruthMarket is ReentrancyGuard {
             p.description,
             p.tags,
             p.ipfsHash,
+            p.claimRulesHash,
             _votingDeadline,
             _juryCommitDeadline,
             _revealDeadline,
-            p.jurySize,
+            p.targetJurySize,
             p.minCommits,
             p.minRevealedJurors,
             p.minStake
         );
+
+        p.registry.register(p.creator, p.tags);
     }
 
     // ---------- Commit (hidden vote + stake) ----------
@@ -452,6 +521,9 @@ contract TruthMarket is ReentrancyGuard {
     function commitVote(bytes32 commitHash, uint96 stake) external nonReentrant {
         if (phase != Phase.Voting) revert WrongPhase();
         if (block.timestamp >= votingDeadline) revert DeadlinePassed();
+        // Cap counts every address that ever committed (active + revoked); revoking does
+        // not free a slot, so a colluder cannot leak their nonce to refill capacity.
+        if (maxCommits != 0 && commitCount + revokedCount >= maxCommits) revert MarketFull();
         if (stake < minStake) revert StakeBelowMin();
         if (commitHash == bytes32(0)) revert BadParams();
         if (commits[msg.sender].hash != bytes32(0)) revert AlreadyCommitted();
@@ -555,27 +627,55 @@ contract TruthMarket is ReentrancyGuard {
 
     // ---------- Jury commit + on-chain selection ----------
 
-    /// @notice Submit SpaceComputer cTRNG randomness plus an audit hash. The contract
-    ///         draws the resolving jury on-chain from the active (non-revoked)
-    ///         committer set via a virtual Fisher-Yates sampler with O(jurySize) memory.
-    /// @param _randomness  cTRNG value used to drive the on-chain shuffle.
-    /// @param auditHash    Hash of the externally persisted randomness/proof artifact.
-    function commitJury(uint256 _randomness, bytes32 auditHash) external onlyJuryCommitter {
+    /// @notice Submit SpaceComputer cTRNG randomness plus IPFS/IPNS beacon metadata
+    ///         and an audit hash. The contract stores the evidence, computes a
+    ///         `randomnessHash`, then draws the resolving jury on-chain from the active
+    ///         (non-revoked) committer set via a virtual Fisher-Yates sampler with
+    ///         O(targetJurySize) memory.
+    /// @dev    Solidity cannot fetch IPFS/IPNS. `metadata.ipfsAddress` is the fetched
+    ///         SpaceComputer beacon path or immutable resolved block address used by
+    ///         off-chain replay tools to verify the posted cTRNG value.
+    /// @param _randomness cTRNG value used to drive the on-chain shuffle.
+    /// @param metadata    SpaceComputer beacon metadata for the consumed cTRNG value.
+    /// @param auditHash   Hash of the externally persisted randomness/proof artifact.
+    function commitJury(uint256 _randomness, RandomnessMetadata calldata metadata, bytes32 auditHash)
+        external
+        onlyJuryCommitter
+    {
         if (phase != Phase.Voting) revert WrongPhase();
         if (block.timestamp < votingDeadline) revert DeadlineNotPassed();
         if (block.timestamp >= juryCommitDeadline) revert DeadlinePassed();
         if (randomness != 0) revert JuryAlreadyFulfilled();
         if (_randomness == 0) revert BadParams();
+        if (metadata.ipfsAddress.length == 0 || metadata.ipfsAddress.length > MAX_RANDOMNESS_IPFS_ADDRESS_BYTES) {
+            revert BadParams();
+        }
+        if (metadata.timestamp == 0) revert BadParams();
         if (auditHash == bytes32(0)) revert BadParams();
         if (commitCount < minCommits) revert InsufficientCommits();
 
+        bytes32 _randomnessHash = _hashRandomness(_randomness);
         randomness = _randomness;
+        randomnessHash = _randomnessHash;
+        randomnessIpfsAddress = metadata.ipfsAddress;
+        randomnessSequence = metadata.sequence;
+        randomnessTimestamp = metadata.timestamp;
+        randomnessIndex = metadata.valueIndex;
         juryAuditHash = auditHash;
         phase = Phase.Reveal;
 
         _drawJury(_randomness);
 
-        emit JuryCommitted(_randomness, _jury, auditHash);
+        emit JuryCommitted(
+            _randomness,
+            _randomnessHash,
+            metadata.ipfsAddress,
+            metadata.sequence,
+            metadata.timestamp,
+            metadata.valueIndex,
+            _jury,
+            auditHash
+        );
     }
 
     // ---------- Reveal ----------
@@ -703,8 +803,8 @@ contract TruthMarket is ReentrancyGuard {
     ///         the next call restarts the sweep from index 0.
     function forceSweepDust(uint32 maxIters) external nonReentrant {
         if (phase != Phase.Resolved) revert WrongPhase();
-        if (block.timestamp < uint256(revealDeadline) + DUST_SWEEP_GRACE) revert DeadlineNotPassed();
         if (maxIters == 0) revert BadParams();
+        if (block.timestamp < uint256(revealDeadline) + DUST_SWEEP_GRACE) revert DeadlineNotPassed();
 
         uint32 n = uint32(_activeCommitters.length);
         uint32 cursor = sweepCursor;
@@ -776,6 +876,21 @@ contract TruthMarket is ReentrancyGuard {
         return tags;
     }
 
+    /// @notice Alias for the immutable claim/rules content reference. The original
+    ///         storage name is `ipfsHash`; deployments may point it at Swarm.
+    function swarmReference() external view returns (bytes memory) {
+        return ipfsHash;
+    }
+
+    /// @notice Amount `voter` can withdraw right now. Returns 0 before resolution,
+    ///         after withdrawal, for revoked commits, or for unknown voters.
+    function previewPayout(address voter) external view returns (uint256) {
+        if (phase != Phase.Resolved) return 0;
+        Commit storage k = commits[voter];
+        if (k.hash == bytes32(0) || k.revoked || k.withdrawn) return 0;
+        return _payoutFor(k, _isJuror[voter]);
+    }
+
     /// @notice Aggregate read-only snapshot of the deployment configuration. Bundles
     ///         every constructor input plus on-chain caps in one call.
     function getConfig() external view returns (Config memory) {
@@ -789,16 +904,18 @@ contract TruthMarket is ReentrancyGuard {
             description: description,
             tags: tags,
             ipfsHash: ipfsHash,
+            claimRulesHash: claimRulesHash,
             votingDeadline: votingDeadline,
             juryCommitDeadline: juryCommitDeadline,
             revealDeadline: revealDeadline,
             protocolFeePercent: protocolFeePercent,
             minStake: minStake,
-            jurySize: jurySize,
+            targetJurySize: targetJurySize,
             minCommits: minCommits,
+            maxCommits: maxCommits,
             minRevealedJurors: minRevealedJurors,
-            maxJurySize: MAX_JURY_SIZE,
-            maxJuryPercentage: MAX_JURY_PERCENTAGE,
+            maxTargetJurySize: MAX_TARGET_JURY_SIZE,
+            maxTargetJurySizePercent: MAX_TARGET_JURY_SIZE_PERCENT,
             maxTags: MAX_TAGS,
             maxNameBytes: MAX_NAME_BYTES,
             maxDescriptionBytes: MAX_DESCRIPTION_BYTES,
@@ -858,25 +975,34 @@ contract TruthMarket is ReentrancyGuard {
         for (uint256 i = 0; i < jury.length; i++) {
             Commit storage k = commits[jury[i]];
             votes[i] = JurorVote({
-                juror: jury[i],
-                revealed: k.revealed,
-                vote: k.revealedVote,
-                stake: k.stake,
-                riskedStake: k.riskedStake
+                juror: jury[i], revealed: k.revealed, vote: k.revealedVote, stake: k.stake, riskedStake: k.riskedStake
             });
         }
     }
 
+    /// @notice SpaceComputer cTRNG evidence used for the on-chain jury draw.
+    function getRandomnessEvidence() external view returns (RandomnessEvidence memory) {
+        return RandomnessEvidence({
+            randomness: randomness,
+            randomnessHash: randomnessHash,
+            randomnessIpfsAddress: randomnessIpfsAddress,
+            randomnessSequence: randomnessSequence,
+            randomnessTimestamp: randomnessTimestamp,
+            randomnessIndex: randomnessIndex,
+            juryAuditHash: juryAuditHash
+        });
+    }
+
     // ---------- Internals ----------
 
-    /// @dev Floyd sampler. Picks `k = min(jurySize, activeCount)` unique indices into
+    /// @dev Floyd sampler. Picks `k = min(targetJurySize, activeCount)` unique indices into
     ///      `_activeCommitters` using `seed` as the entropy source. Memory cost is O(k)
     ///      regardless of `n`; work is bounded by one membership scan per selected
     ///      juror. This avoids both O(n) Fisher-Yates initialization and the previous
     ///      sparse-swap table's repeated lookup/update scans.
     function _drawJury(uint256 seed) internal {
         uint256 n = _activeCommitters.length;
-        uint256 k = jurySize > n ? n : jurySize;
+        uint256 k = targetJurySize > n ? n : targetJurySize;
         if (k == 0) return;
 
         uint256[] memory selected = new uint256[](k);
@@ -938,8 +1064,8 @@ contract TruthMarket is ReentrancyGuard {
         }
     }
 
-    /// @dev Returns Invalid on count tie. With odd `jurySize` and full juror reveal
-    ///      (`minRevealedJurors == jurySize`) ties are impossible. Partial reveals
+    /// @dev Returns Invalid on count tie. With odd `targetJurySize` and full juror reveal
+    ///      (`minRevealedJurors == targetJurySize`) ties are impossible. Partial reveals
     ///      (even revealed-juror count) can still tie.
     function _juryOutcome() internal view returns (Outcome out, uint32 winningJuryCount) {
         if (juryYesCount > juryNoCount) {
@@ -1011,6 +1137,10 @@ contract TruthMarket is ReentrancyGuard {
 
     function _commitHash(uint8 vote, bytes32 nonce, address voter) internal view returns (bytes32) {
         return keccak256(abi.encode(vote, nonce, voter, block.chainid, address(this)));
+    }
+
+    function _hashRandomness(uint256 seed) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(seed));
     }
 
     function _riskedStake(uint96 stake) internal pure returns (uint96) {

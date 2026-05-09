@@ -6,9 +6,11 @@ import { makeContentAddressedChunk } from "@truth-market/swarm-verified-fetch";
 
 import {
   DEFAULT_GATEWAY_URL,
+  SwarmKvConfigError,
   SwarmKvConflictError,
   SwarmKvCryptoError,
   SwarmKvGatewayError,
+  SwarmKvPayloadError,
   createSwarmKvStore,
   type FetchLike,
   type GetResult,
@@ -91,6 +93,34 @@ describe("createSwarmKvStore", () => {
       compact: true
     });
     await expect(store.getBytes("avatar")).resolves.toEqual(new Uint8Array([1, 2, 3, 4]));
+  });
+
+  it("rejects typed getter calls when the stored kind differs", async () => {
+    const bee = createFakeBee();
+    const store = createSwarmKvStore({
+      gatewayUrl: "https://gateway.test",
+      beeApiUrl: "https://bee.test",
+      postageBatchId: "b".repeat(64),
+      privateByDefault: false,
+      fetch: bee.fetch,
+      now: fixedNow
+    });
+
+    await store.put("title", "Ada");
+    await store.put("settings", { theme: "dark" });
+    await store.put("avatar", new Uint8Array([1, 2, 3, 4]));
+
+    await expect(store.getJson("title")).rejects.toBeInstanceOf(SwarmKvPayloadError);
+    await expect(store.getBytes("settings")).rejects.toBeInstanceOf(SwarmKvPayloadError);
+    await expect(store.getString("avatar")).rejects.toBeInstanceOf(SwarmKvPayloadError);
+  });
+
+  it("rejects 64-byte reference strings before verified fetch sees them", () => {
+    expect(() =>
+      createSwarmKvStore({
+        rootReference: "a".repeat(128)
+      })
+    ).toThrow(SwarmKvConfigError);
   });
 
   it("returns a metadata-discriminated union from the general get method", async () => {

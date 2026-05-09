@@ -5,7 +5,7 @@
 The Solidity core matches the current random-jury belief-resolution model:
 
 - product language no longer frames the contract as a fact-checker or truth oracle;
-- claim metadata (`name`, `description`, up to `MAX_TAGS = 5` tags) is stored on-chain at deployment alongside the Swarm/IPFS rules pointer;
+- claim metadata (`name`, `description`, up to `MAX_TAGS = 5` tags) is stored on-chain at deployment alongside the claim/rules content reference and exact-byte `claimRulesHash`;
 - commitments bind vote, nonce, voter address, chain id, and contract address inside the hash; stake is stored in contract state at commit time and is not part of the hash;
 - voting-phase `revokeStake(voter, vote, nonce)` lets a third party claim a voter's full stake when their nonce leaks (see [ADR 0007](./adr/0007-nonce-leak-revocation.md)); self-revocation is blocked, and revocation is gated to the voting phase only;
 - normal risked stake is fixed at 20% of stake and determines the normal slash plus reward weight;
@@ -22,7 +22,7 @@ Market parameters are locked at deployment (no separate setup tx); admin and jur
 Two audit-noted behaviors are intentional for the hackathon scope:
 
 - The current jury draw is address-based and therefore not Sybil-resistant. Future production markets must add identity-backed or eligibility-backed jury entry before one-juror-one-vote resolution is treated as robust; see [ADR 0008](./adr/0008-identity-required-for-sybil-resistance.md).
-- `juryCommitter` is trusted to post the SpaceComputer cTRNG value and an audit hash. The jury draw is on-chain and replayable, but the posted randomness is not yet verified on-chain; see [ADR 0005](./adr/0005-spacecomputer-first-sponsor-strategy.md).
+- `juryCommitter` is trusted to post the SpaceComputer cTRNG value, beacon metadata, and an audit hash. The jury draw is on-chain and replayable, and the contract exposes `randomnessHash` plus `getRandomnessEvidence`, but the posted randomness is not yet verified on-chain; see [ADR 0005](./adr/0005-spacecomputer-first-sponsor-strategy.md).
 - `minRevealedJurors` is configurable and may be below strict majority. This is a liveness/market-quality parameter disclosed in the claim rules, not a hardcoded security invariant; see [ADR 0006](./adr/0006-count-based-jury-voting.md).
 
 The code intentionally remains one contract for hackathon speed, but the internals are separated around commitment, reveal accounting, jury outcome, settlement, and payout.
@@ -52,7 +52,7 @@ The code intentionally remains one contract for hackathon speed, but the interna
 
 **Dependency category:** true external for SpaceComputer; mock at boundary.
 
-**Recommended interface:** one service operation should close voting if needed, fetch randomness, persist a replayable audit artifact, and submit `commitJury`. For hackathon scope this service is trusted not to grind seeds. Production hardening should bind `commitJury` to a verifiable SpaceComputer proof or attestation.
+**Recommended interface:** one service operation should close voting if needed, fetch randomness from the SpaceComputer IPFS/IPNS beacon, persist a replayable audit artifact, and submit `commitJury(randomness, metadata, auditHash)`, where `metadata` contains the beacon IPFS address, `data.sequence`, `data.timestamp`, and the selected `data.ctrng` index. For hackathon scope this service is trusted not to grind seeds. Production hardening should bind `commitJury` to a verifiable SpaceComputer proof or attestation.
 
 ### 3. Swarm Claim Rules Boundary
 
@@ -72,7 +72,7 @@ The code intentionally remains one contract for hackathon speed, but the interna
 
 ### 5. Frontend Read Model
 
-**Cluster:** public state getters (`phase`, `outcome`, `juryYesCount`, `juryNoCount`, `distributablePool`, `treasuryAccrued`, `randomness`, `juryAuditHash`, `commits`, `getJury`, `getCommitters`, `commitHashOf`).
+**Cluster:** public state getters (`phase`, `outcome`, `juryYesCount`, `juryNoCount`, `distributablePool`, `treasuryAccrued`, `claimRulesHash`, `randomness`, `randomnessHash`, `randomnessIpfsAddress`, `randomnessSequence`, `randomnessTimestamp`, `randomnessIndex`, `juryAuditHash`, `getRandomnessEvidence`, `commits`, `previewPayout`, `getJury`, `getCommitters`, `commitHashOf`).
 
 **Recommended direction:** build the UI directly against the auto-generated getters; storage layout is stable and `commits[address]` exposes per-voter state. Add a small typed client wrapper once frontend work starts. Note the constructor takes a single `InitParams` struct — the bindings library should mirror that shape.
 

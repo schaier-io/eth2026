@@ -37,6 +37,10 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+body.demo-terms-locked {
+  overflow: hidden;
+}
+
 button,
 input,
 select,
@@ -845,6 +849,79 @@ code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.legal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(23, 32, 51, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.legal-modal {
+  width: min(600px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 24px;
+  border: 2px solid var(--text);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 6px 6px 0 var(--text);
+}
+
+.legal-modal h2 {
+  margin: 8px 0 12px;
+  font-size: 32px;
+}
+
+.legal-modal p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.legal-list {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.legal-list li {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  line-height: 1.45;
+}
+
+.legal-check {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 14px;
+  border: 2px solid var(--text);
+  border-radius: var(--radius);
+  background: #fff7c7;
+  font-weight: 850;
+  line-height: 1.4;
+}
+
+.legal-check input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--pop);
+}
+
+.legal-accept {
+  width: 100%;
+  margin-top: 14px;
 }
 
 @media (min-width: 900px) {

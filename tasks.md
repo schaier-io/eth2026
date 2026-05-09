@@ -56,7 +56,7 @@ Core principle: there is no oracle and no external source of truth. The protocol
 - created timestamp
 - voting deadline
 - reveal deadline
-- jury size
+- target jury size
 - fixed normal risk percentage
 - stake token
 - creator address or identity
@@ -128,10 +128,10 @@ Selected jurors who fail to reveal still lose their full stake.
 **Flow:**
 
 1. Voting closes.
-2. Off-chain service fetches SpaceComputer cTRNG output.
-3. The cTRNG response is preserved for audit.
-4. The service deterministically selects `jurySize` voters from the committer set.
-5. The selected jury is committed on-chain.
+2. Off-chain service fetches SpaceComputer cTRNG output from the public IPFS/IPNS beacon.
+3. The cTRNG response, beacon IPFS address, sequence, timestamp, cTRNG index, and randomness hash are preserved for audit.
+4. The service deterministically selects `targetJurySize` voters from the committer set.
+5. The posted randomness, beacon metadata, and audit hash are committed on-chain.
 
 **Trust boundary:**
 
@@ -141,7 +141,7 @@ Selected jurors who fail to reveal still lose their full stake.
 
 **Acceptance:**
 
-- A reviewer can see the randomness value, selected jurors, and replay script/process.
+- A reviewer can see the randomness value, randomness hash, SpaceComputer IPFS address, beacon sequence/timestamp/index, selected jurors, and replay script/process.
 - The contract records the selected jurors.
 - The frontend shows the jury selection as the SpaceComputer-powered core moment.
 
@@ -165,7 +165,7 @@ Jury outcome is count-based ([ADR 0006](./docs/adr/0006-count-based-jury-voting.
 
 - each selected juror contributes exactly 1 vote;
 - stake does not influence the YES/NO decision;
-- jury size is constrained to be odd (≤ 100); on full reveal, ties are impossible;
+- target jury size is constrained to be odd (≤ 100); on full reveal, ties are impossible;
 - on partial reveal with an even count of revealing jurors, ties resolve to Invalid.
 
 **Reward weighting:**

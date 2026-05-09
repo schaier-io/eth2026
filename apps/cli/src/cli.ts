@@ -133,6 +133,7 @@ shared(vote.command("commit").description("commit a hidden vote with stake"))
   .requiredOption("--vote <yes|no>", "vote (1=yes, 2=no)")
   .requiredOption("--stake <amount>", "stake in token base units")
   .option("--document <path>", "local copy of the swarm rules document for verification (required when policy.requireSwarmVerification)")
+  .option("--swarm-gateway <url>", "Swarm gateway for claim/rules verification (else TM_SWARM_GATEWAY_URL or package default)")
   .option("--ignore-policy", "skip local policy gates (maxStake, requireSwarmVerification)", false)
   .action(async (opts) => run(() => cmdVoteCommit(ctx(opts), opts), ctx(opts)));
 
@@ -181,19 +182,18 @@ const jury = program.command("jury").description("jury operations");
 shared(jury.command("status").description("am I a juror? have I revealed?"))
   .action(async (opts) => run(() => cmdJuryStatus(ctx(opts), opts), ctx(opts)));
 
-shared(jury.command("commit").description("commit jury (juryCommitter only)"))
-  .requiredOption("--randomness <uint256>", "cTRNG randomness")
-  .requiredOption("--audit-hash <hex>", "audit hash (32-byte hex)")
+shared(jury.command("commit").description("fetch latest SpaceComputer beacon and commit jury (juryCommitter only)"))
   .option("--ignore-policy", "skip the policy.allowJuryCommit gate", false)
   .action(async (opts) => run(() => cmdJuryCommit(ctx(opts), opts), ctx(opts)));
 
 // -------- swarm --------
 const swarm = program.command("swarm").description("swarm document verification");
-shared(swarm.command("show-hash").description("print on-chain ipfsHash bytes"))
+shared(swarm.command("show-hash").description("print on-chain claim/rules reference fields"))
   .action(async (opts) => run(() => cmdSwarmShowHash(ctx(opts), opts), ctx(opts)));
 
-shared(swarm.command("verify").description("verify a local document against on-chain ipfsHash"))
+shared(swarm.command("verify").description("verify a local document against the on-chain Swarm reference and claimRulesHash"))
   .requiredOption("--document <path>", "path to local document")
+  .option("--gateway <url>", "Swarm gateway for verification (else TM_SWARM_GATEWAY_URL or package default)")
   .action(async (opts) => run(() => cmdSwarmVerify(ctx(opts), opts), ctx(opts)));
 
 // -------- policy --------
@@ -237,4 +237,3 @@ program.parseAsync(process.argv).catch((e) => {
   const err = asCliError(e);
   emitError({ json: false, yes: false }, err);
 });
-

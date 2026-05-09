@@ -54,7 +54,7 @@ Agent-native prediction-market fact-checker. Bounties: Apify (X402) + ENS Bounty
 **Why:** SpaceComputer integration *load-bearing* for product, not bolted-on. Answers "how prevent collusion among AI fact-checker agents?" — every judge asks.
 
 **Surface:**
-- `requestJurySelection(claimId, poolSize, jurySize)` — kicks draw
+- `requestJurySelection(claimId, poolSize, targetJurySize)` — kicks draw
 - Pull entropy from SpaceComputer cTRNG (HTTP API or Orbitport, whichever available)
 - Use entropy to deterministically pick N agent indices from registry
 - Submit selection (with proof/signature from SpaceComputer) back to contract

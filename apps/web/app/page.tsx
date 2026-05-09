@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
-import { formatUnits, parseUnits, type Address, type Hex } from "viem";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { formatUnits, hexToString, parseUnits, type Address, type Hex } from "viem";
 import { useAccount, useConnect, useDisconnect, usePublicClient, useReadContract, useReadContracts, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { erc20Abi, truthMarketAbi, truthMarketAddress } from "../lib/truthmarket";
 
@@ -19,7 +19,7 @@ type Market = {
   uiStage: Stage;
   stake: number;
   commits: number;
-  jurySize: number;
+  targetJurySize: number;
   minRevealedJurors: number;
   revealedJurors: number;
   juryUpCount: number;
@@ -32,6 +32,11 @@ type Market = {
   upMeaning: string;
   downMeaning: string;
   randomness: string;
+  randomnessHash: string;
+  randomnessIpfsAddress: string;
+  randomnessSequence: string;
+  randomnessTimestamp: string;
+  randomnessIndex: string;
   auditHash: string;
   jurors: string[];
 };
@@ -49,6 +54,24 @@ type Position = {
 
 const RISK_PERCENT = 20;
 const ZERO_HASH = "0x0000000000000000000000000000000000000000000000000000000000000000" as Hex;
+const DEMO_TERMS_STORAGE_KEY = "truthmarket:demo-risk-accepted";
+const DEMO_TERMS_VERSION = "demo-risk-v1";
+
+function hasStoredDemoTermsAccepted() {
+  try {
+    return localStorage.getItem(DEMO_TERMS_STORAGE_KEY) === DEMO_TERMS_VERSION;
+  } catch {
+    return false;
+  }
+}
+
+function storeDemoTermsAccepted() {
+  try {
+    localStorage.setItem(DEMO_TERMS_STORAGE_KEY, DEMO_TERMS_VERSION);
+  } catch {
+    // Some browsers block storage. The in-memory acceptance still unlocks this session.
+  }
+}
 
 const initialMarkets: Market[] = [
   {
@@ -60,7 +83,7 @@ const initialMarkets: Market[] = [
     uiStage: "Voting",
     stake: 18420,
     commits: 173,
-    jurySize: 9,
+    targetJurySize: 9,
     minRevealedJurors: 6,
     revealedJurors: 0,
     juryUpCount: 0,
@@ -72,6 +95,11 @@ const initialMarkets: Market[] = [
     upMeaning: "Agents close a higher count of qualifying tickets before the cutoff.",
     downMeaning: "Humans close an equal or higher count of qualifying tickets before the cutoff.",
     randomness: "0x4f3a9b682dd4399f0291c8",
+    randomnessHash: "0x7bb1...9b2f",
+    randomnessIpfsAddress: "https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f",
+    randomnessSequence: "87963",
+    randomnessTimestamp: "1769179239",
+    randomnessIndex: "0",
     auditHash: "0xb71ce3d96b100d2a42aa",
     jurors: ["0x3f2a...91E0", "agent.alice.eth", "0x71B4...0D2c", "0xA902...66Fd", "ops-voter.eth"],
   },
@@ -84,7 +112,7 @@ const initialMarkets: Market[] = [
     uiStage: "Reveal",
     stake: 12670,
     commits: 98,
-    jurySize: 7,
+    targetJurySize: 7,
     minRevealedJurors: 5,
     revealedJurors: 3,
     juryUpCount: 2,
@@ -96,6 +124,11 @@ const initialMarkets: Market[] = [
     upMeaning: "The clearing price is below the rule-defined threshold.",
     downMeaning: "The clearing price is at or above the rule-defined threshold.",
     randomness: "0x86dec4b51d910754bb",
+    randomnessHash: "0xc471...701d",
+    randomnessIpfsAddress: "https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f",
+    randomnessSequence: "87962",
+    randomnessTimestamp: "1769179179",
+    randomnessIndex: "0",
     auditHash: "0x2c0184ac7791fe29",
     jurors: ["0x9931...912a", "juror.base.eth", "0x20E0...B81c", "0x8f04...9170", "agent-17.eth"],
   },
@@ -108,7 +141,7 @@ const initialMarkets: Market[] = [
     uiStage: "Jury selection",
     stake: 9310,
     commits: 61,
-    jurySize: 5,
+    targetJurySize: 5,
     minRevealedJurors: 3,
     revealedJurors: 0,
     juryUpCount: 0,
@@ -120,6 +153,11 @@ const initialMarkets: Market[] = [
     upMeaning: "The replay tool is public and reproduces the selected jury.",
     downMeaning: "The replay tool is missing, private, or cannot reproduce the selected jury.",
     randomness: "Pending",
+    randomnessHash: "Pending",
+    randomnessIpfsAddress: "Pending",
+    randomnessSequence: "Pending",
+    randomnessTimestamp: "Pending",
+    randomnessIndex: "Pending",
     auditHash: "Pending",
     jurors: [],
   },
@@ -132,7 +170,7 @@ const initialMarkets: Market[] = [
     uiStage: "Voting",
     stake: 22140,
     commits: 204,
-    jurySize: 11,
+    targetJurySize: 11,
     minRevealedJurors: 7,
     revealedJurors: 0,
     juryUpCount: 0,
@@ -144,6 +182,11 @@ const initialMarkets: Market[] = [
     upMeaning: "An open model takes the top published score under the claim/rules document.",
     downMeaning: "No open model takes the top published score under the claim/rules document.",
     randomness: "Pending",
+    randomnessHash: "Pending",
+    randomnessIpfsAddress: "Pending",
+    randomnessSequence: "Pending",
+    randomnessTimestamp: "Pending",
+    randomnessIndex: "Pending",
     auditHash: "Pending",
     jurors: [],
   },
@@ -212,6 +255,15 @@ function shortAddress(value?: string) {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
+function bytesHexToText(value: Hex) {
+  if (!value || value === "0x") return "Pending";
+  try {
+    return hexToString(value);
+  } catch {
+    return value;
+  }
+}
+
 function phaseFromContract(value: number): Stage {
   if (value === 1) return "Reveal";
   if (value === 2) return "Resolved";
@@ -233,7 +285,7 @@ function processCopy(market: Market, position: Position | null) {
       : "Commit before voting closes to enter the jury pool.";
   }
   if (market.uiStage === "Jury selection") {
-    return "Voting is closed. The jury committer should fetch SpaceComputer randomness and call commitJury.";
+    return "Voting is closed. The jury committer should fetch SpaceComputer randomness and post the beacon evidence.";
   }
   if (market.uiStage === "Reveal") {
     return "Reveal is open. Everyone who committed should reveal; selected jurors are under the strongest penalty.";
@@ -323,6 +375,8 @@ export default function TruthMarketApp() {
   const [isCommitting, setIsCommitting] = useState(false);
   const [latestTxHash, setLatestTxHash] = useState<Hex | undefined>();
   const [walletMenuOpen, setWalletMenuOpen] = useState(false);
+  const [hasAcceptedDemoTerms, setHasAcceptedDemoTerms] = useState(false);
+  const [demoTermsChecked, setDemoTermsChecked] = useState(false);
 
   const wallet = address ?? null;
   const selectedMarketBase = markets.find((market) => market.id === selectedMarketId) || markets[0];
@@ -336,12 +390,17 @@ export default function TruthMarketApp() {
           { address: truthMarketAddress, abi: truthMarketAbi, functionName: "commitCount" },
           { address: truthMarketAddress, abi: truthMarketAbi, functionName: "totalCommittedStake" },
           { address: truthMarketAddress, abi: truthMarketAbi, functionName: "distributablePool" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "jurySize" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "targetJurySize" },
           { address: truthMarketAddress, abi: truthMarketAbi, functionName: "minRevealedJurors" },
           { address: truthMarketAddress, abi: truthMarketAbi, functionName: "revealedJurorCount" },
           { address: truthMarketAddress, abi: truthMarketAbi, functionName: "juryYesCount" },
           { address: truthMarketAddress, abi: truthMarketAbi, functionName: "juryNoCount" },
           { address: truthMarketAddress, abi: truthMarketAbi, functionName: "randomness" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "randomnessHash" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "randomnessIpfsAddress" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "randomnessSequence" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "randomnessTimestamp" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "randomnessIndex" },
           { address: truthMarketAddress, abi: truthMarketAbi, functionName: "juryAuditHash" },
           { address: truthMarketAddress, abi: truthMarketAbi, functionName: "getJury" },
           { address: truthMarketAddress, abi: truthMarketAbi, functionName: "minStake" },
@@ -358,7 +417,7 @@ export default function TruthMarketApp() {
     return value?.status === "success" ? (value.result as T) : fallback;
   }
 
-  const tokenAddress = readContractResult<Address | undefined>(16, undefined);
+  const tokenAddress = readContractResult<Address | undefined>(21, undefined);
   const { data: tokenDecimalsData } = useReadContract({
     address: tokenAddress,
     abi: erc20Abi,
@@ -384,14 +443,19 @@ export default function TruthMarketApp() {
   });
   const tokenDecimals = typeof tokenDecimalsData === "number" ? tokenDecimalsData : 18;
   const tokenSymbol = typeof tokenSymbolData === "string" ? tokenSymbolData : "TMT";
-  const contractRiskPercent = Number(readContractResult(15, RISK_PERCENT));
+  const contractRiskPercent = Number(readContractResult(20, RISK_PERCENT));
   const selectedMarket = useMemo(() => {
     if (!truthMarketAddress || !contractReads.data) return selectedMarketBase;
     const phase = phaseFromContract(Number(readContractResult(2, 0)));
     const totalCommittedStake = readContractResult<bigint>(4, 0n);
     const distributablePool = readContractResult<bigint>(5, 0n);
     const randomness = readContractResult<bigint>(11, 0n);
-    const auditHash = readContractResult<Hex>(12, ZERO_HASH);
+    const randomnessHash = readContractResult<Hex>(12, ZERO_HASH);
+    const randomnessIpfsAddress = readContractResult<Hex>(13, "0x");
+    const randomnessSequence = readContractResult<bigint>(14, 0n);
+    const randomnessTimestamp = readContractResult<bigint>(15, 0n);
+    const randomnessIndex = readContractResult<number>(16, 0);
+    const auditHash = readContractResult<Hex>(17, ZERO_HASH);
     return {
       ...selectedMarketBase,
       id: truthMarketAddress,
@@ -402,14 +466,19 @@ export default function TruthMarketApp() {
       stake: tokenNumber(totalCommittedStake, tokenDecimals),
       commits: Number(readContractResult(3, selectedMarketBase.commits)),
       pool: tokenNumber(distributablePool, tokenDecimals),
-      jurySize: Number(readContractResult(6, selectedMarketBase.jurySize)),
+      targetJurySize: Number(readContractResult(6, selectedMarketBase.targetJurySize)),
       minRevealedJurors: Number(readContractResult(7, selectedMarketBase.minRevealedJurors)),
       revealedJurors: Number(readContractResult(8, selectedMarketBase.revealedJurors)),
       juryUpCount: Number(readContractResult(9, selectedMarketBase.juryUpCount)),
       juryDownCount: Number(readContractResult(10, selectedMarketBase.juryDownCount)),
       randomness: randomness === 0n ? "Pending" : `0x${randomness.toString(16)}`,
+      randomnessHash: randomnessHash === ZERO_HASH ? "Pending" : randomnessHash,
+      randomnessIpfsAddress: bytesHexToText(randomnessIpfsAddress),
+      randomnessSequence: randomnessSequence === 0n ? "Pending" : randomnessSequence.toString(),
+      randomnessTimestamp: randomnessTimestamp === 0n ? "Pending" : randomnessTimestamp.toString(),
+      randomnessIndex: randomness === 0n ? "Pending" : randomnessIndex.toString(),
       auditHash: auditHash === ZERO_HASH ? "Pending" : auditHash,
-      jurors: readContractResult<Address[]>(13, []),
+      jurors: readContractResult<Address[]>(18, []),
       deadlineLabel: contractReads.isLoading ? "Reading contract" : selectedMarketBase.deadlineLabel,
       timeLeft: contractReads.isLoading ? "Syncing" : selectedMarketBase.timeLeft,
     } satisfies Market;
@@ -417,6 +486,15 @@ export default function TruthMarketApp() {
   const positionForSelected = currentPosition?.marketId === selectedMarket.id ? currentPosition : null;
   const risked = Math.max(0, (stake * contractRiskPercent) / 100);
   const refundable = Math.max(0, stake - risked);
+
+  useEffect(() => {
+    setHasAcceptedDemoTerms(hasStoredDemoTermsAccepted());
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.toggle("demo-terms-locked", !hasAcceptedDemoTerms);
+    return () => document.body.classList.remove("demo-terms-locked");
+  }, [hasAcceptedDemoTerms]);
 
   const visibleMarkets = useMemo(() => {
     const source = truthMarketAddress ? [selectedMarket, ...markets.filter((market) => market.id !== selectedMarket.id)] : markets;
@@ -426,6 +504,7 @@ export default function TruthMarketApp() {
   }, [filter, markets, selectedMarket]);
 
   function showScreen(nextScreen: Screen) {
+    if (!hasAcceptedDemoTerms) return;
     setScreen(nextScreen);
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "auto" });
@@ -433,11 +512,18 @@ export default function TruthMarketApp() {
   }
 
   function openMarket(marketId: string) {
+    if (!hasAcceptedDemoTerms) return;
     setSelectedMarketId(marketId);
     setDirection("Up");
     setRevealed(false);
     setCommitStatus({ message: "", kind: "" });
     showScreen("stake");
+  }
+
+  function acceptDemoTerms() {
+    storeDemoTermsAccepted();
+    setHasAcceptedDemoTerms(true);
+    setDemoTermsChecked(false);
   }
 
   function handleCreateImage(event: React.ChangeEvent<HTMLInputElement>) {
@@ -463,13 +549,14 @@ export default function TruthMarketApp() {
 
   function handleCreateMarket(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!hasAcceptedDemoTerms) return;
     const form = event.currentTarget;
     const formData = new FormData(form);
     const title = String(formData.get("question") || "").trim();
     const description = String(formData.get("description") || "").trim();
     const upMeaning = String(formData.get("upMeaning") || "").trim();
     const downMeaning = String(formData.get("downMeaning") || "").trim();
-    const jurySize = Number.parseInt(String(formData.get("jurySize") || ""), 10);
+    const targetJurySize = Number.parseInt(String(formData.get("targetJurySize") || ""), 10);
     const minRevealedJurors = Number.parseInt(String(formData.get("minRevealed") || ""), 10);
     const votingWindow = String(formData.get("votingWindow") || "12h");
     const symbol = (String(formData.get("symbol") || "").trim() || symbolFromQuestion(title)).slice(0, 5).toUpperCase();
@@ -478,12 +565,12 @@ export default function TruthMarketApp() {
       setCreateStatus({ message: "Add the question, description, and both outcome meanings.", kind: "error" });
       return;
     }
-    if (!Number.isFinite(jurySize) || jurySize < 1 || jurySize % 2 === 0) {
-      setCreateStatus({ message: "Jury size must be an odd number.", kind: "error" });
+    if (!Number.isFinite(targetJurySize) || targetJurySize < 1 || targetJurySize % 2 === 0) {
+      setCreateStatus({ message: "Target jury size must be an odd number.", kind: "error" });
       return;
     }
-    if (!Number.isFinite(minRevealedJurors) || minRevealedJurors < 1 || minRevealedJurors > jurySize) {
-      setCreateStatus({ message: "Minimum revealed jurors must be between 1 and jury size.", kind: "error" });
+    if (!Number.isFinite(minRevealedJurors) || minRevealedJurors < 1 || minRevealedJurors > targetJurySize) {
+      setCreateStatus({ message: "Minimum revealed jurors must be between 1 and target jury size.", kind: "error" });
       return;
     }
 
@@ -496,7 +583,7 @@ export default function TruthMarketApp() {
       uiStage: "Voting",
       stake: 0,
       commits: 0,
-      jurySize,
+      targetJurySize,
       minRevealedJurors,
       revealedJurors: 0,
       juryUpCount: 0,
@@ -509,6 +596,11 @@ export default function TruthMarketApp() {
       upMeaning,
       downMeaning,
       randomness: "Pending",
+      randomnessHash: "Pending",
+      randomnessIpfsAddress: "Pending",
+      randomnessSequence: "Pending",
+      randomnessTimestamp: "Pending",
+      randomnessIndex: "Pending",
       auditHash: "Pending",
       jurors: [],
     };
@@ -526,6 +618,7 @@ export default function TruthMarketApp() {
 
   async function handleCommit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!hasAcceptedDemoTerms) return;
     if (!wallet) {
       setCommitStatus({ message: "Connect wallet first.", kind: "error" });
       return;
@@ -619,6 +712,7 @@ export default function TruthMarketApp() {
   }
 
   async function handleReveal() {
+    if (!hasAcceptedDemoTerms) return;
     if (!positionForSelected) {
       setRevealStatus({ message: "No position selected in this session.", kind: "error" });
       return;
@@ -652,6 +746,7 @@ export default function TruthMarketApp() {
   }
 
   async function handleWithdraw() {
+    if (!hasAcceptedDemoTerms) return;
     if (!truthMarketAddress || !publicClient) {
       setRevealStatus({ message: "Connect a deployed TruthMarket contract first.", kind: "error" });
       return;
@@ -857,8 +952,8 @@ export default function TruthMarketApp() {
                       <input name="symbol" type="text" autoComplete="off" maxLength={5} placeholder="AI" />
                     </label>
                     <label className="field">
-                      <span>Jury size</span>
-                      <input name="jurySize" type="number" min={1} step={2} defaultValue={5} inputMode="numeric" />
+                      <span>Target jury size</span>
+                      <input name="targetJurySize" type="number" min={1} step={2} defaultValue={5} inputMode="numeric" />
                     </label>
                     <label className="field">
                       <span>Minimum revealed jurors</span>
@@ -1053,8 +1148,8 @@ export default function TruthMarketApp() {
                       <strong>{selectedMarket.commits} positions</strong>
                     </div>
                     <div>
-                      <span>Jury</span>
-                      <strong>{selectedMarket.jurySize} selected</strong>
+                      <span>Target jury</span>
+                      <strong>{selectedMarket.targetJurySize} jurors</strong>
                     </div>
                     <div>
                       <span>Pool</span>
@@ -1122,6 +1217,26 @@ export default function TruthMarketApp() {
                     <code>{selectedMarket.randomness}</code>
                   </div>
                   <div>
+                    <span>Randomness hash</span>
+                    <code>{selectedMarket.randomnessHash}</code>
+                  </div>
+                  <div>
+                    <span>Randomness IPFS</span>
+                    <code>{selectedMarket.randomnessIpfsAddress}</code>
+                  </div>
+                  <div>
+                    <span>Beacon sequence</span>
+                    <code>{selectedMarket.randomnessSequence}</code>
+                  </div>
+                  <div>
+                    <span>Beacon timestamp</span>
+                    <code>{selectedMarket.randomnessTimestamp}</code>
+                  </div>
+                  <div>
+                    <span>cTRNG index</span>
+                    <code>{selectedMarket.randomnessIndex}</code>
+                  </div>
+                  <div>
                     <span>Audit hash</span>
                     <code>{selectedMarket.auditHash}</code>
                   </div>
@@ -1140,6 +1255,31 @@ export default function TruthMarketApp() {
           </section>
         )}
       </main>
+
+      {!hasAcceptedDemoTerms && (
+        <div className="legal-backdrop">
+          <section className="legal-modal" role="dialog" aria-modal="true" aria-labelledby="legalTitle" aria-describedby="legalDescription">
+            <p className="eyebrow">Demo terms</p>
+            <h2 id="legalTitle">TruthMarket demo risk notice</h2>
+            <p id="legalDescription">
+              This website is for demo purposes only. By entering, you accept and assume the risks of interacting with this demo.
+            </p>
+            <ul className="legal-list">
+              <li>Any stake you commit, gas you pay, transaction you sign, missed reveal, selected-juror penalty, slashing, contract issue, network issue, wallet action, or other participation risk is solely your responsibility.</li>
+              <li>No operator, maintainer, sponsor, teammate, or affiliated project party owes you compensation, reimbursement, make-good payment, indemnity, damages, payout, refund, replacement tokens, or similar remedy.</li>
+              <li>Displayed markets, balances, rewards, and payout mechanics are demo interactions only. No return, reward, liquidity, resolution, continued availability, or value is promised.</li>
+              <li>This is not legal, financial, investment, tax, staking, or wallet-safety advice. Use only funds you can afford to lose.</li>
+            </ul>
+            <label className="legal-check">
+              <input type="checkbox" checked={demoTermsChecked} onChange={(event) => setDemoTermsChecked(event.currentTarget.checked)} />
+              <span>I understand and accept these demo terms.</span>
+            </label>
+            <button className="primary-action legal-accept" type="button" disabled={!demoTermsChecked} onClick={acceptDemoTerms}>
+              Accept and enter demo
+            </button>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

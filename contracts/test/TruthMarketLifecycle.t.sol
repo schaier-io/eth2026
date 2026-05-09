@@ -4,11 +4,13 @@ pragma solidity 0.8.28;
 import { Test } from "forge-std/Test.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { TruthMarket } from "../src/TruthMarket.sol";
+import { TruthMarketRegistry, ITruthMarketRegistry } from "../src/TruthMarketRegistry.sol";
 import { MockERC20 } from "./MockERC20.sol";
 
 contract TruthMarketLifecycleTest is Test {
     TruthMarket internal market;
     MockERC20 internal token;
+    TruthMarketRegistry internal registry;
 
     event Resolved(
         TruthMarket.Outcome outcome,
@@ -25,6 +27,12 @@ contract TruthMarketLifecycleTest is Test {
     address internal creator = makeAddr("creator");
 
     bytes internal constant IPFS_HASH = bytes("ipfs://Qm-claim-doc");
+    bytes32 internal constant CLAIM_RULES_HASH = keccak256("claim-rules-json");
+    bytes internal constant RANDOMNESS_IPFS_ADDRESS =
+        bytes("https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f");
+    uint64 internal constant RANDOMNESS_SEQUENCE = 87_963;
+    uint64 internal constant RANDOMNESS_TIMESTAMP = 1_769_179_239;
+    uint16 internal constant RANDOMNESS_INDEX = 0;
     bytes32 internal constant AUDIT_HASH = keccak256("swarm://ctrng-output");
     string internal constant CLAIM_NAME = "Test Claim";
     string internal constant CLAIM_DESCRIPTION = "Will the test pass by 2030?";
@@ -37,6 +45,9 @@ contract TruthMarketLifecycleTest is Test {
     uint256 internal constant MAX_NAME_BYTES = 120;
     uint256 internal constant MAX_DESCRIPTION_BYTES = 1000;
     uint256 internal constant MAX_TAG_BYTES = 32;
+    uint256 internal constant MAX_IPFS_HASH_BYTES = 96;
+    uint8 internal constant MAX_PROTOCOL_FEE_PERCENT = 10;
+    uint64 internal constant MAX_PERIOD = 365 days;
 
     struct V {
         address addr;
@@ -47,18 +58,19 @@ contract TruthMarketLifecycleTest is Test {
 
     function setUp() public {
         token = new MockERC20("Truth Stake", "TRUTH", 10_000_000 ether, address(this));
+        registry = new TruthMarketRegistry();
     }
 
     // ---------- Deployment helpers ----------
 
-    function _deployMarket(uint32 jurySize, uint32 minCommits, uint32 minRevealedJurors)
+    function _deployMarket(uint32 targetJurySize, uint32 minCommits, uint32 minRevealedJurors)
         internal
         returns (TruthMarket m)
     {
-        m = new TruthMarket(_initParams(jurySize, minCommits, minRevealedJurors));
+        m = new TruthMarket(_initParams(targetJurySize, minCommits, minRevealedJurors));
     }
 
-    function _initParams(uint32 jurySize, uint32 minCommits, uint32 minRevealedJurors)
+    function _initParams(uint32 targetJurySize, uint32 minCommits, uint32 minRevealedJurors)
         internal
         view
         returns (TruthMarket.InitParams memory)
@@ -69,6 +81,7 @@ contract TruthMarketLifecycleTest is Test {
         return TruthMarket.InitParams({
             stakeToken: IERC20(address(token)),
             treasury: treasury,
+            registry: ITruthMarketRegistry(address(registry)),
             admin: admin,
             juryCommitter: juryCommitter,
             creator: creator,
@@ -76,14 +89,25 @@ contract TruthMarketLifecycleTest is Test {
             description: CLAIM_DESCRIPTION,
             tags: tags,
             ipfsHash: IPFS_HASH,
+            claimRulesHash: CLAIM_RULES_HASH,
             votingPeriod: VOTING_PERIOD,
             adminTimeout: ADMIN_TIMEOUT,
             revealPeriod: REVEAL_PERIOD,
             protocolFeePercent: FEE_PERCENT,
             minStake: MIN_STAKE,
-            jurySize: jurySize,
+            targetJurySize: targetJurySize,
             minCommits: minCommits,
+            maxCommits: 0,
             minRevealedJurors: minRevealedJurors
+        });
+    }
+
+    function _randomnessMetadata() internal pure returns (TruthMarket.RandomnessMetadata memory) {
+        return TruthMarket.RandomnessMetadata({
+            ipfsAddress: RANDOMNESS_IPFS_ADDRESS,
+            sequence: RANDOMNESS_SEQUENCE,
+            timestamp: RANDOMNESS_TIMESTAMP,
+            valueIndex: RANDOMNESS_INDEX
         });
     }
 
@@ -157,15 +181,16 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function test_FullLifecycleSingleJurorYesOutcome() public {
-        // jurySize=1 with the 15% rule needs minCommits >= 7. All commit + reveal yes.
+        // targetJurySize=1 with MAX_TARGET_JURY_SIZE_PERCENT needs minCommits >= 7. All commit + reveal yes.
         market = _deployMarket(1, 7, 1);
 
         V[] memory vs = _makeVoters(7, 50 ether, 1); // all YES, 40% conv → risked 20
         _commitAll(vs);
+        assertEq(market.previewPayout(vs[0].addr), 0);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(0xC0FFEE, AUDIT_HASH);
+        market.commitJury(0xC0FFEE, _randomnessMetadata(), AUDIT_HASH);
         assertEq(market.getJury().length, 1);
 
         _revealAll(vs);
@@ -180,16 +205,50 @@ contract TruthMarketLifecycleTest is Test {
         assertEq(market.distributablePool(), 0);
         assertEq(market.treasuryAccrued(), 0);
         assertEq(market.creatorAccrued(), 0);
+        assertEq(market.previewPayout(vs[0].addr), 50 ether);
 
         _withdrawAll(vs);
         for (uint256 i = 0; i < vs.length; i++) {
             assertEq(token.balanceOf(vs[i].addr), DEFAULT_BALANCE);
         }
+        assertEq(market.previewPayout(vs[0].addr), 0);
         assertEq(token.balanceOf(address(market)), 0);
     }
 
+    function test_CommitJuryStoresSpaceComputerRandomnessEvidence() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 50 ether, 1);
+        _commitAll(vs);
+
+        uint256 seed = 0xC0FFEE;
+        bytes32 expectedRandomnessHash = keccak256(abi.encodePacked(seed));
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(seed, _randomnessMetadata(), AUDIT_HASH);
+
+        assertEq(market.SPACE_COMPUTER_IPNS_BEACON(), "/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f");
+        assertEq(market.MAX_RANDOMNESS_IPFS_ADDRESS_BYTES(), 160);
+        assertEq(market.randomness(), seed);
+        assertEq(market.randomnessHash(), expectedRandomnessHash);
+        assertEq(market.randomnessIpfsAddress(), RANDOMNESS_IPFS_ADDRESS);
+        assertEq(market.randomnessSequence(), RANDOMNESS_SEQUENCE);
+        assertEq(market.randomnessTimestamp(), RANDOMNESS_TIMESTAMP);
+        assertEq(market.randomnessIndex(), RANDOMNESS_INDEX);
+        assertEq(market.juryAuditHash(), AUDIT_HASH);
+
+        TruthMarket.RandomnessEvidence memory evidence = market.getRandomnessEvidence();
+        assertEq(evidence.randomness, seed);
+        assertEq(evidence.randomnessHash, expectedRandomnessHash);
+        assertEq(evidence.randomnessIpfsAddress, RANDOMNESS_IPFS_ADDRESS);
+        assertEq(evidence.randomnessSequence, RANDOMNESS_SEQUENCE);
+        assertEq(evidence.randomnessTimestamp, RANDOMNESS_TIMESTAMP);
+        assertEq(evidence.randomnessIndex, RANDOMNESS_INDEX);
+        assertEq(evidence.juryAuditHash, AUDIT_HASH);
+    }
+
     function test_LifecycleSlashesLosersAndPaysWinners() public {
-        // jurySize=3 needs minCommits >= 20. Mix yes/no voters with different stakes.
+        // targetJurySize=3 needs minCommits >= 20. Mix yes/no voters with different stakes.
         // Risked stake is fixed at 20% per voter.
         market = _deployMarket(3, 20, 2);
 
@@ -207,7 +266,7 @@ contract TruthMarketLifecycleTest is Test {
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(0xC0FFEE, AUDIT_HASH);
+        market.commitJury(0xC0FFEE, _randomnessMetadata(), AUDIT_HASH);
 
         _revealAll(yes);
         _revealAll(no);
@@ -265,7 +324,7 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function test_NonRevealingJurorAtValidOutcomeForfeitsFullStake() public {
-        // jurySize=3, minCommits=20. Find which addresses get drawn as jurors and pick
+        // targetJurySize=3, minCommits=20. Find which addresses get drawn as jurors and pick
         // one of them to skip reveal — should forfeit full stake; rest of payouts work.
         market = _deployMarket(3, 20, 2);
         V[] memory vs = _makeVoters(20, 50 ether, 1); // all YES, risked 20
@@ -273,7 +332,7 @@ contract TruthMarketLifecycleTest is Test {
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(0xBEEF, AUDIT_HASH);
+        market.commitJury(0xBEEF, _randomnessMetadata(), AUDIT_HASH);
 
         address[] memory jury = market.getJury();
         address skipper = jury[0];
@@ -317,7 +376,7 @@ contract TruthMarketLifecycleTest is Test {
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(0xBEEF, AUDIT_HASH);
+        market.commitJury(0xBEEF, _randomnessMetadata(), AUDIT_HASH);
 
         address skipper = market.getJury()[0];
         for (uint256 i = 0; i < vs.length; i++) {
@@ -339,7 +398,7 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function test_InvalidWhenTooFewJurorsRevealRoutesPenaltyToCreator() public {
-        // jurySize=3, minRevealedJurors=2. Only one juror reveals → Invalid; the other
+        // targetJurySize=3, minRevealedJurors=2. Only one juror reveals → Invalid; the other
         // two jurors lose full stakes, accruing to the CREATOR (not treasury).
         market = _deployMarket(3, 20, 2);
         V[] memory vs = _makeVoters(20, 80 ether, 1); // 100% conv → risked 80
@@ -347,7 +406,7 @@ contract TruthMarketLifecycleTest is Test {
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(0xBEEF, AUDIT_HASH);
+        market.commitJury(0xBEEF, _randomnessMetadata(), AUDIT_HASH);
 
         address[] memory jury = market.getJury();
         // Reveal only jury[0] among jurors. Reveal all non-jurors normally.
@@ -394,7 +453,7 @@ contract TruthMarketLifecycleTest is Test {
 
     // ---------- Constructor guard tests ----------
 
-    function test_RevertsConstructorOnEvenJurySize() public {
+    function test_RevertsConstructorOnEvenTargetJurySize() public {
         vm.expectRevert(TruthMarket.BadParams.selector);
         new TruthMarket(_initParams(2, 14, 1));
     }
@@ -404,8 +463,8 @@ contract TruthMarketLifecycleTest is Test {
         new TruthMarket(_initParams(101, 700, 50));
     }
 
-    function test_RevertsConstructorWhenJuryExceeds15PercentOfMinCommits() public {
-        // jurySize=3 needs minCommits >= 20. Below that should revert.
+    function test_RevertsConstructorWhenJuryExceedsMaxTargetJurySizePercentOfMinCommits() public {
+        // targetJurySize=3 needs minCommits >= 20. Below that should revert.
         vm.expectRevert(TruthMarket.BadParams.selector);
         new TruthMarket(_initParams(3, 19, 2));
     }
@@ -415,7 +474,7 @@ contract TruthMarketLifecycleTest is Test {
         new TruthMarket(_initParams(1, 7, 0));
     }
 
-    function test_RevertsConstructorWhenMinRevealedJurorsExceedsJurySize() public {
+    function test_RevertsConstructorWhenMinRevealedJurorsExceedsTargetJurySize() public {
         vm.expectRevert(TruthMarket.BadParams.selector);
         new TruthMarket(_initParams(3, 20, 4));
     }
@@ -434,7 +493,104 @@ contract TruthMarketLifecycleTest is Test {
         new TruthMarket(p);
     }
 
+    function test_RevertsConstructorOnZeroStakeToken() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.stakeToken = IERC20(address(0));
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_RevertsConstructorOnZeroTreasury() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.treasury = address(0);
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_RevertsConstructorOnEmptyRulesReference() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.ipfsHash = bytes("");
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_RevertsConstructorWhenRulesReferenceTooLong() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.ipfsHash = bytes(_stringOfLength(MAX_IPFS_HASH_BYTES + 1));
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_RevertsConstructorWhenProtocolFeeTooHigh() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.protocolFeePercent = MAX_PROTOCOL_FEE_PERCENT + 1;
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_RevertsConstructorWhenMinStakeZero() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.minStake = 0;
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_RevertsConstructorOnTooLongPeriod() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.votingPeriod = MAX_PERIOD + 1;
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
     // ---------- Behavior guard tests ----------
+
+    function test_RevertsCommitWithZeroCommitHash() public {
+        market = _deployMarket(1, 7, 1);
+        address voter = makeAddr("zeroHashVoter");
+        token.transfer(voter, 10 ether);
+
+        vm.startPrank(voter);
+        token.approve(address(market), 10 ether);
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        market.commitVote(bytes32(0), 10 ether);
+        vm.stopPrank();
+    }
+
+    function test_RevertsCommitWhenRiskedStakeRoundsToZero() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.minStake = 1;
+        market = new TruthMarket(p);
+
+        address voter = makeAddr("roundsToZeroVoter");
+        token.transfer(voter, 1);
+        bytes32 hash = market.commitHashOf(1, "tiny", voter);
+
+        vm.startPrank(voter);
+        token.approve(address(market), 1);
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        market.commitVote(hash, 1);
+        vm.stopPrank();
+    }
+
+    function test_RevertsCommitAfterVotingDeadline() public {
+        market = _deployMarket(1, 7, 1);
+        address voter = makeAddr("lateVoter");
+        token.transfer(voter, 10 ether);
+        bytes32 hash = market.commitHashOf(1, "late", voter);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.startPrank(voter);
+        token.approve(address(market), 10 ether);
+        vm.expectRevert(TruthMarket.DeadlinePassed.selector);
+        market.commitVote(hash, 10 ether);
+        vm.stopPrank();
+    }
+
+    function test_RevertsCommitHashOfInvalidVote() public {
+        market = _deployMarket(1, 7, 1);
+        vm.expectRevert(TruthMarket.InvalidReveal.selector);
+        market.commitHashOf(3, "nonce", makeAddr("badVote"));
+    }
 
     function test_RevertsCommitJuryWhenBelowMinCommits() public {
         market = _deployMarket(1, 7, 1);
@@ -444,7 +600,103 @@ contract TruthMarketLifecycleTest is Test {
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
         vm.expectRevert(TruthMarket.InsufficientCommits.selector);
-        market.commitJury(123, AUDIT_HASH);
+        market.commitJury(123, _randomnessMetadata(), AUDIT_HASH);
+    }
+
+    function test_RevertsCommitJuryWithoutRandomnessIpfsAddress() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        TruthMarket.RandomnessMetadata memory metadata = _randomnessMetadata();
+        metadata.ipfsAddress = bytes("");
+        market.commitJury(123, metadata, AUDIT_HASH);
+    }
+
+    function test_RevertsCommitJuryWhenRandomnessIpfsAddressTooLong() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        bytes memory tooLong = bytes(_stringOfLength(market.MAX_RANDOMNESS_IPFS_ADDRESS_BYTES() + 1));
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        TruthMarket.RandomnessMetadata memory metadata = _randomnessMetadata();
+        metadata.ipfsAddress = tooLong;
+        market.commitJury(123, metadata, AUDIT_HASH);
+    }
+
+    function test_RevertsCommitJuryBeforeVotingDeadline() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.prank(juryCommitter);
+        vm.expectRevert(TruthMarket.DeadlineNotPassed.selector);
+        market.commitJury(123, _randomnessMetadata(), AUDIT_HASH);
+    }
+
+    function test_RevertsCommitJuryAtCommitDeadline() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD + ADMIN_TIMEOUT);
+        vm.prank(juryCommitter);
+        vm.expectRevert(TruthMarket.DeadlinePassed.selector);
+        market.commitJury(123, _randomnessMetadata(), AUDIT_HASH);
+    }
+
+    function test_RevertsCommitJuryFromUnauthorizedCaller() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(makeAddr("notJuryCommitter"));
+        vm.expectRevert(TruthMarket.NotAuthorized.selector);
+        market.commitJury(123, _randomnessMetadata(), AUDIT_HASH);
+    }
+
+    function test_RevertsCommitJuryWithZeroRandomness() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        market.commitJury(0, _randomnessMetadata(), AUDIT_HASH);
+    }
+
+    function test_RevertsCommitJuryWithoutRandomnessTimestamp() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        TruthMarket.RandomnessMetadata memory metadata = _randomnessMetadata();
+        metadata.timestamp = 0;
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        market.commitJury(123, metadata, AUDIT_HASH);
+    }
+
+    function test_RevertsCommitJuryWithoutAuditHash() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        market.commitJury(123, _randomnessMetadata(), bytes32(0));
     }
 
     function test_RevertsCommitBelowMinStake() public {
@@ -480,13 +732,164 @@ contract TruthMarketLifecycleTest is Test {
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(123, AUDIT_HASH);
+        market.commitJury(123, _randomnessMetadata(), AUDIT_HASH);
 
         // Voter[1] tries to reveal with voter[0]'s nonce/vote — fails because the hash
         // is bound to msg.sender.
         vm.prank(vs[1].addr);
         vm.expectRevert(TruthMarket.InvalidReveal.selector);
         market.revealVote(vs[0].vote, vs[0].nonce);
+    }
+
+    function test_RevealRejectsInvalidVoteValue() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(123, _randomnessMetadata(), AUDIT_HASH);
+
+        vm.prank(vs[0].addr);
+        vm.expectRevert(TruthMarket.InvalidReveal.selector);
+        market.revealVote(3, vs[0].nonce);
+    }
+
+    function test_RevealRejectsUnknownCommitter() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(123, _randomnessMetadata(), AUDIT_HASH);
+
+        vm.prank(makeAddr("unknownReveal"));
+        vm.expectRevert(TruthMarket.CommitNotFound.selector);
+        market.revealVote(1, "unknown");
+    }
+
+    function test_RevealRejectsSecondReveal() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(123, _randomnessMetadata(), AUDIT_HASH);
+
+        _reveal(vs[0]);
+        vm.prank(vs[0].addr);
+        vm.expectRevert(TruthMarket.AlreadyRevealed.selector);
+        market.revealVote(vs[0].vote, vs[0].nonce);
+    }
+
+    function test_RevealRejectsAfterRevealDeadline() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(123, _randomnessMetadata(), AUDIT_HASH);
+
+        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        vm.prank(vs[0].addr);
+        vm.expectRevert(TruthMarket.DeadlinePassed.selector);
+        market.revealVote(vs[0].vote, vs[0].nonce);
+    }
+
+    function test_ResolveRejectsBeforeJuryCommitDeadline() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.expectRevert(TruthMarket.DeadlineNotPassed.selector);
+        market.resolve();
+    }
+
+    function test_ResolveRejectsBeforeRevealDeadline() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(123, _randomnessMetadata(), AUDIT_HASH);
+        _revealAll(vs);
+
+        vm.expectRevert(TruthMarket.DeadlineNotPassed.selector);
+        market.resolve();
+    }
+
+    function test_ResolveRejectsAfterAlreadyResolved() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD + ADMIN_TIMEOUT);
+        market.resolve();
+
+        vm.expectRevert(TruthMarket.WrongPhase.selector);
+        market.resolve();
+    }
+
+    function test_WithdrawRejectsBeforeResolved() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.prank(vs[0].addr);
+        vm.expectRevert(TruthMarket.WrongPhase.selector);
+        market.withdraw();
+    }
+
+    function test_WithdrawRejectsUnknownCommitter() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD + ADMIN_TIMEOUT);
+        market.resolve();
+
+        vm.prank(makeAddr("unknownWithdraw"));
+        vm.expectRevert(TruthMarket.CommitNotFound.selector);
+        market.withdraw();
+    }
+
+    function test_WithdrawRejectsSecondWithdrawal() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD + ADMIN_TIMEOUT);
+        market.resolve();
+
+        vm.startPrank(vs[0].addr);
+        market.withdraw();
+        vm.expectRevert(TruthMarket.NothingToWithdraw.selector);
+        market.withdraw();
+        vm.stopPrank();
+    }
+
+    function test_ForceSweepDustRejectsBeforeResolved() public {
+        market = _deployMarket(1, 7, 1);
+        vm.expectRevert(TruthMarket.WrongPhase.selector);
+        market.forceSweepDust(1);
+    }
+
+    function test_ForceSweepDustRejectsZeroIterations() public {
+        market = _deployMarket(1, 7, 1);
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+
+        vm.warp(block.timestamp + VOTING_PERIOD + ADMIN_TIMEOUT);
+        market.resolve();
+        vm.warp(block.timestamp + REVEAL_PERIOD + market.DUST_SWEEP_GRACE() + 1);
+
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        market.forceSweepDust(0);
     }
 
     // ---------- Claim metadata tests ----------
@@ -499,9 +902,23 @@ contract TruthMarketLifecycleTest is Test {
         assertEq(tags.length, 2);
         assertEq(tags[0], "demo");
         assertEq(tags[1], "test");
+        assertEq(market.ipfsHash(), IPFS_HASH);
+        assertEq(market.swarmReference(), IPFS_HASH);
+        assertEq(market.claimRulesHash(), CLAIM_RULES_HASH);
+        TruthMarket.Config memory cfg = market.getConfig();
+        assertEq(cfg.ipfsHash, IPFS_HASH);
+        assertEq(cfg.claimRulesHash, CLAIM_RULES_HASH);
+        assertEq(cfg.maxCommits, 0);
         assertEq(market.MAX_NAME_BYTES(), MAX_NAME_BYTES);
         assertEq(market.MAX_DESCRIPTION_BYTES(), MAX_DESCRIPTION_BYTES);
         assertEq(market.MAX_TAG_BYTES(), MAX_TAG_BYTES);
+    }
+
+    function test_RevertsConstructorOnZeroClaimRulesHash() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.claimRulesHash = bytes32(0);
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
     }
 
     function test_RevertsConstructorOnEmptyName() public {
@@ -599,7 +1016,7 @@ contract TruthMarketLifecycleTest is Test {
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(0xC0FFEE, AUDIT_HASH);
+        market.commitJury(0xC0FFEE, _randomnessMetadata(), AUDIT_HASH);
 
         // Reveal everyone except the revoked voter (they cannot reveal).
         for (uint256 i = 1; i < vs.length; i++) {
@@ -672,7 +1089,7 @@ contract TruthMarketLifecycleTest is Test {
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(123, AUDIT_HASH);
+        market.commitJury(123, _randomnessMetadata(), AUDIT_HASH);
 
         address attacker = makeAddr("attacker");
         vm.prank(attacker);
@@ -703,7 +1120,7 @@ contract TruthMarketLifecycleTest is Test {
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(123, AUDIT_HASH);
+        market.commitJury(123, _randomnessMetadata(), AUDIT_HASH);
 
         // Revoked voter tries to reveal — fails.
         vm.prank(vs[0].addr);
@@ -723,7 +1140,7 @@ contract TruthMarketLifecycleTest is Test {
         // Run the rest of the lifecycle.
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(123, AUDIT_HASH);
+        market.commitJury(123, _randomnessMetadata(), AUDIT_HASH);
         // Reveal everyone except the revoked voter.
         for (uint256 i = 1; i < vs.length; i++) {
             _reveal(vs[i]);
@@ -748,7 +1165,7 @@ contract TruthMarketLifecycleTest is Test {
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(0xC0FFEE, AUDIT_HASH);
+        market.commitJury(0xC0FFEE, _randomnessMetadata(), AUDIT_HASH);
 
         address[] memory jury = market.getJury();
         // Drawn jurors must come from the active (non-revoked) pool.
@@ -758,16 +1175,16 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function test_JuryDrawHandlesLargeCommitterPool() public {
-        // Stress the virtual sampler with a wide pool. Memory is O(jurySize) so this
+        // Stress the virtual sampler with a wide pool. Memory is O(targetJurySize) so this
         // shouldn't OOG even though `n` is large.
-        market = _deployMarket(7, 47, 4); // jurySize=7 -> minCommits>=47 (15% rule)
+        market = _deployMarket(7, 47, 4); // targetJurySize=7 -> minCommits>=47 (MAX_TARGET_JURY_SIZE_PERCENT)
         uint256 n = 200;
         V[] memory vs = _makeVoters(n, 5 ether, 1);
         _commitAll(vs);
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(0xCAFE, AUDIT_HASH);
+        market.commitJury(0xCAFE, _randomnessMetadata(), AUDIT_HASH);
 
         address[] memory jury = market.getJury();
         assertEq(jury.length, 7);
@@ -785,7 +1202,7 @@ contract TruthMarketLifecycleTest is Test {
         _commitAll(vs);
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(123, AUDIT_HASH);
+        market.commitJury(123, _randomnessMetadata(), AUDIT_HASH);
         _revealAll(vs);
         vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
         market.resolve();
@@ -803,7 +1220,7 @@ contract TruthMarketLifecycleTest is Test {
         _commitAll(vs);
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(0xBEEF, AUDIT_HASH);
+        market.commitJury(0xBEEF, _randomnessMetadata(), AUDIT_HASH);
 
         // One juror skips reveal. Outcome will be Yes (no juror went NO).
         address skipper = market.getJury()[0];
@@ -888,7 +1305,7 @@ contract TruthMarketLifecycleTest is Test {
 
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(0xC0FFEE, AUDIT_HASH);
+        market.commitJury(0xC0FFEE, _randomnessMetadata(), AUDIT_HASH);
 
         address juror = market.getJury()[0];
         for (uint256 i = 0; i < vs.length; i++) {
@@ -912,7 +1329,7 @@ contract TruthMarketLifecycleTest is Test {
         _commitAll(vs);
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
-        market.commitJury(0xBEEF, AUDIT_HASH);
+        market.commitJury(0xBEEF, _randomnessMetadata(), AUDIT_HASH);
         _revealAll(vs);
         vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
         market.resolve();
@@ -942,5 +1359,305 @@ contract TruthMarketLifecycleTest is Test {
         vm.prank(attacker);
         vm.expectRevert(TruthMarket.CommitRevoked.selector);
         market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
+    }
+
+    // ---------- Registry tests ----------
+
+    event MarketRegistered(address indexed market, address indexed creator, uint256 indexed index, uint64 registeredAt);
+    event MarketTagged(address indexed market, bytes32 indexed tagHash, string tag);
+
+    function test_RevertsConstructorOnZeroRegistry() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.registry = ITruthMarketRegistry(address(0));
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_RegistersOnConstruction() public {
+        TruthMarketRegistry fresh = new TruthMarketRegistry();
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.registry = ITruthMarketRegistry(address(fresh));
+
+        TruthMarket m = new TruthMarket(p);
+
+        assertTrue(fresh.isRegistered(address(m)));
+        assertEq(fresh.markets(0), address(m));
+        assertEq(fresh.totalMarkets(), 1);
+    }
+
+    function test_RegistersMultipleMarkets() public {
+        TruthMarketRegistry fresh = new TruthMarketRegistry();
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.registry = ITruthMarketRegistry(address(fresh));
+
+        TruthMarket m1 = new TruthMarket(p);
+        TruthMarket m2 = new TruthMarket(p);
+
+        assertEq(fresh.totalMarkets(), 2);
+        assertEq(fresh.markets(0), address(m1));
+        assertEq(fresh.markets(1), address(m2));
+        address[] memory page = fresh.marketsPaginated(0, 100);
+        assertEq(page.length, 2);
+        assertEq(page[0], address(m1));
+        assertEq(page[1], address(m2));
+    }
+
+    function test_EmitsMarketRegistered() public {
+        TruthMarketRegistry fresh = new TruthMarketRegistry();
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.registry = ITruthMarketRegistry(address(fresh));
+
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+
+        vm.expectEmit(true, true, true, true, address(fresh));
+        emit MarketRegistered(predicted, creator, 0, uint64(block.timestamp));
+        TruthMarket m = new TruthMarket(p);
+        assertEq(address(m), predicted);
+    }
+
+    function test_RecordsMarketInfoOnRegistration() public {
+        TruthMarketRegistry fresh = new TruthMarketRegistry();
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.registry = ITruthMarketRegistry(address(fresh));
+
+        uint64 t = uint64(block.timestamp);
+        TruthMarket m = new TruthMarket(p);
+
+        (address infoCreator, uint64 registeredAt, uint32 index) = fresh.marketInfo(address(m));
+        assertEq(infoCreator, creator);
+        assertEq(registeredAt, t);
+        assertEq(index, 0);
+    }
+
+    function test_LookupByCreator() public {
+        TruthMarketRegistry fresh = new TruthMarketRegistry();
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.registry = ITruthMarketRegistry(address(fresh));
+
+        TruthMarket m1 = new TruthMarket(p);
+        TruthMarket m2 = new TruthMarket(p);
+
+        // Different creator on a third deployment.
+        address otherCreator = makeAddr("otherCreator");
+        p.creator = otherCreator;
+        TruthMarket m3 = new TruthMarket(p);
+
+        address[] memory mine = fresh.marketsByCreatorPaginated(creator, 0, 100);
+        assertEq(mine.length, 2);
+        assertEq(mine[0], address(m1));
+        assertEq(mine[1], address(m2));
+        assertEq(fresh.countByCreator(creator), 2);
+
+        address[] memory theirs = fresh.marketsByCreatorPaginated(otherCreator, 0, 100);
+        assertEq(theirs.length, 1);
+        assertEq(theirs[0], address(m3));
+        assertEq(fresh.countByCreator(otherCreator), 1);
+
+        assertEq(fresh.countByCreator(makeAddr("nobody")), 0);
+
+        // Pagination clamps: offset past end and partial slice.
+        assertEq(fresh.marketsByCreatorPaginated(creator, 5, 10).length, 0);
+        address[] memory tail = fresh.marketsByCreatorPaginated(creator, 1, 100);
+        assertEq(tail.length, 1);
+        assertEq(tail[0], address(m2));
+
+        // Auto-getter on the public mapping returns one element by index.
+        assertEq(fresh.marketsByCreator(creator, 0), address(m1));
+        assertEq(fresh.marketsByCreator(creator, 1), address(m2));
+    }
+
+    function test_LookupByTag() public {
+        TruthMarketRegistry fresh = new TruthMarketRegistry();
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.registry = ITruthMarketRegistry(address(fresh));
+        // _initParams gives tags = ["demo", "test"]
+
+        TruthMarket m1 = new TruthMarket(p);
+        TruthMarket m2 = new TruthMarket(p);
+
+        // Third deployment with disjoint tags.
+        string[] memory altTags = new string[](1);
+        altTags[0] = "sports";
+        p.tags = altTags;
+        TruthMarket m3 = new TruthMarket(p);
+
+        address[] memory demoHits = fresh.marketsByTagPaginated("demo", 0, 100);
+        assertEq(demoHits.length, 2);
+        assertEq(demoHits[0], address(m1));
+        assertEq(demoHits[1], address(m2));
+        assertEq(fresh.countByTag("demo"), 2);
+
+        address[] memory sportsHits = fresh.marketsByTagPaginated("sports", 0, 100);
+        assertEq(sportsHits.length, 1);
+        assertEq(sportsHits[0], address(m3));
+
+        // Lookup by precomputed hash matches the string view.
+        bytes32 demoHash = keccak256(bytes("demo"));
+        assertEq(fresh.marketsByTagHashPaginated(demoHash, 0, 100).length, 2);
+        assertEq(fresh.countByTagHash(demoHash), 2);
+
+        // Unknown tag returns empty.
+        assertEq(fresh.marketsByTagPaginated("doesnotexist", 0, 100).length, 0);
+
+        // Pagination on tag index: partial slice + auto-getter.
+        address[] memory demoTail = fresh.marketsByTagPaginated("demo", 1, 100);
+        assertEq(demoTail.length, 1);
+        assertEq(demoTail[0], address(m2));
+        assertEq(fresh.marketsByTagHash(demoHash, 0), address(m1));
+    }
+
+    function test_EmitsMarketTaggedPerTag() public {
+        TruthMarketRegistry fresh = new TruthMarketRegistry();
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.registry = ITruthMarketRegistry(address(fresh));
+
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        // _initParams tags are ["demo", "test"] — expect one MarketTagged per tag in order.
+        vm.expectEmit(true, true, false, true, address(fresh));
+        emit MarketTagged(predicted, keccak256(bytes("demo")), "demo");
+        vm.expectEmit(true, true, false, true, address(fresh));
+        emit MarketTagged(predicted, keccak256(bytes("test")), "test");
+        new TruthMarket(p);
+    }
+
+    function test_MarketsPaginated() public {
+        TruthMarketRegistry fresh = new TruthMarketRegistry();
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.registry = ITruthMarketRegistry(address(fresh));
+
+        address[] memory deployed = new address[](5);
+        for (uint256 i = 0; i < 5; i++) {
+            deployed[i] = address(new TruthMarket(p));
+        }
+
+        // Full range.
+        address[] memory page = fresh.marketsPaginated(0, 5);
+        assertEq(page.length, 5);
+        for (uint256 i = 0; i < 5; i++) {
+            assertEq(page[i], deployed[i]);
+        }
+
+        // Mid slice.
+        page = fresh.marketsPaginated(1, 2);
+        assertEq(page.length, 2);
+        assertEq(page[0], deployed[1]);
+        assertEq(page[1], deployed[2]);
+
+        // Limit clamps to remaining.
+        page = fresh.marketsPaginated(3, 100);
+        assertEq(page.length, 2);
+        assertEq(page[0], deployed[3]);
+        assertEq(page[1], deployed[4]);
+
+        // Offset past end returns empty.
+        page = fresh.marketsPaginated(5, 10);
+        assertEq(page.length, 0);
+
+        // Zero limit returns empty.
+        page = fresh.marketsPaginated(0, 0);
+        assertEq(page.length, 0);
+    }
+
+    function test_RegisterRevertsOnZeroCreator() public {
+        // Direct call into the registry simulating a buggy market that passed creator=0.
+        TruthMarketRegistry fresh = new TruthMarketRegistry();
+        vm.expectRevert(TruthMarketRegistry.ZeroCreator.selector);
+        fresh.register(address(0), new string[](0));
+    }
+
+    function test_RegisterRevertsOnDoubleRegister() public {
+        TruthMarketRegistry fresh = new TruthMarketRegistry();
+        fresh.register(creator, new string[](0));
+        vm.expectRevert(TruthMarketRegistry.AlreadyRegistered.selector);
+        fresh.register(creator, new string[](0));
+    }
+
+    function test_TotalMarketsCacheStaysInSyncWithArrayLength() public {
+        TruthMarketRegistry fresh = new TruthMarketRegistry();
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.registry = ITruthMarketRegistry(address(fresh));
+
+        assertEq(fresh.totalMarkets(), 0);
+        for (uint256 i = 0; i < 4; i++) {
+            new TruthMarket(p);
+            assertEq(fresh.totalMarkets(), i + 1);
+        }
+        // Cached counter equals the array length and the per-creator count.
+        assertEq(fresh.totalMarkets(), 4);
+        assertEq(fresh.countByCreator(creator), 4);
+    }
+
+    // ---------- Max-commits cap tests ----------
+
+    function test_RevertsConstructorWhenMaxCommitsBelowMinCommits() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.maxCommits = 6; // below minCommits=7
+        vm.expectRevert(TruthMarket.BadParams.selector);
+        new TruthMarket(p);
+    }
+
+    function test_AcceptsMaxCommitsEqualToMinCommits() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.maxCommits = 7;
+        TruthMarket m = new TruthMarket(p);
+        assertEq(m.maxCommits(), 7);
+        assertEq(m.getConfig().maxCommits, 7);
+    }
+
+    function test_AcceptsZeroMaxCommitsAsUncapped() public {
+        // _initParams already sets maxCommits=0; commit a large number to confirm no cap.
+        market = _deployMarket(1, 7, 1);
+        assertEq(market.maxCommits(), 0);
+        V[] memory vs = _makeVoters(20, 10 ether, 1);
+        _commitAll(vs);
+        assertEq(market.commitCount(), 20);
+    }
+
+    function test_RevertsCommitVoteWhenMarketFull() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.maxCommits = 7;
+        market = new TruthMarket(p);
+
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+        assertEq(market.commitCount(), 7);
+
+        // 8th voter is over the cap.
+        V[] memory extra = _makeVoters(8, 10 ether, 1);
+        bytes32 hash = market.commitHashOf(extra[7].vote, extra[7].nonce, extra[7].addr);
+        vm.startPrank(extra[7].addr);
+        token.approve(address(market), extra[7].stake);
+        vm.expectRevert(TruthMarket.MarketFull.selector);
+        market.commitVote(hash, extra[7].stake);
+        vm.stopPrank();
+    }
+
+    function test_RevokeStakeDoesNotFreeMaxCommitSlot() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.maxCommits = 7;
+        market = new TruthMarket(p);
+
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+        // commitCount is the active count and decrements on revoke; revokedCount increments.
+        // Together they equal the "ever committed" total enforced by the cap.
+        assertEq(market.commitCount(), 7);
+        assertEq(market.revokedCount(), 0);
+
+        // Revoke voter 0 — frees an active slot but not a cap slot.
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        market.revokeStake(vs[0].addr, vs[0].vote, vs[0].nonce);
+        assertEq(market.commitCount(), 6);
+        assertEq(market.revokedCount(), 1);
+
+        // A fresh voter still cannot commit because the cap counts revoked commits too.
+        V[] memory extra = _makeVoters(8, 10 ether, 1);
+        bytes32 hash = market.commitHashOf(extra[7].vote, extra[7].nonce, extra[7].addr);
+        vm.startPrank(extra[7].addr);
+        token.approve(address(market), extra[7].stake);
+        vm.expectRevert(TruthMarket.MarketFull.selector);
+        market.commitVote(hash, extra[7].stake);
+        vm.stopPrank();
     }
 }

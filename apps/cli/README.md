@@ -158,6 +158,7 @@ Every command reads a small layer of configuration. Resolution order (top wins):
 | `TM_CHAIN` | `foundry` \| `baseSepolia` \| `sepolia` |
 | `TM_RPC_URL` | RPC endpoint to use; overrides chain default |
 | `TM_CONTRACT_ADDRESS` | TruthMarket contract address |
+| `TM_SWARM_GATEWAY_URL` | Swarm gateway used for verified claim/rules fetches |
 | `PRIVATE_KEY` | hex private key (with or without `0x`) — wins over keystore |
 | `TM_KEYSTORE_PASSPHRASE` | non-interactive keystore unlock |
 | `TM_VAULT_PASSPHRASE` | non-interactive vault unlock |
@@ -220,7 +221,7 @@ The vault file format is v2: the public header (version, KDF params, market/chai
 
 Policy is enforced — not advisory. Without a configured policy file, `DEFAULT_POLICY` applies (`maxStake: "0"`, `requireSwarmVerification: false`, `allowJuryCommit: false`), which blocks all commits (zero stake) and jury commits. Run `policy set` first, or pass `--ignore-policy` to bypass per-command (intended for ad-hoc debugging). `--ignore-policy` still requires the policy file to be valid JSON; see Troubleshooting.
 
-`requireSwarmVerification` defaults to `false` because the current verifier only matches deployments whose `ipfsHash` is a raw keccak256 — see Troubleshooting.
+`requireSwarmVerification` defaults to `false`. When enabled, the CLI fetches the claim/rules document from the on-chain content reference and verifies the exact bytes against `claimRulesHash()`.
 
 Example `policy.json`:
 
@@ -241,7 +242,7 @@ Example `policy.json`:
 |-------|-------------|-----------|
 | `autoReveal`, `revealBufferMinutes`, `autoWithdraw`, `pollIntervalSeconds` | `heartbeat start` | controls the watcher loop |
 | `maxStake` | `vote commit` | `"0"` → refuse; `stake > maxStake` → refuse |
-| `requireSwarmVerification` | `vote commit` | when `true`, requires `--document <path>` and verifies it against `ipfsHash()` |
+| `requireSwarmVerification` | `vote commit` | when `true`, requires `--document <path>` and verifies it against `claimRulesHash()` and the Swarm reference |
 | `allowJuryCommit` | `jury commit` | `false` → refuse |
 | `allowCreateMarkets` | (n/a in this contract version) | reserved |
 
@@ -269,7 +270,7 @@ truthmarket policy set --file ./policy.json
 
 | Command | What it does |
 |---------|--------------|
-| `market info` | Full config snapshot: name, description, tags, phase, outcome, deadlines, stake token, ipfsHash. |
+| `market info` | Full config snapshot: name, description, tags, phase, outcome, deadlines, stake token, content reference, and claimRulesHash. |
 | `market phase` | Current phase enum + label. |
 | `market stats` | Reveal-phase aggregates (commit count, totals, jury Yes/No, etc.). |
 | `market jury` | List of selected jurors + active wallet's selection status. |
@@ -279,7 +280,7 @@ truthmarket policy set --file ./policy.json
 
 | Command | What it does |
 |---------|--------------|
-| `vote commit --vote yes\|no --stake <base-units> [--document <path>] [--ignore-policy]` | Generate nonce, save vault entry, broadcast `commitVote`. |
+| `vote commit --vote yes\|no --stake <base-units> [--document <path>] [--swarm-gateway <url>] [--ignore-policy]` | Generate nonce, verify claim/rules when policy requires it, save vault entry, broadcast `commitVote`. |
 | `vote reveal` | Reveal using the local vault. |
 | `vote revoke --voter 0x… --vote yes\|no --nonce 0x…` | Slash another voter using their leaked nonce (voting phase only). |
 
@@ -308,14 +309,16 @@ truthmarket policy set --file ./policy.json
 | Command | What it does |
 |---------|--------------|
 | `jury status` | Am I selected? Have I revealed? When does reveal end? |
-| `jury commit --randomness <uint256> --audit-hash 0x… [--ignore-policy]` | Post jury commitment (juryCommitter only). |
+| `jury commit [--ignore-policy]` | Fetch the latest SpaceComputer IPFS/IPNS beacon, derive the cTRNG value, beacon metadata, and audit hash, then post the jury commitment (juryCommitter only). |
+
+`jury commit` does not accept manual randomness fields. It reads `https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f` at execution time with cache-bypass headers and a query nonce, uses `data.ctrng[0]`, stores the canonical `/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f` beacon path plus `data.sequence`, `data.timestamp`, and `randomnessIndex = 0`, and sets `juryAuditHash` to the keccak256 hash of the exact beacon response bytes.
 
 ### `swarm`
 
 | Command | What it does |
 |---------|--------------|
-| `swarm show-hash` | Print the on-chain `ipfsHash()` bytes. |
-| `swarm verify --document <path>` | Verify a local document against `ipfsHash()`. Always exits 0; result lives in `data.match`. |
+| `swarm show-hash` | Print the on-chain content reference and `claimRulesHash()`. |
+| `swarm verify --document <path> [--gateway <url>]` | Verify a local document against `claimRulesHash()` and the Swarm reference. Mismatches exit 0; `data.match` carries the boolean. |
 
 ### `policy`
 
@@ -379,7 +382,7 @@ Streaming commands (`market watch`, `heartbeat start`) emit NDJSON — one JSON 
 
 `vault export`'s `data` always carries both `path` and `blob`; one is `null` depending on whether `--output` was set.
 
-`swarm verify` always exits 0; the boolean is `data.match`.
+`swarm verify` exits 0 for document mismatches; the boolean is `data.match`. Chain, file, or gateway failures still exit as errors.
 
 When `--json` is set, interactive prompts are an error (`INTERACTIVE_PROMPT_REQUIRED`). Set `PRIVATE_KEY`, `TM_KEYSTORE_PASSPHRASE`, `TM_VAULT_PASSPHRASE` ahead of time for unattended runs.
 
@@ -475,7 +478,7 @@ Both file formats are version 2. The plaintext header (`version`, `kdfparams`, `
 
 **`POLICY_INVALID` even with `--ignore-policy`** — `--ignore-policy` skips the *gates* (maxStake, allowJuryCommit, requireSwarmVerification) but the policy file is still loaded and zod-validated first. Fix the file (or move it aside) and rerun.
 
-**`SWARM_HASH_MISMATCH` for every document** — the current verifier only matches deployments whose `ipfsHash` is a raw keccak256. CID/multihash deployments need decoding that is not yet implemented. Either keep `requireSwarmVerification: false` (the default) or pass `--ignore-policy` until multihash support lands.
+**`SWARM_HASH_MISMATCH` for every document** — the local document hash does not match `claimRulesHash()` or the fetched Swarm bytes do not match the local file. Recompute the hash from the exact deployed JSON bytes and verify the on-chain content reference points at that document.
 
 **Vault entry exists but `vote reveal` reverts with `CommitNotFound`** — happens when `vote commit` saved the nonce locally but the broadcast reverted. Recover with:
 
@@ -503,4 +506,4 @@ The save-before-broadcast ordering is intentional — losing the nonce *after* a
 npm test
 ```
 
-82 vitest cases across vault, keystore, atomic write, JSON envelope, swarm verify, wallet loader, policy gates, config resolution, commit-hash equivalence, `commitVoteCore` orchestration with mocked viem clients, and heartbeat lifecycle. AAD coverage is verified field-by-field for both the keystore and vault formats.
+99 vitest cases across vault, keystore, atomic write, JSON envelope, SpaceComputer beacon parsing, swarm verify, wallet loader, policy gates, config resolution, commit-hash equivalence, `commitVoteCore` orchestration with mocked viem clients, and heartbeat lifecycle. AAD coverage is verified field-by-field for both the keystore and vault formats.

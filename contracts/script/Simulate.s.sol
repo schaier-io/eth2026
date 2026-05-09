@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import { Script, console2 } from "forge-std/Script.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { TruthMarket } from "../src/TruthMarket.sol";
+import { TruthMarketRegistry, ITruthMarketRegistry } from "../src/TruthMarketRegistry.sol";
 import { MockERC20 } from "../test/MockERC20.sol";
 
 /// @notice Local end-to-end simulator for TruthMarket. Run a scenario with:
@@ -16,15 +17,15 @@ import { MockERC20 } from "../test/MockERC20.sol";
 /// All scenarios deploy a fresh TruthMarket + MockERC20 stake token in a local EVM, advance time
 /// through every phase, and print the resulting state. No anvil or broadcast needed.
 ///
-/// Configs respect the contract's MAX_JURY_PERCENTAGE = 15 rule:
-///   jurySize=1 → minCommits ≥ 7, jurySize=3 → minCommits ≥ 20, etc.
+/// Configs respect the contract's MAX_TARGET_JURY_SIZE_PERCENT = 15 rule:
+///   targetJurySize=1 → minCommits ≥ 7, targetJurySize=3 → minCommits ≥ 20, etc.
 contract SimulateScript is Script {
     uint64 internal constant VOTING_PERIOD = 1 days;
     uint64 internal constant ADMIN_TIMEOUT = 12 hours;
     uint64 internal constant REVEAL_PERIOD = 1 days;
     uint8 internal constant FEE_PERCENT = 5;
     uint96 internal constant MIN_STAKE = 1 ether;
-    uint96 internal constant START_BALANCE = 1_000 ether;
+    uint96 internal constant START_BALANCE = 1000 ether;
 
     address internal constant DEPLOYER = address(uint160(uint256(keccak256("deployer"))));
     address internal constant TREASURY = address(uint160(uint256(keccak256("treasury"))));
@@ -33,6 +34,12 @@ contract SimulateScript is Script {
     address internal constant CREATOR = address(uint160(uint256(keccak256("creator"))));
 
     bytes internal constant IPFS_HASH = bytes("ipfs://QmTruthMarketDemoClaim");
+    bytes32 internal constant CLAIM_RULES_HASH = keccak256("truthmarket-demo-claim-rules");
+    bytes internal constant RANDOMNESS_IPFS_ADDRESS =
+        bytes("https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f");
+    uint64 internal constant RANDOMNESS_SEQUENCE = 87_963;
+    uint64 internal constant RANDOMNESS_TIMESTAMP = 1_769_179_239;
+    uint16 internal constant RANDOMNESS_INDEX = 0;
     bytes32 internal constant AUDIT_HASH = keccak256("ctrng-audit-output");
 
     struct Voter {
@@ -46,9 +53,9 @@ contract SimulateScript is Script {
 
     // ---------- Scenarios ----------
 
-    /// @notice Happy-path: 7 voters, jurySize=1, all reveal — single juror's vote decides.
+    /// @notice Happy-path: 7 voters, targetJurySize=1, all reveal — single juror's vote decides.
     function lifecycle() external {
-        console2.log("=== Scenario: Lifecycle (jurySize=1, all reveal) ===");
+        console2.log("=== Scenario: Lifecycle (targetJurySize=1, all reveal) ===");
         Voter[] memory voters = _makeVoters(7, 50 ether, 1, true); // all YES
         (TruthMarket market, MockERC20 token) = _deployMarket(1, 7, 1);
 
@@ -83,7 +90,7 @@ contract SimulateScript is Script {
 
     /// @notice Selected jurors fail to reveal → outcome Invalid; non-revealing jurors
     ///         forfeit their full stakes to the CREATOR (not treasury). Other voters
-    ///         get full refunds. Uses jurySize=3 with 20 voters to satisfy the 15% rule.
+    ///         get full refunds. Uses targetJurySize=3 with 20 voters to satisfy MAX_TARGET_JURY_SIZE_PERCENT.
     function invalidJurorPenalty() external {
         console2.log("=== Scenario: Invalid juror penalty -> creator ===");
         Voter[] memory voters = _makeVoters(20, 80 ether, 1, true);
@@ -179,13 +186,14 @@ contract SimulateScript is Script {
 
     // ---------- Composable helpers ----------
 
-    function _deployMarket(uint32 jurySize, uint32 minCommits, uint32 minRevealedJurors)
+    function _deployMarket(uint32 targetJurySize, uint32 minCommits, uint32 minRevealedJurors)
         internal
         returns (TruthMarket market, MockERC20 token)
     {
         vm.startPrank(DEPLOYER);
         token = new MockERC20("Truth Stake", "TRUTH", 1_000_000 ether, DEPLOYER);
         vm.stopPrank();
+        TruthMarketRegistry registry = new TruthMarketRegistry();
         string[] memory tags = new string[](3);
         tags[0] = "demo";
         tags[1] = "lifecycle";
@@ -194,6 +202,7 @@ contract SimulateScript is Script {
             TruthMarket.InitParams({
                 stakeToken: IERC20(address(token)),
                 treasury: TREASURY,
+                registry: ITruthMarketRegistry(address(registry)),
                 admin: ADMIN_ADDR,
                 juryCommitter: JURY_COMMITTER_ADDR,
                 creator: CREATOR,
@@ -201,13 +210,15 @@ contract SimulateScript is Script {
                 description: "Will the test pass?",
                 tags: tags,
                 ipfsHash: IPFS_HASH,
+                claimRulesHash: CLAIM_RULES_HASH,
                 votingPeriod: VOTING_PERIOD,
                 adminTimeout: ADMIN_TIMEOUT,
                 revealPeriod: REVEAL_PERIOD,
                 protocolFeePercent: FEE_PERCENT,
                 minStake: MIN_STAKE,
-                jurySize: jurySize,
+                targetJurySize: targetJurySize,
                 minCommits: minCommits,
+                maxCommits: 0,
                 minRevealedJurors: minRevealedJurors
             })
         );
@@ -220,7 +231,7 @@ contract SimulateScript is Script {
         console2.log("Voting deadline:       ", market.votingDeadline());
         console2.log("Jury commit deadline:  ", market.juryCommitDeadline());
         console2.log("Reveal deadline:       ", market.revealDeadline());
-        console2.log("Jury size:             ", market.jurySize());
+        console2.log("Target jury size:      ", market.targetJurySize());
         console2.log("Min commits:           ", market.minCommits());
         console2.log("Min revealed jurors:   ", market.minRevealedJurors());
         console2.log("Min stake:             ", market.minStake());
@@ -248,9 +259,18 @@ contract SimulateScript is Script {
 
     function _commitJury(TruthMarket market, uint256 randomness) internal {
         vm.prank(JURY_COMMITTER_ADDR);
-        market.commitJury(randomness, AUDIT_HASH);
+        market.commitJury(randomness, _randomnessMetadata(), AUDIT_HASH);
         console2.log("--- Phase: Reveal (jury drawn) ---");
         console2.log("Randomness:", randomness);
+    }
+
+    function _randomnessMetadata() internal pure returns (TruthMarket.RandomnessMetadata memory) {
+        return TruthMarket.RandomnessMetadata({
+            ipfsAddress: RANDOMNESS_IPFS_ADDRESS,
+            sequence: RANDOMNESS_SEQUENCE,
+            timestamp: RANDOMNESS_TIMESTAMP,
+            valueIndex: RANDOMNESS_INDEX
+        });
     }
 
     function _printJury(TruthMarket market, Voter[] memory voters) internal view {
@@ -290,7 +310,7 @@ contract SimulateScript is Script {
         console2.log("Reveals total:     ", s.revealedTotalCount);
         console2.log("  yes:             ", s.revealedYesCount);
         console2.log("  no:              ", s.revealedNoCount);
-        console2.log("Jury size drawn:   ", s.juryDrawSize);
+        console2.log("Jury draw size:    ", s.juryDrawSize);
         console2.log("Jury reveals:      ", s.jurorRevealCount);
         console2.log("  yes:             ", s.juryYesCount);
         console2.log("  no:              ", s.juryNoCount);
@@ -344,8 +364,9 @@ contract SimulateScript is Script {
         for (uint256 i = 0; i < voters.length; i++) {
             vm.prank(voters[i].addr);
             try market.withdraw() {
-                // ok
-            } catch {
+            // ok
+            }
+            catch {
                 console2.log(string.concat(voters[i].label, ": withdraw reverted"));
             }
         }
