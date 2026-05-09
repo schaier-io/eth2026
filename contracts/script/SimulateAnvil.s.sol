@@ -127,6 +127,7 @@ contract SimulateAnvilScript is Script {
         MarketRegistry marketFactory = new MarketRegistry(
             IERC20(address(token)),
             treasury,
+            ITruthMarketRegistry(address(discoveryRegistry)),
             admin,
             juryCommitter
         );

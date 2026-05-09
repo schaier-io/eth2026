@@ -83,19 +83,13 @@ export async function cmdRegistryInfo(
     chain: cfg.chainKey,
     chainId: cfg.chain.id,
     stakeToken: config.stakeToken,
-    companyTreasury: config.companyTreasury,
-    admin: config.admin,
-    juryCommitter: config.juryCommitter,
     marketCount: count,
   };
   emitResult(ctx, data, () => {
     process.stdout.write(
       `registry:        ${cfg.registryAddress} (${cfg.chainKey})\n` +
-        `stake token:     ${config.stakeToken}\n` +
-        `company treasury:${config.companyTreasury}\n` +
-        `admin:           ${config.admin}\n` +
-        `jury committer:  ${config.juryCommitter}\n` +
-        `market count:    ${count}\n`,
+      `stake token:     ${config.stakeToken}\n` +
+      `market count:    ${count}\n`,
     );
   });
 }

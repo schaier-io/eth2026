@@ -5,10 +5,12 @@ import { Test } from "forge-std/Test.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { MarketRegistry } from "../src/MarketRegistry.sol";
 import { TruthMarket } from "../src/TruthMarket.sol";
+import { TruthMarketRegistry, ITruthMarketRegistry } from "../src/TruthMarketRegistry.sol";
 import { MockERC20 } from "./MockERC20.sol";
 
 contract MarketRegistryTest is Test {
     MarketRegistry internal registry;
+    TruthMarketRegistry internal discoveryRegistry;
     MockERC20 internal token;
 
     address internal treasury = makeAddr("treasury");
@@ -17,42 +19,79 @@ contract MarketRegistryTest is Test {
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
 
-    event MarketCreated(
-        uint256 indexed id, address indexed market, address indexed creator, string name, bytes ipfsHash
-    );
+    event MarketCreated(uint256 indexed id, address indexed market, address indexed creator);
 
     function setUp() public {
         token = new MockERC20("Truth Stake", "TRUTH", 10_000_000 ether, address(this));
-        registry = new MarketRegistry(IERC20(address(token)), treasury, admin, juryCommitter);
+        discoveryRegistry = new TruthMarketRegistry();
+        registry = new MarketRegistry(
+            IERC20(address(token)),
+            treasury,
+            ITruthMarketRegistry(address(discoveryRegistry)),
+            admin,
+            juryCommitter
+        );
     }
 
     // ---------- Constructor ----------
 
     function testConstructorRevertsOnZeroStakeToken() public {
         vm.expectRevert(MarketRegistry.ZeroAddress.selector);
-        new MarketRegistry(IERC20(address(0)), treasury, admin, juryCommitter);
+        new MarketRegistry(
+            IERC20(address(0)),
+            treasury,
+            ITruthMarketRegistry(address(discoveryRegistry)),
+            admin,
+            juryCommitter
+        );
     }
 
     function testConstructorRevertsOnZeroTreasury() public {
         vm.expectRevert(MarketRegistry.ZeroAddress.selector);
-        new MarketRegistry(IERC20(address(token)), address(0), admin, juryCommitter);
+        new MarketRegistry(
+            IERC20(address(token)),
+            address(0),
+            ITruthMarketRegistry(address(discoveryRegistry)),
+            admin,
+            juryCommitter
+        );
+    }
+
+    function testConstructorRevertsOnZeroDiscoveryRegistry() public {
+        vm.expectRevert(MarketRegistry.ZeroAddress.selector);
+        new MarketRegistry(
+            IERC20(address(token)),
+            treasury,
+            ITruthMarketRegistry(address(0)),
+            admin,
+            juryCommitter
+        );
     }
 
     function testConstructorRevertsOnZeroAdmin() public {
         vm.expectRevert(MarketRegistry.ZeroAddress.selector);
-        new MarketRegistry(IERC20(address(token)), treasury, address(0), juryCommitter);
+        new MarketRegistry(
+            IERC20(address(token)),
+            treasury,
+            ITruthMarketRegistry(address(discoveryRegistry)),
+            address(0),
+            juryCommitter
+        );
     }
 
     function testConstructorRevertsOnZeroJuryCommitter() public {
         vm.expectRevert(MarketRegistry.ZeroAddress.selector);
-        new MarketRegistry(IERC20(address(token)), treasury, admin, address(0));
+        new MarketRegistry(
+            IERC20(address(token)),
+            treasury,
+            ITruthMarketRegistry(address(discoveryRegistry)),
+            admin,
+            address(0)
+        );
     }
 
     function testConstructorStoresOperationalAddresses() public view {
         assertEq(address(registry.stakeToken()), address(token));
-        assertEq(registry.companyTreasury(), treasury);
-        assertEq(registry.admin(), admin);
-        assertEq(registry.juryCommitter(), juryCommitter);
     }
 
     // ---------- createMarket ----------
@@ -64,6 +103,7 @@ contract MarketRegistryTest is Test {
         assertTrue(marketAddr != address(0));
         assertEq(registry.marketCount(), 1);
         assertEq(registry.markets(0), marketAddr);
+        assertTrue(discoveryRegistry.isRegistered(marketAddr));
     }
 
     function testCreateMarketSetsMsgSenderAsCreator() public {
@@ -86,14 +126,12 @@ contract MarketRegistryTest is Test {
     }
 
     function testCreateMarketEmitsEvent() public {
-        MarketRegistry.MarketSpec memory spec = _validSpec("Alice's Claim");
-
         // We can't predict the deployed market address before the call, so accept any.
         vm.expectEmit(true, false, true, true, address(registry));
-        emit MarketCreated(0, address(0), alice, spec.name, spec.ipfsHash);
+        emit MarketCreated(0, address(0), alice);
 
         vm.prank(alice);
-        registry.createMarket(spec);
+        registry.createMarket(_validSpec("Alice's Claim"));
     }
 
     function testCreateMarketIncrementsIdAcrossCalls() public {

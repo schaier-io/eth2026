@@ -11,11 +11,8 @@ export const registryAddress =
  */
 export const marketRegistryAbi = parseAbi([
   "function stakeToken() view returns (address)",
-  "function companyTreasury() view returns (address)",
-  "function admin() view returns (address)",
-  "function juryCommitter() view returns (address)",
   "function markets(uint256) view returns (address)",
   "function marketCount() view returns (uint256)",
   "function getMarkets(uint256 offset, uint256 limit) view returns (address[])",
-  "event MarketCreated(uint256 indexed id, address indexed market, address indexed creator, string name, bytes ipfsHash)",
+  "event MarketCreated(uint256 indexed id, address indexed market, address indexed creator)",
 ]);

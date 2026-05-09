@@ -29,42 +29,19 @@ export interface MarketSpec {
 
 export interface RegistryConfig {
   stakeToken: Address;
-  companyTreasury: Address;
-  admin: Address;
-  juryCommitter: Address;
 }
 
 export async function readRegistryConfig(
   client: PublicClient,
   cfg: ResolvedConfig,
 ): Promise<RegistryConfig> {
-  const [stakeToken, companyTreasury, admin, juryCommitter] = await Promise.all([
-    client.readContract({
-      address: cfg.registryAddress,
-      abi: marketRegistryAbi,
-      functionName: "stakeToken",
-    }),
-    client.readContract({
-      address: cfg.registryAddress,
-      abi: marketRegistryAbi,
-      functionName: "companyTreasury",
-    }),
-    client.readContract({
-      address: cfg.registryAddress,
-      abi: marketRegistryAbi,
-      functionName: "admin",
-    }),
-    client.readContract({
-      address: cfg.registryAddress,
-      abi: marketRegistryAbi,
-      functionName: "juryCommitter",
-    }),
-  ]);
+  const stakeToken = await client.readContract({
+    address: cfg.registryAddress,
+    abi: marketRegistryAbi,
+    functionName: "stakeToken",
+  });
   return {
     stakeToken: stakeToken as Address,
-    companyTreasury: companyTreasury as Address,
-    admin: admin as Address,
-    juryCommitter: juryCommitter as Address,
   };
 }
 
@@ -147,8 +124,6 @@ export async function writeCreateMarket(
           id: bigint;
           market: Address;
           creator: Address;
-          name: string;
-          ipfsHash: Hex;
         };
         return {
           txHash,
