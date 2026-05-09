@@ -1,10 +1,11 @@
 -include .env
 export
 
-.PHONY: help install update build test test-gas coverage fmt fmt-check snapshot clean anvil deploy-counter deploy-token verify-counter
+.PHONY: help setup install update build test test-gas coverage fmt fmt-check snapshot clean anvil anvil-up anvil-down deploy-market simulate simulate-anvil new-key new-key-write
 
 help:
 	@echo "Targets:"
+	@echo "  setup           - one-shot bootstrap (creates .env, builds)"
 	@echo "  install         - install/update git submodule libs"
 	@echo "  update          - bump libs to latest tags"
 	@echo "  build           - compile contracts"
@@ -18,39 +19,44 @@ help:
 	@echo "  anvil-down      - stop background anvil (bin/anvil-down)"
 	@echo "  new-key         - generate fresh keypair (bin/new-key)"
 	@echo "  new-key-write   - generate keypair AND write to .env"
-	@echo "  deploy-counter NETWORK=anvil  - deploy Counter"
-	@echo "  deploy-token   NETWORK=anvil  - deploy ExampleToken"
+	@echo "  deploy-market  NETWORK=anvil  - deploy TruthMarket"
+	@echo "  simulate        - run lifecycle scenario in-process (no anvil)"
+	@echo "  simulate-anvil  - run full lifecycle against fresh anvil (bin/sim-anvil)"
 	@echo "  clean           - remove build artifacts"
 
 NETWORK ?= anvil
 BROADCAST ?= --broadcast
+FORGE ?= $(shell if [ -x "$$HOME/.foundry/bin/forge" ]; then printf "%s" "$$HOME/.foundry/bin/forge"; else command -v forge; fi)
+
+setup:
+	./bin/setup
 
 install:
-	forge install
+	$(FORGE) install
 
 update:
-	forge update
+	$(FORGE) update
 
 build:
-	forge build
+	$(FORGE) build
 
 test:
-	forge test -vv
+	$(FORGE) test -vv
 
 test-gas:
-	forge test --gas-report
+	$(FORGE) test --gas-report
 
 coverage:
-	forge coverage --report lcov
+	$(FORGE) coverage --report lcov
 
 fmt:
-	forge fmt
+	$(FORGE) fmt
 
 fmt-check:
-	forge fmt --check
+	$(FORGE) fmt --check
 
 snapshot:
-	forge snapshot
+	$(FORGE) snapshot
 
 anvil:
 	anvil --host 0.0.0.0 --chain-id 31337
@@ -67,11 +73,14 @@ new-key:
 new-key-write:
 	./bin/new-key --write
 
-deploy-counter:
-	forge script script/Counter.s.sol:CounterScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv
+deploy-market:
+	$(FORGE) script script/TruthMarket.s.sol:TruthMarketScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv
 
-deploy-token:
-	forge script script/ExampleToken.s.sol:ExampleTokenScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv
+simulate:
+	$(FORGE) script script/Simulate.s.sol --sig 'lifecycle()' -vv
+
+simulate-anvil:
+	./bin/sim-anvil
 
 clean:
-	forge clean
+	$(FORGE) clean

@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Run a full TruthMarket lifecycle on a fresh anvil with seeded-random votes.
+# 175 voters, jurySize=25, all 25 jurors reveal, ~25 of 150 non-jurors skip
+# reveal (seed-driven). Outcome = simple majority of the 25 jurors. Losers
+# absorb the riskedStake slash; non-revealing non-jurors absorb the same;
+# winning revealers split the slashed pool. Reproducible via SEED env var.
+#
+# Usage:
+#   ./bin/sim-anvil-random
+#   SEED=0xfeedface ./bin/sim-anvil-random
+#
+# Leaves anvil running on http://127.0.0.1:8545 so you can poke the resulting
+# state with cast. Stop it with `./bin/anvil-down`.
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+export PATH="$HOME/.foundry/bin:$PATH"
+
+RPC=http://127.0.0.1:8545
+SCRIPT=script/SimulateAnvilRandom.s.sol
+
+# 5 roles (deployer/treasury/admin/juryCommitter/creator) + 175 voters = 180.
+export ANVIL_ACCOUNTS=180
+
+# Need a fresh anvil so the deterministic deploy addresses line up.
+if [ -f .anvil.pid ] && kill -0 "$(cat .anvil.pid)" 2>/dev/null; then
+  echo ">>> stopping existing anvil"
+  ./bin/anvil-down
+fi
+
+echo ">>> starting fresh anvil (accounts=$ANVIL_ACCOUNTS)"
+./bin/anvil-up
+
+if [ -n "${SEED:-}" ]; then
+  export SEED
+  echo ">>> using SEED=$SEED"
+else
+  echo ">>> using default SEED=0xC0DEC0DE (set SEED=... to override)"
+fi
+
+run_phase() {
+  local sig="$1"
+  echo
+  echo ">>> phase: $sig"
+  forge script "$SCRIPT" --sig "$sig" --rpc-url "$RPC" --broadcast -vv \
+    | sed -n '/== Logs ==/,/^$/p'
+}
+
+advance_time() {
+  local seconds="$1"
+  cast rpc --rpc-url "$RPC" evm_increaseTime "$seconds" > /dev/null
+  cast rpc --rpc-url "$RPC" evm_mine > /dev/null
+  echo ">>> advanced anvil time by ${seconds}s"
+}
+
+run_phase 'deploy()'
+run_phase 'commit()'
+
+advance_time 86401          # past voting deadline (1 day + 1s)
+
+run_phase 'commitJury()'
+run_phase 'reveal()'
+
+advance_time 129601         # past reveal deadline (admin timeout 12h + reveal 1d + 1s)
+
+run_phase 'resolve()'
+run_phase 'summary()'
+
+echo
+echo ">>> simulation complete. anvil still running on $RPC"
+echo "    inspect with cast, or stop with: ./bin/anvil-down"
