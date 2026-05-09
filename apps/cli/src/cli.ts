@@ -8,6 +8,7 @@ import { loadDotenv } from "./util/dotenv.js";
 loadDotenv();
 import {
   cmdDevDown,
+  cmdDevFund,
   cmdDevSeedAgent,
   cmdDevStatus,
   cmdDevUp,
@@ -280,6 +281,12 @@ shared(dev.command("status").description("report whether managed anvil is runnin
 shared(dev.command("seed-agent").description("write a permissive policy so 'agent run' and 'registry create-market' work end-to-end on dev"))
   .option("--max-stake <amount>", "policy maxStake in token base units", "1000000000000000000000")
   .action(async (opts) => run(() => cmdDevSeedAgent(ctx(opts), opts), ctx(opts)));
+
+shared(dev.command("fund").description("send MockERC20 + ETH from the deployer wallet to a friend wallet (dev only)"))
+  .requiredOption("--to <addr>", "recipient address")
+  .option("--tokens <amount>", "stake token base units to send (default 1000e18)", "1000000000000000000000")
+  .option("--eth <amount>", "wei to send (default 1e18)", "1000000000000000000")
+  .action(async (opts) => run(() => cmdDevFund(ctx(opts), opts), ctx(opts)));
 
 // -------- tui --------
 shared(program.command("tui").description("launch the interactive TUI"))

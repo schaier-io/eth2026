@@ -558,7 +558,7 @@ export default function TruthMarketApp() {
           { address: activeMarketAddress, abi: truthMarketAbi, functionName: "ipfsHash" },
         ]
       : [],
-    query: { enabled: contractConfigured },
+    query: { enabled: contractConfigured, refetchInterval: 5000 },
   });
 
   function readContractResult<T>(index: number, fallback: T): T {

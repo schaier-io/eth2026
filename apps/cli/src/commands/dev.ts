@@ -6,11 +6,16 @@ import {
   unlinkSync,
 } from "node:fs";
 import path from "node:path";
+import { type Address, isAddress } from "viem";
+import { makePublicClient, makeWalletClient } from "../chain/client.js";
+import { readBalance, readSymbol, writeTransfer } from "../chain/erc20.js";
+import { readStakeToken } from "../chain/contract.js";
 import { type ConfigOverrides, resolveConfig } from "../config.js";
 import { CliError } from "../errors.js";
-import { type OutputContext, emitResult } from "../io.js";
+import { type OutputContext, emitResult, promptSecret } from "../io.js";
 import { DEFAULT_POLICY, type Policy, savePolicy } from "../policy/policy.js";
 import { atomicWriteFile } from "../util/atomic.js";
+import { loadWallet } from "../wallet/loader.js";
 
 /**
  * Local-development "mock chain" workflow built on top of forge + anvil.
@@ -364,10 +369,106 @@ export async function cmdDevSeedAgent(
           `next:\n` +
           `  1. start the web app: (cd apps/web && npm run dev) — needed by 'agent tick'\n` +
           `  2. truthmarket agent tick   # fetches Apify candidates and creates one market\n` +
-          `     (or: truthmarket agent tick --items-file <sample-items.json> for offline runs)\n`,
+          `     (or: truthmarket agent tick --items-file <sample-items.json> for offline runs)\n` +
+          `\n` +
+          `for vote/reveal/withdraw to run non-interactively:\n` +
+          `  export TM_VAULT_PASSPHRASE=demo  # any value; required to encrypt local nonces\n`,
       );
     },
   );
+}
+
+export interface DevFundOpts extends ConfigOverrides {
+  to?: string;
+  tokens?: string;
+  eth?: string;
+}
+
+/**
+ * Local-dev shortcut: send MockERC20 + ETH from the deployer wallet to a
+ * recipient address. Useful for friend wallets joining the live demo who
+ * connected MetaMask but have no stake token or anvil-issued ETH.
+ *
+ * The stake token is read from the seed TruthMarket (same token across
+ * registry-deployed markets), and the deployer wallet is taken from
+ * PRIVATE_KEY env (set by `dev up`).
+ */
+export async function cmdDevFund(
+  ctx: OutputContext,
+  opts: DevFundOpts,
+): Promise<void> {
+  if (!opts.to) {
+    throw new CliError("DEV_FUND_TO_REQUIRED", "missing --to <addr>");
+  }
+  if (!isAddress(opts.to)) {
+    throw new CliError("DEV_FUND_TO_INVALID", `--to '${opts.to}' is not a valid address`);
+  }
+  const recipient = opts.to as Address;
+  const tokenAmount = parseAmount(opts.tokens, "1000000000000000000000", "tokens");
+  const ethAmount = parseAmount(opts.eth, "1000000000000000000", "eth");
+
+  const cfg = resolveConfig(opts);
+  const wallet = await loadWallet(cfg, () => promptSecret("Keystore passphrase: "));
+  const publicClient = makePublicClient(cfg);
+  const walletClient = makeWalletClient(cfg, wallet.account);
+
+  const stakeToken = await readStakeToken(publicClient, cfg);
+  const symbol = await readSymbol(publicClient, stakeToken);
+
+  let tokenTx: { txHash: string; blockNumber: bigint } | null = null;
+  if (tokenAmount > 0n) {
+    tokenTx = await writeTransfer(walletClient, publicClient, stakeToken, recipient, tokenAmount);
+  }
+
+  let ethTx: string | null = null;
+  if (ethAmount > 0n) {
+    ethTx = await walletClient.sendTransaction({
+      account: wallet.account,
+      to: recipient,
+      value: ethAmount,
+      chain: cfg.chain,
+    });
+    await publicClient.waitForTransactionReceipt({ hash: ethTx as `0x${string}` });
+  }
+
+  const tokenBalance = await readBalance(publicClient, stakeToken, recipient);
+  const ethBalance = await publicClient.getBalance({ address: recipient });
+
+  emitResult(
+    ctx,
+    {
+      recipient,
+      stakeToken,
+      symbol,
+      tokensSent: tokenAmount,
+      ethSent: ethAmount,
+      tokenTxHash: tokenTx?.txHash ?? null,
+      ethTxHash: ethTx,
+      recipientTokenBalance: tokenBalance,
+      recipientEthBalance: ethBalance,
+    },
+    () => {
+      process.stdout.write(
+        `funded ${recipient}\n` +
+          `  tokens:  ${tokenAmount} ${symbol} (tx ${tokenTx?.txHash ?? "skipped"})\n` +
+          `  eth:     ${ethAmount} wei (tx ${ethTx ?? "skipped"})\n` +
+          `  recipient now holds ${tokenBalance} ${symbol} and ${ethBalance} wei\n`,
+      );
+    },
+  );
+}
+
+function parseAmount(raw: string | undefined, fallback: string, label: string): bigint {
+  const value = raw ?? fallback;
+  if (value === "0") return 0n;
+  try {
+    return BigInt(value);
+  } catch {
+    throw new CliError(
+      "DEV_FUND_INVALID_AMOUNT",
+      `--${label} '${value}' is not a valid integer (use base units, e.g. 1000000000000000000 for 1 ether)`,
+    );
+  }
 }
 
 export async function cmdDevStatus(
