@@ -1,4 +1,5 @@
 import { mkdir, readFile, stat } from "node:fs/promises";
+import { createCipheriv, createDecipheriv, scrypt } from "node:crypto";
 import path from "node:path";
 import {
   type Address,
@@ -38,7 +39,6 @@ async function scryptKey(
   salt: Uint8Array,
   params: { N: number; r: number; p: number },
 ): Promise<Uint8Array> {
-  const { scrypt } = await import("node:crypto");
   return await new Promise((resolve, reject) => {
     scrypt(
       passphrase,
@@ -101,17 +101,13 @@ export async function encryptKeystore(
     cipher: "aes-256-gcm",
   };
 
-  const subtle = globalThis.crypto.subtle;
-  const cryptoKey = await subtle.importKey("raw", key, { name: "AES-GCM" }, false, ["encrypt"]);
-  const ct = new Uint8Array(
-    await subtle.encrypt(
-      { name: "AES-GCM", iv, additionalData: canonicalAad(header) },
-      cryptoKey,
-      hexToBytes(privateKey),
-    ),
-  );
-  const ciphertext = ct.slice(0, ct.length - 16);
-  const authTag = ct.slice(ct.length - 16);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(canonicalAad(header));
+  const ciphertext = Buffer.concat([
+    cipher.update(Buffer.from(hexToBytes(privateKey))),
+    cipher.final(),
+  ]);
+  const authTag = cipher.getAuthTag();
 
   return {
     ...header,
@@ -146,22 +142,19 @@ export async function decryptKeystore(
   combined.set(tag, ct.length);
 
   const key = await scryptKey(passphrase, salt, ks.kdfparams);
-  const subtle = globalThis.crypto.subtle;
-  const cryptoKey = await subtle.importKey("raw", key, { name: "AES-GCM" }, false, ["decrypt"]);
-  let plain: ArrayBuffer;
+  let plain: Buffer;
   try {
-    plain = await subtle.decrypt(
-      { name: "AES-GCM", iv, additionalData: canonicalAad(ks) },
-      cryptoKey,
-      combined,
-    );
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAAD(canonicalAad(ks));
+    decipher.setAuthTag(tag);
+    plain = Buffer.concat([decipher.update(combined.slice(0, ct.length)), decipher.final()]);
   } catch {
     throw new CliError(
       "KEYSTORE_BAD_PASSPHRASE",
       "keystore decryption failed (wrong passphrase, or the file header was tampered with)",
     );
   }
-  const privateKey = bytesToHex(new Uint8Array(plain)) as Hex;
+  const privateKey = bytesToHex(plain) as Hex;
   const account = privateKeyToAccount(privateKey);
   if (account.address.toLowerCase() !== ks.address.toLowerCase()) {
     throw new CliError(
