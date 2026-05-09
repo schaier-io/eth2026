@@ -8,11 +8,17 @@
 
 # Environment and local runtime state.
 .env
+.env.e2e
+.env.e2e.local
+packages/swarm-kv/.env.swarm
+packages/*/.e2e/
+packages/*/test/fixtures/*.fixture.json
 *.local
 *.log
 
 # Common dependency/build output.
 node_modules/
+.pnpm-store/
 .next/
 dist/
 build/

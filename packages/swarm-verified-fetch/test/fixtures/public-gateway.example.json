@@ -1,0 +1,91 @@
+{
+  "schema": "truthmarket.swarm-verified-fetch.public-e2e.v1",
+  "gatewayUrls": [
+    "https://api.gateway.testnet.ethswarm.org",
+    "https://download.gateway.testnet.ethswarm.org"
+  ],
+  "gatewayStrategy": "failover",
+  "immutable": [
+    {
+      "name": "testnet claim rules raw JSON",
+      "reference": "aa0b29e1a9788faf971180c8067a2a6a74c53b2b1e6e7a3dc73762a9f63ec9d4",
+      "contentType": "application/json; charset=utf-8",
+      "fileName": "claim-rules.json",
+      "expectedByteLength": 522,
+      "expectedKeccak256": "0x913f3638061f7c0b89fb5829c0c198255c1bf0f5d38a076b9f2656c2a41680ba",
+      "expectedJson": {
+        "schema": "truthmarket.claimRules.v1",
+        "title": "Public Swarm verified fetch e2e claim",
+        "description": "Deterministic testnet fixture for client-side Swarm verification.",
+        "resolutionRules": "Used only to prove immutable claim/rules bytes verify before application code reads them.",
+        "createdAt": "2026-05-09T12:00:00.000Z",
+        "votingDeadline": "2026-05-16T12:00:00.000Z",
+        "revealDeadline": "2026-05-17T12:00:00.000Z",
+        "jurySize": 3,
+        "fixedNormalRiskPercent": 20,
+        "stakeToken": "TEST",
+        "creator": "0x0000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "testnet multi-chunk pattern binary",
+      "reference": "15cbb0c7ee3b613fc0acd9ad4ba3868c36a77ad5fd8e7fa73ac53897acf8b17b",
+      "contentType": "application/octet-stream",
+      "fileName": "pattern.bin",
+      "expectedByteLength": 13065,
+      "expectedKeccak256": "0xe38afd3c34bb2d700097ae61392ab1ec68412752dbc7a4cb575803d456b3548c"
+    }
+  ],
+  "manifest": [
+    {
+      "name": "testnet manifest claim rules",
+      "manifestReference": "40b8c76b13740bf746d7a3a438a29fc1ae5fcd292d4793747238e76e688ce115",
+      "path": "claim-rules.json",
+      "contentType": "application/json; charset=utf-8",
+      "fileName": "claim-rules.json",
+      "expectedByteLength": 522,
+      "expectedKeccak256": "0x913f3638061f7c0b89fb5829c0c198255c1bf0f5d38a076b9f2656c2a41680ba",
+      "expectedJson": {
+        "schema": "truthmarket.claimRules.v1",
+        "title": "Public Swarm verified fetch e2e claim",
+        "description": "Deterministic testnet fixture for client-side Swarm verification.",
+        "resolutionRules": "Used only to prove immutable claim/rules bytes verify before application code reads them.",
+        "createdAt": "2026-05-09T12:00:00.000Z",
+        "votingDeadline": "2026-05-16T12:00:00.000Z",
+        "revealDeadline": "2026-05-17T12:00:00.000Z",
+        "jurySize": 3,
+        "fixedNormalRiskPercent": 20,
+        "stakeToken": "TEST",
+        "creator": "0x0000000000000000000000000000000000000000"
+      }
+    }
+  ],
+  "feed": [
+    {
+      "name": "testnet SOC feed claim rules reference",
+      "owner": "0x7564105e977516c53be337314c7e53838967bdac",
+      "topic": "0x4378f60554fe0b2b450529519e3647dd068148bca3ba974c3137649c96432098",
+      "index": 0,
+      "updateReference": "d3c3289b89fc1e420af423f2af612964557462624df74fa1a20d9b1bf87d4021",
+      "targetReference": "aa0b29e1a9788faf971180c8067a2a6a74c53b2b1e6e7a3dc73762a9f63ec9d4",
+      "timestamp": 1800100000,
+      "contentType": "application/json; charset=utf-8",
+      "fileName": "claim-rules.json",
+      "expectedByteLength": 522,
+      "expectedKeccak256": "0x913f3638061f7c0b89fb5829c0c198255c1bf0f5d38a076b9f2656c2a41680ba",
+      "expectedJson": {
+        "schema": "truthmarket.claimRules.v1",
+        "title": "Public Swarm verified fetch e2e claim",
+        "description": "Deterministic testnet fixture for client-side Swarm verification.",
+        "resolutionRules": "Used only to prove immutable claim/rules bytes verify before application code reads them.",
+        "createdAt": "2026-05-09T12:00:00.000Z",
+        "votingDeadline": "2026-05-16T12:00:00.000Z",
+        "revealDeadline": "2026-05-17T12:00:00.000Z",
+        "jurySize": 3,
+        "fixedNormalRiskPercent": 20,
+        "stakeToken": "TEST",
+        "creator": "0x0000000000000000000000000000000000000000"
+      }
+    }
+  ]
+}
