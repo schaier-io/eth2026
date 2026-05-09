@@ -322,6 +322,7 @@ export default function TruthMarketApp() {
   const [revealStatus, setRevealStatus] = useState({ message: "", kind: "" as StatusKind });
   const [isCommitting, setIsCommitting] = useState(false);
   const [latestTxHash, setLatestTxHash] = useState<Hex | undefined>();
+  const [walletMenuOpen, setWalletMenuOpen] = useState(false);
 
   const wallet = address ?? null;
   const selectedMarketBase = markets.find((market) => market.id === selectedMarketId) || markets[0];
@@ -695,15 +696,44 @@ export default function TruthMarketApp() {
         </nav>
         <div className="wallet-cluster" aria-label="Wallet connection">
           {isConnected ? (
-            <button className="wallet-button" type="button" onClick={() => disconnect()}>
+            <button
+              className="wallet-button"
+              type="button"
+              onClick={() => {
+                setWalletMenuOpen(false);
+                disconnect();
+              }}
+            >
               {shortAddress(address)}
             </button>
           ) : (
-            connectors.map((connector) => (
-              <button className="wallet-button" type="button" key={connector.uid} disabled={isConnecting} onClick={() => connect({ connector })}>
-                {connector.name}
+            <>
+              <button className="wallet-button" type="button" aria-expanded={walletMenuOpen} aria-controls="walletMenu" disabled={isConnecting} onClick={() => setWalletMenuOpen((open) => !open)}>
+                {isConnecting ? "Connecting..." : "Connect wallet"}
               </button>
-            ))
+              {walletMenuOpen && (
+                <div className="wallet-menu" id="walletMenu" role="menu">
+                  {connectors.length === 0 ? (
+                    <p>No wallet connectors available.</p>
+                  ) : (
+                    connectors.map((connector) => (
+                      <button
+                        className="wallet-option"
+                        type="button"
+                        role="menuitem"
+                        key={connector.uid}
+                        onClick={() => {
+                          connect({ connector });
+                          setWalletMenuOpen(false);
+                        }}
+                      >
+                        {connector.name}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </header>
