@@ -7,6 +7,7 @@ These repo-local skills are committed under `.agents/skills/` so teammates can u
 - `ethskills` — Ethereum/EVM development routing skill.
 - `grill-me` — one-question-at-a-time design interrogation skill.
 - `design-an-interface` — brainstorming skill for comparing multiple interface shapes.
+- `truthmarket-agent` — TruthMarket agent workflow for Swarm verification, commit-reveal, local policy, heartbeat, and auto-reveal.
 
 ## Usage
 
@@ -17,6 +18,7 @@ mkdir -p ~/.codex/skills
 cp -R .agents/skills/ethskills ~/.codex/skills/
 cp -R .agents/skills/grill-me ~/.codex/skills/
 cp -R .agents/skills/design-an-interface ~/.codex/skills/
+cp -R .agents/skills/truthmarket-agent ~/.codex/skills/
 ```
 
 Repo docs remain the source of truth for TruthMarket product decisions.
