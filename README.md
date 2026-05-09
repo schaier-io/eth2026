@@ -13,6 +13,18 @@ The protocol is not a fact-checking oracle and does not claim to discover object
 - [docs/random-jury-belief-resolution-prd.md](./docs/random-jury-belief-resolution-prd.md): product requirements.
 - [docs/architecture-review.md](./docs/architecture-review.md): current code/PRD gap analysis.
 
+## Run The Web App
+
+The active UI is the Next.js app in `apps/web`:
+
+```bash
+cd apps/web
+npm install
+npm run dev
+```
+
+The older static prototype remains in `apps/web-prototype` as a visual reference.
+
 ## Decisions
 
 Architecture decisions live in [docs/adr](./docs/adr):
@@ -28,4 +40,3 @@ Architecture decisions live in [docs/adr](./docs/adr):
 ## Local Skills
 
 Some planning used local design skills on one developer machine. Those skills are not required to work on the repo. The versioned docs above are the source of truth for teammates and their agents.
-
