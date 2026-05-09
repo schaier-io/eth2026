@@ -1,9 +1,8 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { Address, Hex } from "viem";
 import { z } from "zod";
-import type { ResolvedConfig } from "../config.js";
-import { CliError } from "../errors.js";
+import { AgentError } from "./errors.js";
+import type { Address, Hex } from "./types.js";
 
 const MAX_ENTRIES = 200;
 
@@ -25,7 +24,11 @@ const AgentStateSchema = z.object({
 export type AgentEntry = z.infer<typeof AgentEntrySchema>;
 export type AgentState = z.infer<typeof AgentStateSchema>;
 
-export async function loadAgentState(cfg: ResolvedConfig): Promise<AgentState> {
+export interface AgentStateConfig {
+  agentStatePath: string;
+}
+
+export async function loadAgentState(cfg: AgentStateConfig): Promise<AgentState> {
   try {
     await stat(cfg.agentStatePath);
   } catch {
@@ -36,14 +39,14 @@ export async function loadAgentState(cfg: ResolvedConfig): Promise<AgentState> {
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
-    throw new CliError(
+    throw new AgentError(
       "AGENT_STATE_PARSE",
       `agent state at ${cfg.agentStatePath} is not valid JSON: ${(e as Error).message}`,
     );
   }
   const result = AgentStateSchema.safeParse(parsed);
   if (!result.success) {
-    throw new CliError(
+    throw new AgentError(
       "AGENT_STATE_INVALID",
       `agent state validation failed: ${result.error.issues
         .map((i) => `${i.path.join(".")}: ${i.message}`)
@@ -54,7 +57,7 @@ export async function loadAgentState(cfg: ResolvedConfig): Promise<AgentState> {
 }
 
 export async function saveAgentState(
-  cfg: ResolvedConfig,
+  cfg: AgentStateConfig,
   state: AgentState,
 ): Promise<string> {
   await mkdir(path.dirname(cfg.agentStatePath), { recursive: true });

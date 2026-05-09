@@ -8,12 +8,13 @@
     "truthmarket": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/cli.ts",
+    "build:agents": "npm --prefix ../../agents/apify run build",
+    "build": "npm run build:agents && tsc -p tsconfig.json",
+    "dev": "npm run build:agents && tsx src/cli.ts",
     "start": "node dist/cli.js",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "test": "npm run build:agents && vitest run",
+    "test:watch": "npm run build:agents && vitest",
+    "typecheck": "npm run build:agents && tsc -p tsconfig.json --noEmit"
   },
   "engines": {
     "node": ">=20"

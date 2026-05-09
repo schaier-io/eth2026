@@ -1,6 +1,6 @@
-import { type Hex, keccak256, stringToBytes } from "viem";
-import type { MarketSpec } from "../chain/registry.js";
 import type { ApifyCandidate } from "./apify.js";
+import type { Hex, MarketSpec } from "./types.js";
+import { keccak256, stringToBytes } from "viem";
 
 /**
  * Subdivision of a market's total duration into the three on-chain phases.

@@ -1,4 +1,4 @@
-import { CliError } from "../errors.js";
+import { AgentError } from "./errors.js";
 
 /**
  * Shape of one entry in the `candidates` array returned by
@@ -45,7 +45,7 @@ export interface FetchCandidatesOpts {
 
 /**
  * POST the web app's apify-generated-markets endpoint and return the parsed
- * candidates array. Throws CliError on transport, status, or shape errors.
+ * candidates array. Throws AgentError on transport, status, or shape errors.
  */
 export async function fetchCandidates(opts: FetchCandidatesOpts): Promise<ApifyGenerateResult> {
   const body: Record<string, unknown> = {};
@@ -61,7 +61,7 @@ export async function fetchCandidates(opts: FetchCandidatesOpts): Promise<ApifyG
       signal: opts.signal,
     });
   } catch (e) {
-    throw new CliError(
+    throw new AgentError(
       "APIFY_FETCH_FAILED",
       `could not reach apify endpoint at ${opts.endpoint}: ${(e as Error).message}`,
     );
@@ -71,7 +71,7 @@ export async function fetchCandidates(opts: FetchCandidatesOpts): Promise<ApifyG
   try {
     payload = await res.json();
   } catch {
-    throw new CliError(
+    throw new AgentError(
       "APIFY_BAD_RESPONSE",
       `apify endpoint returned non-JSON (status ${res.status})`,
     );
@@ -80,12 +80,12 @@ export async function fetchCandidates(opts: FetchCandidatesOpts): Promise<ApifyG
   if (!res.ok || (payload as { ok?: boolean }).ok !== true) {
     const errMsg =
       (payload as { error?: string }).error ?? `status ${res.status} ${res.statusText}`;
-    throw new CliError("APIFY_GENERATION_FAILED", `apify endpoint error: ${errMsg}`);
+    throw new AgentError("APIFY_GENERATION_FAILED", `apify endpoint error: ${errMsg}`);
   }
 
   const result = payload as ApifyGenerateResult;
   if (!Array.isArray(result.candidates)) {
-    throw new CliError("APIFY_BAD_RESPONSE", "apify response missing 'candidates' array");
+    throw new AgentError("APIFY_BAD_RESPONSE", "apify response missing 'candidates' array");
   }
   return result;
 }

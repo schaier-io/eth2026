@@ -12,6 +12,7 @@ This is the entry point for project context. Teammates and agents should use the
 - [Architecture Review](./architecture-review.md): current code gaps and recommended module boundaries.
 - [Swarm Integration Plan](./swarm-integration-plan.md): minimal Swarm build plan for immutable rules, verified fetch, KV discovery, and audit artifacts.
 - [Apify Reddit Agent Market Plan](./apify-reddit-agent-market-plan.md): Apify-powered plan for agent-created markets from viral ambiguous Reddit questions.
+- [Agents](../agents/README.md): root-level agent packages, starting with the Apify market-creation agent.
 - [MVP Live Demo Walkthrough](./mvp-demo.md): end-to-end demo path — deploy registry on anvil, run the agent, vote/reveal/resolve through the web app.
 
 ## Decisions
@@ -27,7 +28,7 @@ This is the entry point for project context. Teammates and agents should use the
 - [ADR 0009](./adr/0009-swarm-verification-and-discovery-boundaries.md): separate immutable Swarm verification from mutable KV/feed discovery.
 - [ADR 0010](./adr/0010-agent-policy-heartbeat-and-auto-reveal.md): require explicit agent policy, local reveal vaults, heartbeat monitoring, and agent-side auto-reveal.
 - [ADR 0011](./adr/0011-market-registry.md): introduce a `MarketRegistry` that bakes in operational addresses and exposes a single `createMarket` entry point.
-- [ADR 0012](./adr/0012-apify-agent-market-loop.md): the Apify-powered agent runs as `truthmarket agent run/tick`, calls the existing web route, dedupes via a local state file, and uses a placeholder ipfsHash until Swarm upload lands.
+- [ADR 0012](./adr/0012-apify-agent-market-loop.md): the Apify-powered agent lives in `agents/apify`, is exposed through `truthmarket agent run/tick`, calls the existing web route, dedupes via a local state file, and uses a placeholder ipfsHash until Swarm upload lands.
 
 ## Local Skill Provenance
 
