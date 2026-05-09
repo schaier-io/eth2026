@@ -140,6 +140,13 @@ h2 {
   margin-left: auto;
 }
 
+.wallet-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .topnav button,
 .wallet-button,
 .ghost-button {
@@ -349,14 +356,24 @@ h2 {
 }
 
 .open-market,
-.primary-action {
+.primary-action,
+.secondary-action {
   min-height: 48px;
   border: 2px solid var(--text);
   border-radius: var(--radius);
-  background: var(--coin);
   color: var(--text);
   font-weight: 900;
   box-shadow: 4px 4px 0 var(--text);
+}
+
+.open-market,
+.primary-action {
+  background: var(--coin);
+}
+
+.secondary-action {
+  margin-top: 10px;
+  background: var(--surface);
 }
 
 .empty-state {

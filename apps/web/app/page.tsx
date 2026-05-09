@@ -1,6 +1,9 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import { formatUnits, parseUnits, type Address, type Hex } from "viem";
+import { useAccount, useConnect, useDisconnect, usePublicClient, useReadContract, useReadContracts, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { erc20Abi, truthMarketAbi, truthMarketAddress } from "../lib/truthmarket";
 
 type Screen = "feed" | "create" | "stake" | "dashboard";
 type Direction = "Up" | "Down";
@@ -39,9 +42,13 @@ type Position = {
   stake: number;
   risked: number;
   commitmentHash: string;
+  nonce?: Hex;
+  vote?: 1 | 2;
+  txHash?: Hex;
 };
 
 const RISK_PERCENT = 20;
+const ZERO_HASH = "0x0000000000000000000000000000000000000000000000000000000000000000" as Hex;
 
 const initialMarkets: Market[] = [
   {
@@ -200,6 +207,21 @@ function shortHash(value: string) {
   return `${value.slice(0, 10)}...${value.slice(-8)}`;
 }
 
+function shortAddress(value?: string) {
+  if (!value) return "";
+  return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+function phaseFromContract(value: number): Stage {
+  if (value === 1) return "Reveal";
+  if (value === 2) return "Resolved";
+  return "Voting";
+}
+
+function tokenNumber(value: bigint, decimals: number) {
+  return Number(formatUnits(value, decimals));
+}
+
 function lifecycleIndex(stage: Stage) {
   return ["Voting", "Jury selection", "Reveal", "Resolved"].indexOf(stage);
 }
@@ -281,12 +303,16 @@ function MarketArtwork({ market }: { market: Market }) {
 }
 
 export default function TruthMarketApp() {
+  const { address, isConnected } = useAccount();
+  const { connectors, connect, isPending: isConnecting } = useConnect();
+  const { disconnect } = useDisconnect();
+  const publicClient = usePublicClient();
+  const { writeContractAsync, isPending: isWritingContract } = useWriteContract();
   const [markets, setMarkets] = useState<Market[]>(initialMarkets);
   const [screen, setScreen] = useState<Screen>("feed");
   const [selectedMarketId, setSelectedMarketId] = useState(initialMarkets[0].id);
   const [filter, setFilter] = useState<"Trending" | "New" | "Reveal soon">("Trending");
   const [direction, setDirection] = useState<Direction>("Up");
-  const [wallet, setWallet] = useState<string | null>(null);
   const [currentPosition, setCurrentPosition] = useState<Position | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [createImageData, setCreateImageData] = useState<string | null>(null);
@@ -295,17 +321,108 @@ export default function TruthMarketApp() {
   const [createStatus, setCreateStatus] = useState({ message: "", kind: "" as StatusKind });
   const [revealStatus, setRevealStatus] = useState({ message: "", kind: "" as StatusKind });
   const [isCommitting, setIsCommitting] = useState(false);
+  const [latestTxHash, setLatestTxHash] = useState<Hex | undefined>();
 
-  const selectedMarket = markets.find((market) => market.id === selectedMarketId) || markets[0];
+  const wallet = address ?? null;
+  const selectedMarketBase = markets.find((market) => market.id === selectedMarketId) || markets[0];
+  const contractConfigured = Boolean(truthMarketAddress);
+  const contractReads = useReadContracts({
+    contracts: truthMarketAddress
+      ? [
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "name" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "description" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "phase" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "commitCount" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "totalCommittedStake" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "distributablePool" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "jurySize" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "minRevealedJurors" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "revealedJurorCount" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "juryYesCount" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "juryNoCount" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "randomness" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "juryAuditHash" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "getJury" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "minStake" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "RISK_PERCENT" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "stakeToken" },
+          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "ipfsHash" },
+        ]
+      : [],
+    query: { enabled: contractConfigured },
+  });
+
+  function readContractResult<T>(index: number, fallback: T): T {
+    const value = contractReads.data?.[index];
+    return value?.status === "success" ? (value.result as T) : fallback;
+  }
+
+  const tokenAddress = readContractResult<Address | undefined>(16, undefined);
+  const { data: tokenDecimalsData } = useReadContract({
+    address: tokenAddress,
+    abi: erc20Abi,
+    functionName: "decimals",
+    query: { enabled: Boolean(tokenAddress) },
+  });
+  const { data: tokenSymbolData } = useReadContract({
+    address: tokenAddress,
+    abi: erc20Abi,
+    functionName: "symbol",
+    query: { enabled: Boolean(tokenAddress) },
+  });
+  const { data: allowanceData, refetch: refetchAllowance } = useReadContract({
+    address: tokenAddress,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: address && truthMarketAddress ? [address, truthMarketAddress] : undefined,
+    query: { enabled: Boolean(tokenAddress && address && truthMarketAddress) },
+  });
+  const { isLoading: isWaitingForTx } = useWaitForTransactionReceipt({
+    hash: latestTxHash,
+    query: { enabled: Boolean(latestTxHash) },
+  });
+  const tokenDecimals = typeof tokenDecimalsData === "number" ? tokenDecimalsData : 18;
+  const tokenSymbol = typeof tokenSymbolData === "string" ? tokenSymbolData : "TMT";
+  const contractRiskPercent = Number(readContractResult(15, RISK_PERCENT));
+  const selectedMarket = useMemo(() => {
+    if (!truthMarketAddress || !contractReads.data) return selectedMarketBase;
+    const phase = phaseFromContract(Number(readContractResult(2, 0)));
+    const totalCommittedStake = readContractResult<bigint>(4, 0n);
+    const distributablePool = readContractResult<bigint>(5, 0n);
+    const randomness = readContractResult<bigint>(11, 0n);
+    const auditHash = readContractResult<Hex>(12, ZERO_HASH);
+    return {
+      ...selectedMarketBase,
+      id: truthMarketAddress,
+      title: readContractResult(0, selectedMarketBase.title),
+      description: readContractResult(1, selectedMarketBase.description),
+      phase,
+      uiStage: phase,
+      stake: tokenNumber(totalCommittedStake, tokenDecimals),
+      commits: Number(readContractResult(3, selectedMarketBase.commits)),
+      pool: tokenNumber(distributablePool, tokenDecimals),
+      jurySize: Number(readContractResult(6, selectedMarketBase.jurySize)),
+      minRevealedJurors: Number(readContractResult(7, selectedMarketBase.minRevealedJurors)),
+      revealedJurors: Number(readContractResult(8, selectedMarketBase.revealedJurors)),
+      juryUpCount: Number(readContractResult(9, selectedMarketBase.juryUpCount)),
+      juryDownCount: Number(readContractResult(10, selectedMarketBase.juryDownCount)),
+      randomness: randomness === 0n ? "Pending" : `0x${randomness.toString(16)}`,
+      auditHash: auditHash === ZERO_HASH ? "Pending" : auditHash,
+      jurors: readContractResult<Address[]>(13, []),
+      deadlineLabel: contractReads.isLoading ? "Reading contract" : selectedMarketBase.deadlineLabel,
+      timeLeft: contractReads.isLoading ? "Syncing" : selectedMarketBase.timeLeft,
+    } satisfies Market;
+  }, [contractReads.data, contractReads.isLoading, selectedMarketBase, tokenDecimals]);
   const positionForSelected = currentPosition?.marketId === selectedMarket.id ? currentPosition : null;
-  const risked = Math.max(0, (stake * RISK_PERCENT) / 100);
+  const risked = Math.max(0, (stake * contractRiskPercent) / 100);
   const refundable = Math.max(0, stake - risked);
 
   const visibleMarkets = useMemo(() => {
-    if (filter === "New") return [...markets].reverse();
-    if (filter === "Reveal soon") return markets.filter((market) => market.uiStage === "Reveal");
-    return markets;
-  }, [filter, markets]);
+    const source = truthMarketAddress ? [selectedMarket, ...markets.filter((market) => market.id !== selectedMarket.id)] : markets;
+    if (filter === "New") return [...source].reverse();
+    if (filter === "Reveal soon") return source.filter((market) => market.uiStage === "Reveal");
+    return source;
+  }, [filter, markets, selectedMarket]);
 
   function showScreen(nextScreen: Screen) {
     setScreen(nextScreen);
@@ -320,10 +437,6 @@ export default function TruthMarketApp() {
     setRevealed(false);
     setCommitStatus({ message: "", kind: "" });
     showScreen("stake");
-  }
-
-  function handleConnectWallet() {
-    setWallet("0x7a18...c9E2");
   }
 
   function handleCreateImage(event: React.ChangeEvent<HTMLInputElement>) {
@@ -425,9 +538,49 @@ export default function TruthMarketApp() {
     setCommitStatus({ message: "Committing hidden position...", kind: "" });
     try {
       const nonceBytes = crypto.getRandomValues(new Uint8Array(32));
-      const nonce = `0x${bytesToHex(nonceBytes)}`;
+      const nonce = `0x${bytesToHex(nonceBytes)}` as Hex;
       const vote = direction === "Up" ? 1 : 2;
-      const commitmentHash = await sha256Hex(`${vote}|${nonce}|${wallet}|${selectedMarket.id}`);
+      let commitmentHash = (await sha256Hex(`${vote}|${nonce}|${wallet}|${selectedMarket.id}`)) as Hex;
+      let txHash: Hex | undefined;
+      if (truthMarketAddress) {
+        if (!publicClient || !tokenAddress) {
+          setCommitStatus({ message: "Contract RPC is not ready yet.", kind: "error" });
+          return;
+        }
+        const stakeUnits = parseUnits(String(stake), tokenDecimals);
+        const minStake = readContractResult(14, 0n);
+        if (stakeUnits < minStake) {
+          setCommitStatus({ message: `Minimum stake is ${formatUnits(minStake, tokenDecimals)} ${tokenSymbol}.`, kind: "error" });
+          return;
+        }
+        commitmentHash = (await publicClient.readContract({
+          address: truthMarketAddress,
+          abi: truthMarketAbi,
+          functionName: "commitHashOf",
+          args: [vote, nonce, wallet as Address],
+        })) as Hex;
+        if ((allowanceData ?? 0n) < stakeUnits) {
+          setCommitStatus({ message: "Approving stake token...", kind: "" });
+          const approvalHash = await writeContractAsync({
+            address: tokenAddress,
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [truthMarketAddress, stakeUnits],
+          });
+          setLatestTxHash(approvalHash);
+          await publicClient.waitForTransactionReceipt({ hash: approvalHash });
+          await refetchAllowance();
+        }
+        setCommitStatus({ message: "Submitting commit transaction...", kind: "" });
+        txHash = await writeContractAsync({
+          address: truthMarketAddress,
+          abi: truthMarketAbi,
+          functionName: "commitVote",
+          args: [commitmentHash, stakeUnits],
+        });
+        setLatestTxHash(txHash);
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+      }
       const encrypted = await encryptVaultPayload(
         {
           marketId: selectedMarket.id,
@@ -437,7 +590,8 @@ export default function TruthMarketApp() {
           nonce,
           commitmentHash,
           stake,
-          riskPercent: RISK_PERCENT,
+          riskPercent: contractRiskPercent,
+          txHash,
         },
         wallet,
       );
@@ -449,27 +603,71 @@ export default function TruthMarketApp() {
         stake,
         risked,
         commitmentHash,
+        nonce,
+        vote,
+        txHash,
       });
       setRevealed(false);
-      setCommitStatus({ message: "", kind: "" });
+      setCommitStatus({ message: txHash ? `Commit confirmed: ${shortHash(txHash)}` : "", kind: txHash ? "success" : "" });
       showScreen("dashboard");
-    } catch {
-      setCommitStatus({ message: "Could not create the local reveal vault.", kind: "error" });
+    } catch (error) {
+      setCommitStatus({ message: error instanceof Error ? error.message : "Could not commit the position.", kind: "error" });
     } finally {
       setIsCommitting(false);
     }
   }
 
-  function handleReveal() {
+  async function handleReveal() {
     if (!positionForSelected) {
       setRevealStatus({ message: "No position selected in this session.", kind: "error" });
       return;
     }
-    setRevealed(true);
-    setRevealStatus({
-      message: `Reveal prepared for ${positionForSelected.direction}. In production this calls revealVote(vote, nonce).`,
-      kind: "success",
-    });
+    try {
+      if (truthMarketAddress) {
+        if (!positionForSelected.nonce || !positionForSelected.vote || !publicClient) {
+          setRevealStatus({ message: "Reveal key is missing in this session.", kind: "error" });
+          return;
+        }
+        setRevealStatus({ message: "Submitting reveal transaction...", kind: "" });
+        const txHash = await writeContractAsync({
+          address: truthMarketAddress,
+          abi: truthMarketAbi,
+          functionName: "revealVote",
+          args: [positionForSelected.vote, positionForSelected.nonce],
+        });
+        setLatestTxHash(txHash);
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+        setRevealStatus({ message: `Reveal confirmed: ${shortHash(txHash)}`, kind: "success" });
+      } else {
+        setRevealStatus({
+          message: `Reveal prepared for ${positionForSelected.direction}. In production this calls revealVote(vote, nonce).`,
+          kind: "success",
+        });
+      }
+      setRevealed(true);
+    } catch (error) {
+      setRevealStatus({ message: error instanceof Error ? error.message : "Could not reveal the position.", kind: "error" });
+    }
+  }
+
+  async function handleWithdraw() {
+    if (!truthMarketAddress || !publicClient) {
+      setRevealStatus({ message: "Connect a deployed TruthMarket contract first.", kind: "error" });
+      return;
+    }
+    try {
+      setRevealStatus({ message: "Submitting withdrawal transaction...", kind: "" });
+      const txHash = await writeContractAsync({
+        address: truthMarketAddress,
+        abi: truthMarketAbi,
+        functionName: "withdraw",
+      });
+      setLatestTxHash(txHash);
+      await publicClient.waitForTransactionReceipt({ hash: txHash });
+      setRevealStatus({ message: `Withdrawal confirmed: ${shortHash(txHash)}`, kind: "success" });
+    } catch (error) {
+      setRevealStatus({ message: error instanceof Error ? error.message : "Could not withdraw.", kind: "error" });
+    }
   }
 
   return (
@@ -495,9 +693,19 @@ export default function TruthMarketApp() {
             Developer
           </button>
         </nav>
-        <button className="wallet-button" type="button" onClick={handleConnectWallet}>
-          {wallet || "Connect wallet"}
-        </button>
+        <div className="wallet-cluster" aria-label="Wallet connection">
+          {isConnected ? (
+            <button className="wallet-button" type="button" onClick={() => disconnect()}>
+              {shortAddress(address)}
+            </button>
+          ) : (
+            connectors.map((connector) => (
+              <button className="wallet-button" type="button" key={connector.uid} disabled={isConnecting} onClick={() => connect({ connector })}>
+                {connector.name}
+              </button>
+            ))
+          )}
+        </div>
       </header>
 
       <main>
@@ -703,7 +911,7 @@ export default function TruthMarketApp() {
 
                   <div className="risk-preview" aria-live="polite">
                     <div>
-                      <span>Normal loss ({RISK_PERCENT}%)</span>
+                      <span>Normal loss ({contractRiskPercent}%)</span>
                       <strong>{formatToken(risked.toFixed(2))}</strong>
                     </div>
                     <div>
@@ -711,10 +919,13 @@ export default function TruthMarketApp() {
                       <strong>{formatToken(refundable.toFixed(2))}</strong>
                     </div>
                   </div>
-                  <p className="risk-note">Losing voters and non-revealing non-jurors lose 20%. Selected jurors who skip reveal forfeit their full stake.</p>
+                  <p className="risk-note">
+                    Losing voters and non-revealing non-jurors lose {contractRiskPercent}%. Selected jurors who skip reveal forfeit their full stake.
+                    {truthMarketAddress ? ` Connected to ${tokenSymbol} staking.` : ""}
+                  </p>
 
-                  <button className="primary-action" type="submit" disabled={isCommitting} aria-busy={isCommitting}>
-                    {isCommitting ? "Committing..." : "Commit position"}
+                  <button className="primary-action" type="submit" disabled={isCommitting || isWritingContract || isWaitingForTx} aria-busy={isCommitting || isWritingContract || isWaitingForTx}>
+                    {isCommitting || isWritingContract || isWaitingForTx ? "Committing..." : "Commit position"}
                   </button>
                   <StatusLine message={commitStatus.message} kind={commitStatus.kind} />
                 </form>
@@ -769,6 +980,9 @@ export default function TruthMarketApp() {
                   </div>
                   <button className="primary-action" type="button" disabled={!positionForSelected || selectedMarket.uiStage !== "Reveal"} onClick={handleReveal}>
                     {selectedMarket.uiStage === "Reveal" ? "Reveal position" : "Reveal when open"}
+                  </button>
+                  <button className="secondary-action" type="button" disabled={!truthMarketAddress || selectedMarket.uiStage !== "Resolved"} onClick={handleWithdraw}>
+                    Withdraw payout
                   </button>
                   <StatusLine message={revealStatus.message} kind={revealStatus.kind} />
                 </article>
