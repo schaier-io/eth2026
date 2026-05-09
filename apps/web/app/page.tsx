@@ -3,7 +3,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { formatUnits, hexToString, parseUnits, type Address, type Hex } from "viem";
 import { useAccount, useConnect, useDisconnect, usePublicClient, useReadContract, useReadContracts, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
-import { erc20Abi, truthMarketAbi, truthMarketAddress } from "../lib/truthmarket";
+import { erc20Abi, truthMarketAbi, truthMarketAddress as defaultMarketAddress } from "../lib/truthmarket";
+import { marketRegistryAbi, registryAddress } from "../lib/registry";
 
 type Screen = "feed" | "create" | "stake" | "dashboard";
 type Direction = "Up" | "Down";
@@ -432,36 +433,37 @@ export default function TruthMarketApp() {
   const [walletMenuOpen, setWalletMenuOpen] = useState(false);
   const [hasAcceptedDemoTerms, setHasAcceptedDemoTerms] = useState(false);
   const [demoTermsChecked, setDemoTermsChecked] = useState(false);
+  const [activeMarketAddress, setActiveMarketAddress] = useState<Address | undefined>(defaultMarketAddress);
 
   const wallet = address ?? null;
   const selectedMarketBase = markets.find((market) => market.id === selectedMarketId) || markets[0];
-  const contractConfigured = Boolean(truthMarketAddress);
+  const contractConfigured = Boolean(activeMarketAddress);
   const contractReads = useReadContracts({
-    contracts: truthMarketAddress
+    contracts: activeMarketAddress
       ? [
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "name" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "description" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "phase" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "commitCount" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "totalCommittedStake" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "distributablePool" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "targetJurySize" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "minRevealedJurors" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "revealedJurorCount" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "juryYesCount" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "juryNoCount" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "randomness" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "randomnessHash" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "randomnessIpfsAddress" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "randomnessSequence" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "randomnessTimestamp" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "randomnessIndex" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "juryAuditHash" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "getJury" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "minStake" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "RISK_PERCENT" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "stakeToken" },
-          { address: truthMarketAddress, abi: truthMarketAbi, functionName: "ipfsHash" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "name" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "description" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "phase" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "commitCount" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "totalCommittedStake" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "distributablePool" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "targetJurySize" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "minRevealedJurors" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "revealedJurorCount" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "juryYesCount" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "juryNoCount" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "randomness" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "randomnessHash" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "randomnessIpfsAddress" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "randomnessSequence" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "randomnessTimestamp" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "randomnessIndex" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "juryAuditHash" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "getJury" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "minStake" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "RISK_PERCENT" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "stakeToken" },
+          { address: activeMarketAddress, abi: truthMarketAbi, functionName: "ipfsHash" },
         ]
       : [],
     query: { enabled: contractConfigured },
@@ -489,8 +491,8 @@ export default function TruthMarketApp() {
     address: tokenAddress,
     abi: erc20Abi,
     functionName: "allowance",
-    args: address && truthMarketAddress ? [address, truthMarketAddress] : undefined,
-    query: { enabled: Boolean(tokenAddress && address && truthMarketAddress) },
+    args: address && activeMarketAddress ? [address, activeMarketAddress] : undefined,
+    query: { enabled: Boolean(tokenAddress && address && activeMarketAddress) },
   });
   const { isLoading: isWaitingForTx } = useWaitForTransactionReceipt({
     hash: latestTxHash,
@@ -500,7 +502,7 @@ export default function TruthMarketApp() {
   const tokenSymbol = typeof tokenSymbolData === "string" ? tokenSymbolData : "TMT";
   const contractRiskPercent = Number(readContractResult(20, RISK_PERCENT));
   const selectedMarket = useMemo(() => {
-    if (!truthMarketAddress || !contractReads.data) return selectedMarketBase;
+    if (!activeMarketAddress || !contractReads.data) return selectedMarketBase;
     const phase = phaseFromContract(Number(readContractResult(2, 0)));
     const totalCommittedStake = readContractResult<bigint>(4, 0n);
     const distributablePool = readContractResult<bigint>(5, 0n);
@@ -513,7 +515,7 @@ export default function TruthMarketApp() {
     const auditHash = readContractResult<Hex>(17, ZERO_HASH);
     return {
       ...selectedMarketBase,
-      id: truthMarketAddress,
+      id: activeMarketAddress,
       title: readContractResult(0, selectedMarketBase.title),
       description: readContractResult(1, selectedMarketBase.description),
       phase,
@@ -552,7 +554,7 @@ export default function TruthMarketApp() {
   }, [hasAcceptedDemoTerms]);
 
   useEffect(() => {
-    if (truthMarketAddress || !autoRevealArmed || !positionForSelected || revealed) return;
+    if (activeMarketAddress || !autoRevealArmed || !positionForSelected || revealed) return;
     setAutoRevealStatus("Heartbeat armed. Waiting for the jury draw...");
     const juryTimer = window.setTimeout(() => {
       setAutoRevealStatus("Jury draw received. Reveal window opening...");
@@ -584,10 +586,10 @@ export default function TruthMarketApp() {
       window.clearTimeout(juryTimer);
       window.clearTimeout(revealTimer);
     };
-  }, [autoRevealArmed, positionForSelected, revealed]);
+  }, [activeMarketAddress, autoRevealArmed, positionForSelected, revealed]);
 
   const visibleMarkets = useMemo(() => {
-    const source = truthMarketAddress ? [selectedMarket, ...markets.filter((market) => market.id !== selectedMarket.id)] : markets;
+    const source = activeMarketAddress ? [selectedMarket, ...markets.filter((market) => market.id !== selectedMarket.id)] : markets;
     if (filter === "New") return [...source].reverse();
     if (filter === "Reveal soon") return source.filter((market) => market.uiStage === "Reveal");
     return source;
@@ -728,7 +730,7 @@ export default function TruthMarketApp() {
       const vote = direction === "Up" ? 1 : 2;
       let commitmentHash = (await sha256Hex(`${vote}|${nonce}|${wallet}|${selectedMarket.id}`)) as Hex;
       let txHash: Hex | undefined;
-      if (truthMarketAddress) {
+      if (activeMarketAddress) {
         if (!publicClient || !tokenAddress) {
           setCommitStatus({ message: "Contract RPC is not ready yet.", kind: "error" });
           return;
@@ -740,7 +742,7 @@ export default function TruthMarketApp() {
           return;
         }
         commitmentHash = (await publicClient.readContract({
-          address: truthMarketAddress,
+          address: activeMarketAddress,
           abi: truthMarketAbi,
           functionName: "commitHashOf",
           args: [vote, nonce, wallet as Address],
@@ -751,7 +753,7 @@ export default function TruthMarketApp() {
             address: tokenAddress,
             abi: erc20Abi,
             functionName: "approve",
-            args: [truthMarketAddress, stakeUnits],
+            args: [activeMarketAddress, stakeUnits],
           });
           setLatestTxHash(approvalHash);
           await publicClient.waitForTransactionReceipt({ hash: approvalHash });
@@ -759,7 +761,7 @@ export default function TruthMarketApp() {
         }
         setCommitStatus({ message: "Submitting commit transaction...", kind: "" });
         txHash = await writeContractAsync({
-          address: truthMarketAddress,
+          address: activeMarketAddress,
           abi: truthMarketAbi,
           functionName: "commitVote",
           args: [commitmentHash, stakeUnits],
@@ -797,7 +799,7 @@ export default function TruthMarketApp() {
       setAutoRevealArmed(autoRevealEnabled);
       setAutoRevealStatus(
         autoRevealEnabled
-          ? truthMarketAddress
+          ? activeMarketAddress
             ? "Auto-reveal policy armed. This wallet must still sign the reveal transaction."
             : "Auto-reveal armed. The demo heartbeat will open reveal shortly."
           : "Auto-reveal off. You will need to reveal manually.",
@@ -818,14 +820,14 @@ export default function TruthMarketApp() {
       return;
     }
     try {
-      if (truthMarketAddress) {
+      if (activeMarketAddress) {
         if (!positionForSelected.nonce || !positionForSelected.vote || !publicClient) {
           setRevealStatus({ message: "Reveal key is missing in this session.", kind: "error" });
           return;
         }
         setRevealStatus({ message: "Submitting reveal transaction...", kind: "" });
         const txHash = await writeContractAsync({
-          address: truthMarketAddress,
+          address: activeMarketAddress,
           abi: truthMarketAbi,
           functionName: "revealVote",
           args: [positionForSelected.vote, positionForSelected.nonce],
@@ -849,14 +851,14 @@ export default function TruthMarketApp() {
 
   async function handleWithdraw() {
     if (!hasAcceptedDemoTerms) return;
-    if (!truthMarketAddress || !publicClient) {
+    if (!activeMarketAddress || !publicClient) {
       setRevealStatus({ message: "Connect a deployed TruthMarket contract first.", kind: "error" });
       return;
     }
     try {
       setRevealStatus({ message: "Submitting withdrawal transaction...", kind: "" });
       const txHash = await writeContractAsync({
-        address: truthMarketAddress,
+        address: activeMarketAddress,
         abi: truthMarketAbi,
         functionName: "withdraw",
       });
@@ -1172,7 +1174,7 @@ export default function TruthMarketApp() {
                   </label>
                   <p className="risk-note">
                     Losing voters and non-revealing non-jurors lose {contractRiskPercent}%. Selected jurors who skip reveal forfeit their full stake.
-                    {truthMarketAddress ? ` Connected to ${tokenSymbol} staking.` : ""}
+                    {activeMarketAddress ? ` Connected to ${tokenSymbol} staking.` : ""}
                   </p>
 
                   <button className="primary-action" type="submit" disabled={isCommitting || isWritingContract || isWaitingForTx} aria-busy={isCommitting || isWritingContract || isWaitingForTx}>
@@ -1238,7 +1240,7 @@ export default function TruthMarketApp() {
                     <span className="automation-dot" aria-hidden="true" />
                     <p>{autoRevealStatus}</p>
                   </div>
-                  <button className="secondary-action" type="button" disabled={!truthMarketAddress || selectedMarket.uiStage !== "Resolved"} onClick={handleWithdraw}>
+                  <button className="secondary-action" type="button" disabled={!activeMarketAddress || selectedMarket.uiStage !== "Resolved"} onClick={handleWithdraw}>
                     Withdraw payout
                   </button>
                   <StatusLine message={revealStatus.message} kind={revealStatus.kind} />
