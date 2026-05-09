@@ -6,6 +6,7 @@ This is the entry point for project context. Teammates and agents should use the
 
 - [Agent Operating Guide](../AGENTS.md): instructions for Codex, Claude, and other agents.
 - [Context](../CONTEXT.md): project language, canonical terms, and resolved ambiguities.
+- [Root README](../README.md): hackathon monorepo overview and workspace map.
 - [Task Plan](../tasks.md): staged implementation and hackathon plan.
 - [PRD](./random-jury-belief-resolution-prd.md): product requirements for random-jury belief resolution.
 - [Architecture Review](./architecture-review.md): current code gaps and recommended module boundaries.
@@ -40,3 +41,5 @@ The versioned documents above are the portable outputs. If a teammate does not h
 ## Current Implementation Status
 
 The contract has been aligned with the current PRD model: fixed 20% normal slashing on losers/non-revealers, count-based jury voting (1 vote per selected juror), full-stake slash for non-revealing jurors, and risk-weighted rewards for winning revealers. See [Architecture Review](./architecture-review.md) for remaining test and service boundaries.
+
+The monorepo also contains [`packages/swarm-verified-fetch`](../packages/swarm-verified-fetch), a standalone `@truth-market/swarm-verified-fetch` package for the Swarm verified-fetch bounty. It verifies immutable CAC/BMT byte trees, Mantaray manifest paths, and SOC/feed mutable reads without trusting a gateway.

@@ -4,6 +4,18 @@ TruthMarket is a random-jury belief-resolution protocol. Participants stake on i
 
 The protocol is not a fact-checking oracle and does not claim to discover objective truth. It resolves claims from selected staked voter belief under immutable claim rules.
 
+## Hackathon Monorepo
+
+This repository is the ETH 2026 hackathon monorepo for TruthMarket. It keeps the protocol contract, demo app, sponsor integrations, package experiments, and agent-facing documentation in one place so judges and teammates can inspect the full build without chasing separate repos.
+
+Main workspaces:
+
+- [`contracts`](./contracts): Solidity random-jury belief-resolution contract and tests.
+- [`apps/web`](./apps/web): Next.js demo app.
+- [`packages/swarm-verified-fetch`](./packages/swarm-verified-fetch): standalone `@truth-market/swarm-verified-fetch` TypeScript package for verified Swarm gateway reads, including immutable CAC/BMT verification, Mantaray manifest reads, and SOC/feed verification.
+- [`packages/swarm-kv`](./packages/swarm-kv): Swarm feed/KV discovery package used for mutable indexes and read-model convenience.
+- [`docs`](./docs): PRD, ADRs, architecture notes, and sponsor integration plans.
+
 ## Start Here
 
 - [AGENTS.md](./AGENTS.md): operating guide for Codex, Claude, and other coding agents.

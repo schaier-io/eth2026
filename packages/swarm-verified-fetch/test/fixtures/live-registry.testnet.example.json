@@ -1,0 +1,52 @@
+{
+  "schema": "truthmarket.swarm-kv.e2e-registry.v1",
+  "gatewayUrl": "https://api.gateway.testnet.ethswarm.org",
+  "indexReference": "2391a94a36df3dd59f383827983eb1c84703852a70f0e4f7426d66b6504c04d6",
+  "values": {
+    "package": {
+      "key": "registry:package",
+      "reference": "21b0ec4f3b86679d55aae1d178356515f42ece2bdb6cec176f9da16f14fb6263",
+      "kind": "json",
+      "expected": {
+        "schema": "truthmarket.swarm-registry.package.v1",
+        "name": "@truth-market/swarm-verified-fetch",
+        "description": "Fetch-shaped Swarm gateway reads with client-side verification.",
+        "tags": [
+          "swarm",
+          "verified-fetch",
+          "gateway"
+        ],
+        "createdAt": "2026-05-09T12:00:00.000Z"
+      }
+    },
+    "release": {
+      "key": "registry:release",
+      "reference": "f2750372563bf55e8c381c4759084b5501205dc0530a3c8b4d74fe28126fa84e",
+      "kind": "json",
+      "expected": {
+        "schema": "truthmarket.swarm-registry.release.v1",
+        "name": "@truth-market/swarm-verified-fetch",
+        "version": "0.1.0-alpha.0",
+        "files": [
+          "dist/index.js",
+          "dist/index.d.ts"
+        ],
+        "createdAt": "2026-05-09T12:00:00.000Z"
+      }
+    },
+    "readme": {
+      "key": "registry:readme",
+      "reference": "737b356d42a9e972418e2451732f7e066ee4dbc9c3fa02b2c016e547382e42bf",
+      "kind": "string",
+      "expected": "# Live Swarm Registry E2E\n\nThis document was published as a public testnet fixture and verified through @truth-market/swarm-verified-fetch."
+    },
+    "tarball": {
+      "key": "registry:tarball",
+      "reference": "c9125da3e82bdc318526fc458831b42a427cbea4093118d663eafee9add59a0c",
+      "kind": "bytes",
+      "expectedLength": 16507,
+      "expectedKeccak256": "40c7e9d771fa56eac5821cb7f2fd5b92e47c8dfa265783e1dbb2c7daf94bdc20",
+      "expectedMultiChunk": true
+    }
+  }
+}

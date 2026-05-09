@@ -1,0 +1,54 @@
+services:
+  bee-dev:
+    image: ethersphere/bee:2.6.0
+    command: ["dev"]
+    ports:
+      - "127.0.0.1:1633:1633"
+    environment:
+      BEE_API_ADDR: ":1633"
+      BEE_CORS_ALLOWED_ORIGINS: "${BEE_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173}"
+    profiles:
+      - dev
+
+  bee-light:
+    image: ethersphere/bee:2.6.0
+    command: ["start"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1633:1633"
+      - "1634:1634"
+    environment:
+      BEE_API_ADDR: ":1633"
+      BEE_FULL_NODE: "false"
+      BEE_SWAP_ENABLE: "true"
+      BEE_PASSWORD: "${BEE_PASSWORD:?Set BEE_PASSWORD before starting bee-light}"
+      BEE_BLOCKCHAIN_RPC_ENDPOINT: "${BEE_BLOCKCHAIN_RPC_ENDPOINT:-https://xdai.fairdatasociety.org}"
+      BEE_CORS_ALLOWED_ORIGINS: "${BEE_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173}"
+    volumes:
+      - bee-light-data:/home/bee/.bee
+    profiles:
+      - network
+
+  bee-testnet:
+    image: ethersphere/bee:2.6.0
+    command: ["start"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1633:1633"
+      - "1634:1634"
+    environment:
+      BEE_API_ADDR: ":1633"
+      BEE_FULL_NODE: "false"
+      BEE_MAINNET: "false"
+      BEE_SWAP_ENABLE: "true"
+      BEE_PASSWORD: "${BEE_PASSWORD:?Set BEE_PASSWORD before starting bee-testnet}"
+      BEE_BLOCKCHAIN_RPC_ENDPOINT: "${BEE_SEPOLIA_RPC_ENDPOINT:-https://ethereum-sepolia-rpc.publicnode.com}"
+      BEE_CORS_ALLOWED_ORIGINS: "${BEE_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173}"
+    volumes:
+      - bee-testnet-data:/home/bee/.bee
+    profiles:
+      - testnet
+
+volumes:
+  bee-light-data:
+  bee-testnet-data:

@@ -1,0 +1,76 @@
+{
+  "name": "@truth-market/swarm-kv",
+  "version": "0.1.0-alpha.0",
+  "description": "Swarm-backed key-value store with client-side verification hooks.",
+  "type": "module",
+  "packageManager": "pnpm@10.32.1",
+  "sideEffects": false,
+  "license": "MIT",
+  "author": "TruthMarket",
+  "homepage": "https://github.com/schaier-io/eth2026/tree/main/packages/swarm-kv#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/schaier-io/eth2026.git",
+    "directory": "packages/swarm-kv"
+  },
+  "bugs": {
+    "url": "https://github.com/schaier-io/eth2026/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "browser": "./dist/index.js",
+      "node": {
+        "import": "./dist/index.js",
+        "require": "./dist/index.cjs"
+      },
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "browser": "./dist/index.js",
+  "files": [
+    "dist",
+    "docs",
+    "examples",
+    "README.md",
+    ".env.swarm.example",
+    ".env.swarm.testnet.example",
+    "docker-compose.swarm.yml"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --exclude test/e2e.local-bee.test.ts --exclude test/e2e.live-registry.local-bee.test.ts",
+    "test:e2e": "vitest run test/e2e.local-bee.test.ts test/e2e.live-registry.local-bee.test.ts",
+    "check": "pnpm typecheck && pnpm test",
+    "prepublishOnly": "pnpm check && pnpm build"
+  },
+  "keywords": [
+    "swarm",
+    "bee",
+    "kv",
+    "key-value",
+    "client-side-verification",
+    "truthmarket"
+  ],
+  "dependencies": {
+    "@truth-market/swarm-verified-fetch": "0.1.0-alpha.0"
+  },
+  "devDependencies": {
+    "@types/node": ">=20.0.0 <25",
+    "tsup": ">=8.0.0 <9",
+    "typescript": ">=5.0.0 <6",
+    "vitest": ">=3.0.0 <5"
+  }
+}
