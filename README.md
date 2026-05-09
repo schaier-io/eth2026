@@ -13,6 +13,18 @@ The protocol is not a fact-checking oracle and does not claim to discover object
 - [docs/random-jury-belief-resolution-prd.md](./docs/random-jury-belief-resolution-prd.md): product requirements.
 - [docs/architecture-review.md](./docs/architecture-review.md): current code/PRD gap analysis.
 
+## Run The Web App
+
+The active UI is the Next.js app in `apps/web`:
+
+```bash
+cd apps/web
+npm install
+npm run dev
+```
+
+The legacy static prototype was removed so the app surface stays TypeScript/React and shares the wallet/contract integration path.
+
 ## Decisions
 
 Architecture decisions live in [docs/adr](./docs/adr):
@@ -20,7 +32,7 @@ Architecture decisions live in [docs/adr](./docs/adr):
 - Random-jury belief resolution, not oracle/fact-checking.
 - Classic commit-reveal for voter sovereignty.
 - Swarm for immutable claim/rules documents; on-chain claim name + description + up to 5 tags for discoverability.
-- Conviction (whole-percent risked-stake share, 0–100); jury voting is count-based (1 juror = 1 vote, ADR 0006 supersedes the original square-root weighting).
+- Fixed 20% normal risked-stake slash; jury voting is count-based (1 juror = 1 vote, ADR 0006 supersedes the original square-root weighting).
 - Selected jurors who skip reveal forfeit their full stake (~5× normal slash).
 - Nonce-leak revocation (voting phase only): anyone with a voter's leaked nonce can claim half of that voter's stake; the other half flows into the slash pool — see ADR 0007.
 - SpaceComputer-first sponsor strategy.
@@ -28,4 +40,3 @@ Architecture decisions live in [docs/adr](./docs/adr):
 ## Local Skills
 
 Some planning used local design skills on one developer machine. Those skills are not required to work on the repo. The versioned docs above are the source of truth for teammates and their agents.
-

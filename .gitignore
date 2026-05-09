@@ -1,7 +1,9 @@
 # Local agent/editor state. Repo docs are the portable source of truth.
 .codex/
 .claude/
-.agents/
+.agents/*
+!.agents/skills/
+!.agents/skills/**
 .superstack/
 
 # Environment and local runtime state.
@@ -11,8 +13,8 @@
 
 # Common dependency/build output.
 node_modules/
+.next/
 dist/
 build/
 out/
 cache/
-

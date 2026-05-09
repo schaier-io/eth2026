@@ -6,12 +6,12 @@ The Solidity core matches the current random-jury belief-resolution model:
 
 - product language no longer frames the contract as a fact-checker or truth oracle;
 - claim metadata (`name`, `description`, up to `MAX_TAGS = 5` tags) is stored on-chain at deployment alongside the Swarm/IPFS rules pointer;
-- commitments bind vote, nonce, voter address, chain id, and contract address inside the hash; stake/conviction are stored in contract state at commit time and are not part of the hash;
+- commitments bind vote, nonce, voter address, chain id, and contract address inside the hash; stake is stored in contract state at commit time and is not part of the hash;
 - voting-phase `revokeStake(voter, vote, nonce)` lets a third party claim a voter's full stake when their nonce leaks (see [ADR 0007](./adr/0007-nonce-leak-revocation.md)); self-revocation is blocked, and revocation is gated to the voting phase only;
-- conviction is stored as a whole percent (0–100) and determines the risked portion of stake for the normal slash and the reward weight;
+- normal risked stake is fixed at 20% of stake and determines the normal slash plus reward weight;
 - losers and non-revealing non-jurors lose only their risked stake;
 - jury outcome is count-based: each selected juror contributes 1 vote regardless of stake (see [ADR 0006](./adr/0006-count-based-jury-voting.md));
-- selected jurors who fail to reveal forfeit their full stake — at typical conviction this is roughly 5× the normal slash;
+- selected jurors who fail to reveal forfeit their full stake — 5× the fixed 20% normal slash;
 - the extra above the normal 1× risked slash joins the distributable pool on a Yes/No outcome or accrues to the claim creator on Invalid;
 - winner upside is distributed by risked stake;
 - treasury collects protocol fees via `withdrawTreasury`; Invalid-path juror penalties accrue to the claim creator via `withdrawCreator`; dust may be swept to treasury after the grace window via bounded pagination;
@@ -31,19 +31,18 @@ The code intentionally remains one contract for hackathon speed, but the interna
 
 ### 1. Broaden Settlement Coverage
 
-**Cluster:** conviction accounting, invalid outcome behavior, fee transfer, dust.
+**Cluster:** risk accounting, invalid outcome behavior, fee transfer, dust.
 
-**Current state:** one lifecycle test covers mixed conviction, one non-revealer, one loser, two winners, treasury fee, and full withdrawal.
+**Current state:** lifecycle tests cover fixed-risk slashing, non-revealers, losers, winners, treasury/creator accrual, and full withdrawal.
 
 **Next tests:**
 
-- low-conviction loser gets only risked stake slashed;
-- full-conviction loser loses full stake;
+- losing non-juror gets only fixed risked stake slashed;
 - non-juror non-revealer gets refundable stake only (1× risked slash);
-- selected juror non-revealer at low conviction still loses full stake (covered);
+- selected juror non-revealer loses full stake;
 - no selected juror reveals → Invalid outcome, non-revealing jurors slashed full stake to the claim creator;
 - tied selected juror counts on partial reveal → Invalid outcome, non-revealing jurors slashed full stake to the claim creator, revealing voters refunded;
-- small-stake/low-conviction commits that would round risked stake to zero revert;
+- small-stake commits that would round risked stake to zero revert;
 - extreme aggregate stake/revocation pools settle without `uint96` boundary reverts;
 - paginated dust sweeping preserves unclaimed voter payouts.
 
@@ -57,13 +56,21 @@ The code intentionally remains one contract for hackathon speed, but the interna
 
 ### 3. Swarm Claim Rules Boundary
 
-**Cluster:** claim/rules schema, Swarm upload/fetch, contract `swarmDocHash`, frontend rendering.
+**Cluster:** claim/rules schema, Swarm upload/fetch, verified fetch, contract `swarmReference`, contract `claimRulesHash`, frontend rendering.
 
 **Dependency category:** true external for Swarm; mock at boundary.
 
-**Recommended interface:** a claim-document service should validate the PRD fields, upload to Swarm, fetch by reference, and give the contract only the immutable content reference.
+**Recommended interface:** a claim-document service should validate the PRD fields, upload one canonical JSON document to Swarm, compute `claimRulesHash`, fetch by reference, and give the contract only the immutable content reference plus exact-byte hash. Mutable Swarm feeds/KV should be used only for discovery indexes and cached read models. Opening a market from a feed must still verify the immutable contract-stored reference.
 
-### 4. Frontend Read Model
+### 4. Agent Policy And Heartbeat Boundary
+
+**Cluster:** agent policy, local reveal vault, heartbeat reminders, selected-juror reveal urgency, auto-withdraw.
+
+**Dependency category:** local agent automation; Swarm is public artifact storage only.
+
+**Recommended interface:** agents should use explicit local policy before committing, keep unrevealed votes and nonces out of Swarm, schedule a heartbeat after commit, auto-reveal from the local vault when policy allows, and auto-withdraw after resolution when policy allows.
+
+### 5. Frontend Read Model
 
 **Cluster:** public state getters (`phase`, `outcome`, `juryYesCount`, `juryNoCount`, `distributablePool`, `treasuryAccrued`, `randomness`, `juryAuditHash`, `commits`, `getJury`, `getCommitters`, `commitHashOf`).
 

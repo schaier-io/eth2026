@@ -23,7 +23,6 @@ Use this language:
 - "immutable claim/rules document"
 - "committed vote"
 - "selected juror"
-- "conviction"
 - "risked stake"
 - "slashed pool"
 
@@ -61,7 +60,7 @@ If an agent does have similar skills available, it may use them, but repo files 
 
 The Solidity contract is aligned with the current PRD model:
 
-- conviction stored on committed positions as a whole percent (0–100), determines risked stake;
+- normal losing/non-reveal risk is fixed at 20% of stake (`RISK_PERCENT`);
 - commitment hash binds vote, nonce, voter address, chain id, and contract address;
 - partial slashing on losing voters and non-revealing non-jurors (1× risked stake);
 - count-based jury outcome (each selected juror = 1 vote, [ADR 0006](./docs/adr/0006-count-based-jury-voting.md));
