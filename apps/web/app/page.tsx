@@ -53,6 +53,18 @@ type Position = {
   txHash?: Hex;
 };
 
+type VaultPayload = {
+  marketId: string;
+  wallet: string;
+  direction: Direction;
+  vote: 1 | 2;
+  nonce: Hex;
+  commitmentHash: string;
+  stake: number;
+  riskPercent: number;
+  txHash?: Hex;
+};
+
 const RISK_PERCENT = 20;
 const ZERO_HASH = "0x0000000000000000000000000000000000000000000000000000000000000000" as Hex;
 const DEMO_TERMS_STORAGE_KEY = "truthmarket:demo-risk-accepted";
@@ -214,6 +226,15 @@ function bytesToHex(bytes: Uint8Array) {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function hexToBytes(value: string) {
+  const hex = value.startsWith("0x") ? value.slice(2) : value;
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i += 1) {
+    bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}
+
 function textEncoder(value: string) {
   return new TextEncoder().encode(value);
 }
@@ -255,8 +276,49 @@ async function encryptVaultPayload(payload: unknown, wallet: string | null) {
   };
 }
 
-function vaultKey(marketId: string) {
+async function decryptVaultPayload(stored: string, wallet: string | null) {
+  const parsed = JSON.parse(stored) as { iv?: string; ciphertext?: string };
+  if (!parsed.iv || !parsed.ciphertext) throw new Error("Local vault entry is incomplete.");
+  const key = await walletKey(wallet);
+  const plaintext = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: hexToBytes(parsed.iv) },
+    key,
+    hexToBytes(parsed.ciphertext),
+  );
+  return JSON.parse(new TextDecoder().decode(plaintext)) as unknown;
+}
+
+function isHexAddress(value: string): value is Address {
+  return /^0x[a-fA-F0-9]{40}$/.test(value);
+}
+
+function vaultKey(marketId: string, wallet: string | null) {
+  return `truthmarket:vault:${wallet?.toLowerCase() || "offline"}:${marketId}`;
+}
+
+function legacyVaultKey(marketId: string) {
   return `truthmarket:vault:${marketId}`;
+}
+
+function positionFromVault(payload: unknown, fallbackMarketId: string): Position | null {
+  if (!payload || typeof payload !== "object") return null;
+  const value = payload as Partial<VaultPayload>;
+  if (value.direction !== "Up" && value.direction !== "Down") return null;
+  if (value.vote !== 1 && value.vote !== 2) return null;
+  if (!value.nonce || !value.commitmentHash) return null;
+  const stake = Number(value.stake);
+  const riskPercent = Number.isFinite(Number(value.riskPercent)) ? Number(value.riskPercent) : RISK_PERCENT;
+  if (!Number.isFinite(stake)) return null;
+  return {
+    marketId: value.marketId || fallbackMarketId,
+    direction: value.direction,
+    stake,
+    risked: (stake * riskPercent) / 100,
+    commitmentHash: value.commitmentHash,
+    nonce: value.nonce,
+    vote: value.vote,
+    txHash: value.txHash,
+  };
 }
 
 function formatToken(value: number | string) {
@@ -510,13 +572,14 @@ export default function TruthMarketApp() {
   const [selectedMarketId, setSelectedMarketId] = useState(initialMarkets[0].id);
   const [filter, setFilter] = useState<"Trending" | "New" | "Reveal soon">("Trending");
   const [direction, setDirection] = useState<Direction>("Up");
-  const [currentPosition, setCurrentPosition] = useState<Position | null>(null);
-  const [revealed, setRevealed] = useState(false);
+  const [positionsByMarket, setPositionsByMarket] = useState<Record<string, Position>>({});
+  const [revealedByMarket, setRevealedByMarket] = useState<Record<string, boolean>>({});
   const [createImageData, setCreateImageData] = useState<string | null>(null);
   const [stake, setStake] = useState(100);
   const [commitStatus, setCommitStatus] = useState({ message: "", kind: "" as StatusKind });
   const [createStatus, setCreateStatus] = useState({ message: "", kind: "" as StatusKind });
   const [revealStatus, setRevealStatus] = useState({ message: "", kind: "" as StatusKind });
+  const [vaultStatus, setVaultStatus] = useState("");
   const [autoRevealEnabled, setAutoRevealEnabled] = useState(true);
   const [autoRevealArmed, setAutoRevealArmed] = useState(false);
   const [autoRevealStatus, setAutoRevealStatus] = useState("Auto-reveal will keep the nonce local and reveal from this browser.");
@@ -632,7 +695,16 @@ export default function TruthMarketApp() {
       timeLeft: contractReads.isLoading ? "Syncing" : selectedMarketBase.timeLeft,
     } satisfies Market;
   }, [contractReads.data, contractReads.isLoading, selectedMarketBase, tokenDecimals]);
-  const positionForSelected = currentPosition?.marketId === selectedMarket.id ? currentPosition : null;
+  const positionForSelected = positionsByMarket[selectedMarket.id] ?? null;
+  const revealed = Boolean(revealedByMarket[selectedMarket.id]);
+  const walletPositions = useMemo(
+    () =>
+      Object.values(positionsByMarket).map((position) => ({
+        position,
+        market: position.marketId === selectedMarket.id ? selectedMarket : markets.find((market) => market.id === position.marketId),
+      })),
+    [markets, positionsByMarket, selectedMarket],
+  );
   const risked = Math.max(0, (stake * contractRiskPercent) / 100);
   const refundable = Math.max(0, stake - risked);
 
@@ -644,6 +716,58 @@ export default function TruthMarketApp() {
     document.body.classList.toggle("demo-terms-locked", !hasAcceptedDemoTerms);
     return () => document.body.classList.remove("demo-terms-locked");
   }, [hasAcceptedDemoTerms]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!wallet) {
+      setPositionsByMarket({});
+      setVaultStatus("");
+      return;
+    }
+
+    let cancelled = false;
+    const marketIds = new Set(markets.map((market) => market.id));
+    marketIds.add(selectedMarket.id);
+
+    async function loadWalletVaults() {
+      const loaded: Record<string, Position> = {};
+      let failed = 0;
+      for (const marketId of marketIds) {
+        const currentKey = vaultKey(marketId, wallet);
+        const legacyKey = legacyVaultKey(marketId);
+        const stored = localStorage.getItem(currentKey) ?? localStorage.getItem(legacyKey);
+        if (!stored) continue;
+        try {
+          const position = positionFromVault(await decryptVaultPayload(stored, wallet), marketId);
+          if (!position) {
+            failed += 1;
+            continue;
+          }
+          loaded[position.marketId] = position;
+          if (!localStorage.getItem(currentKey)) {
+            localStorage.setItem(currentKey, stored);
+          }
+        } catch {
+          failed += 1;
+        }
+      }
+      if (cancelled) return;
+      setPositionsByMarket(loaded);
+      const count = Object.keys(loaded).length;
+      setVaultStatus(
+        count > 0
+          ? `Loaded ${count} encrypted local ${count === 1 ? "position" : "positions"} for this wallet.`
+          : failed > 0
+            ? "Found local reveal data, but it belongs to another wallet or cannot be decrypted."
+            : "",
+      );
+    }
+
+    void loadWalletVaults();
+    return () => {
+      cancelled = true;
+    };
+  }, [markets, selectedMarket.id, wallet]);
 
   useEffect(() => {
     if (activeMarketAddress || !autoRevealArmed || !positionForSelected || revealed) return;
@@ -669,7 +793,7 @@ export default function TruthMarketApp() {
       );
     }, 900);
     const revealTimer = window.setTimeout(() => {
-      setRevealed(true);
+      setRevealedByMarket((current) => ({ ...current, [positionForSelected.marketId]: true }));
       setAutoRevealArmed(false);
       setRevealStatus({ message: "Auto-revealed from local vault.", kind: "success" });
       setAutoRevealStatus("Reveal complete. Your signal was submitted from this browser.");
@@ -695,11 +819,15 @@ export default function TruthMarketApp() {
     }
   }
 
+  function selectMarket(marketId: string) {
+    setSelectedMarketId(marketId);
+    setActiveMarketAddress(isHexAddress(marketId) ? marketId : undefined);
+  }
+
   function openMarket(marketId: string) {
     if (!hasAcceptedDemoTerms) return;
-    setSelectedMarketId(marketId);
+    selectMarket(marketId);
     setDirection("Up");
-    setRevealed(false);
     setAutoRevealArmed(false);
     setAutoRevealStatus("Auto-reveal will keep the nonce local and reveal from this browser.");
     setCommitStatus({ message: "", kind: "" });
@@ -792,10 +920,8 @@ export default function TruthMarketApp() {
     };
 
     setMarkets((current) => [market, ...current]);
-    setSelectedMarketId(market.id);
+    selectMarket(market.id);
     setDirection("Up");
-    setCurrentPosition(null);
-    setRevealed(false);
     setCreateImageData(null);
     setCreateStatus({ message: "", kind: "" });
     form.reset();
@@ -876,8 +1002,7 @@ export default function TruthMarketApp() {
         wallet,
       );
 
-      localStorage.setItem(vaultKey(selectedMarket.id), JSON.stringify(encrypted));
-      setCurrentPosition({
+      const position: Position = {
         marketId: selectedMarket.id,
         direction,
         stake,
@@ -886,8 +1011,12 @@ export default function TruthMarketApp() {
         nonce,
         vote,
         txHash,
-      });
-      setRevealed(false);
+      };
+
+      localStorage.setItem(vaultKey(selectedMarket.id, wallet), JSON.stringify(encrypted));
+      setPositionsByMarket((current) => ({ ...current, [selectedMarket.id]: position }));
+      setRevealedByMarket((current) => ({ ...current, [selectedMarket.id]: false }));
+      setVaultStatus("Encrypted reveal data saved locally for this wallet and market.");
       setAutoRevealArmed(autoRevealEnabled);
       setAutoRevealStatus(
         autoRevealEnabled
@@ -933,7 +1062,7 @@ export default function TruthMarketApp() {
           kind: "success",
         });
       }
-      setRevealed(true);
+      setRevealedByMarket((current) => ({ ...current, [selectedMarket.id]: true }));
       setAutoRevealArmed(false);
       setAutoRevealStatus("Reveal complete. Your signal was submitted.");
     } catch (error) {
@@ -1062,8 +1191,7 @@ export default function TruthMarketApp() {
               <RegistryMarketsPanel
                 activeAddress={activeMarketAddress}
                 onSelect={(addr) => {
-                  setActiveMarketAddress(addr);
-                  setSelectedMarketId(addr);
+                  selectMarket(addr);
                   showScreen("stake");
                 }}
               />
@@ -1347,6 +1475,40 @@ export default function TruthMarketApp() {
                   <StatusLine message={revealStatus.message} kind={revealStatus.kind} />
                 </article>
 
+                <article className="status-card wallet-vault-card">
+                  <div className="card-heading compact-heading">
+                    <div>
+                      <p className="eyebrow">Your markets</p>
+                      <h2>Private dashboard</h2>
+                    </div>
+                    <strong className="deadline-pill">{walletPositions.length}</strong>
+                  </div>
+                  {vaultStatus && <p className="vault-status">{vaultStatus}</p>}
+                  {walletPositions.length === 0 ? (
+                    <p className="empty-vault">Connect the wallet that committed, or commit in this market to create an encrypted reveal vault.</p>
+                  ) : (
+                    <div className="position-list">
+                      {walletPositions.map(({ position, market }) => (
+                        <button
+                          className={`position-row${position.marketId === selectedMarket.id ? " is-active" : ""}`}
+                          type="button"
+                          key={`${position.marketId}-${position.commitmentHash}`}
+                          onClick={() => {
+                            selectMarket(position.marketId);
+                            showScreen("dashboard");
+                          }}
+                        >
+                          <span>
+                            <strong>{market?.title ?? shortAddress(position.marketId)}</strong>
+                            <small>{shortHash(position.commitmentHash)}</small>
+                          </span>
+                          <DirectionSummary direction={position.direction} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </article>
+
                 <article className="process-card">
                   <div className="card-heading">
                     <div>
@@ -1478,7 +1640,7 @@ export default function TruthMarketApp() {
                   </div>
                   <div>
                     <span>Local vault</span>
-                    <code>{typeof window !== "undefined" && localStorage.getItem(vaultKey(selectedMarket.id)) ? "Encrypted in browser" : "Empty"}</code>
+                    <code>{positionForSelected ? "Encrypted for wallet" : "Empty"}</code>
                   </div>
                 </div>
                 <ul className="debug-list">

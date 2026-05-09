@@ -951,6 +951,10 @@ h2 {
   margin-bottom: 18px;
 }
 
+.compact-heading {
+  margin-bottom: 12px;
+}
+
 .card-heading h2 {
   margin-top: 6px;
   font-size: 26px;
@@ -1025,6 +1029,59 @@ h2 {
 
 .position-summary {
   margin: 18px 0;
+}
+
+.vault-status,
+.empty-vault {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.position-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.position-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--text);
+  text-align: left;
+}
+
+.position-row.is-active {
+  border: 2px solid var(--text);
+  background: #fff7c7;
+  box-shadow: 3px 3px 0 var(--text);
+}
+
+.position-row span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.position-row strong,
+.position-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.position-row small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .automation-status {
