@@ -11,6 +11,7 @@ This is the entry point for project context. Teammates and agents should use the
 - [PRD](./random-jury-belief-resolution-prd.md): product requirements for random-jury belief resolution.
 - [Architecture Review](./architecture-review.md): current code gaps and recommended module boundaries.
 - [Swarm Integration Plan](./swarm-integration-plan.md): minimal Swarm build plan for immutable rules, verified fetch, KV discovery, and audit artifacts.
+- [Apify Reddit Agent Market Plan](./apify-reddit-agent-market-plan.md): Apify-powered plan for agent-created markets from viral ambiguous Reddit questions.
 
 ## Decisions
 

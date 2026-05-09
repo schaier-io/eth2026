@@ -37,7 +37,8 @@ Require an explicit local policy before an agent commits:
   "maxStake": "1000000000000000000",
   "requireSwarmVerification": true,
   "allowCreateMarkets": true,
-  "allowJuryCommit": true
+  "allowJuryCommit": true,
+  "allowScrapedMarketCreation": false
 }
 ```
 
@@ -50,6 +51,11 @@ Recommended additional policy fields when implementing a daemon:
   "heartbeatCron": "*/2 * * * *",
   "minRevealSafetySeconds": 300,
   "maxMarketsWatched": 100,
+  "maxMarketsCreatedPerRun": 3,
+  "requireHumanReviewForCreatedMarkets": true,
+  "allowedSources": ["reddit"],
+  "allowedSubreddits": [],
+  "blockedSubreddits": [],
   "vaultPath": ".truthmarket/agent-vault.json"
 }
 ```
@@ -74,6 +80,51 @@ Use discovery as a convenience layer, then verify from contract state:
 5. Fetch and verify the immutable claim/rules document before showing it as actionable.
 
 Do not trust discovery indexes for rules, phase, outcome, selected jurors, or payouts.
+
+## Apify Reddit Market Creation
+
+Use Apify to scrape viral ambiguous Reddit questions and create quick candidate belief markets. Apify is public context collection and market drafting only; it must not decide the market outcome.
+
+1. Fetch candidate Reddit posts, questions, comments, timestamps, author metadata, edit/deletion state, and source URLs.
+2. Normalize the scraped output into a public context artifact.
+3. Draft a neutral YES/NO claim/rules document from one candidate.
+4. Define YES and NO as juror belief positions, not external truth claims. Example: "YES means selected jurors believe the post is likely authentic under the listed signals; NO means they do not."
+5. Upload the claim/rules document to Swarm before market creation.
+6. Optionally upload the scraped context as a separate public artifact linked from the rules document.
+7. Let selected jurors resolve by revealed belief under the immutable rules.
+
+Do not store private votes, nonces, wallet keys, private strategy, or agent policy in Apify output or Swarm artifacts. Avoid language like "Apify verifies the post" or "the scraper decides the outcome."
+
+Scraped-market policy gates:
+
+- Require `allowScrapedMarketCreation`.
+- Respect `allowedSources`, `allowedSubreddits`, and `blockedSubreddits`.
+- Enforce `maxMarketsCreatedPerRun`.
+- Require human approval when `requireHumanReviewForCreatedMarkets` is true.
+- Reject posts that require private data, doxxing, harassment, illegal instructions, or non-public evidence to evaluate.
+- Prefer questions where reasonable jurors can disagree under public context.
+
+Good market shapes:
+
+- "Do selected jurors believe this post is likely authentic under the linked public signals?"
+- "Do selected jurors believe this claim is credible enough to classify as YES under the rules?"
+- "Do selected jurors believe the community question should resolve YES after reviewing the supplied public context?"
+
+Bad market shapes:
+
+- "Did this objectively happen?" when the rules require unavailable private evidence.
+- "Does Apify prove this is true?"
+- Any claim where YES/NO meaning is not defined before staking.
+
+## Eligibility Or Registry
+
+If a voter registry or identity adapter exists, check it before commit and before accepting a juror candidate. For hackathon demos, identity may be display-only; production markets need a real eligibility boundary.
+
+Expected registry behavior:
+
+- `isEligible(address, market)` or equivalent gates who may commit or be counted as a jury candidate.
+- ENS or another identity layer may display names, but display alone is not Sybil resistance.
+- Claim/rules documents should disclose the eligibility mechanism used by the market.
 
 ## Commit
 
@@ -152,6 +203,30 @@ Stake token calls:
 - `allowance(owner, market)`, `approve(market, stake)`, `balanceOf(owner)`, `decimals()`, `symbol()`.
 
 Current web client ABI is in `apps/web/lib/truthmarket.ts`; update it when contract methods used by agents are missing.
+
+## CLI Expectations
+
+When a TruthMarket CLI exists, prefer it over hand-written transaction scripts. The CLI should expose stable JSON output so agents can call it safely.
+
+Useful command surface:
+
+- `truthmarket markets discover --json`
+- `truthmarket market verify --market <address> --json`
+- `truthmarket market draft-from-reddit --source <url-or-apify-run> --json`
+- `truthmarket market create --claim-rules <file> --json`
+- `truthmarket vote commit --market <address> --vote yes|no --stake <amount> --json`
+- `truthmarket agent watch --policy <file> --json`
+- `truthmarket jury commit --market <address> --json`
+- `truthmarket vote reveal --market <address> --json`
+- `truthmarket withdraw --market <address> --json`
+
+CLI safety requirements:
+
+- Return machine-readable JSON with `ok`, `action`, `market`, `txHash`, and `error` fields where applicable.
+- Never require vote nonces, private keys, or secrets in command-line arguments.
+- Read reveal vote/nonce from the local vault.
+- Support dry-run or preview for market creation and commit transactions.
+- Print exact claim/rules hash, Swarm reference, stake amount, risked stake, and deadlines before signing.
 
 ## Settlement
 
