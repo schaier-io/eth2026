@@ -42,6 +42,64 @@ Core principle: there is no oracle and no external source of truth. The protocol
 
 ---
 
+## Stage 1A — Positioning And App UI Reframe
+
+**Goal:** Reposition the landing page and app UI around the random-jury belief game described in [ADR 0013](./docs/adr/0013-random-jury-game-positioning.md).
+
+**Decision summary:** Users stake on how a randomly selected jury will resolve a claim. Randomness and luck are part of the game. Winning means matching the selected jury outcome, not being objectively correct.
+
+**Landing page tasks:**
+
+- [ ] Replace generic hero copy with a game-first headline and subtitle from ADR 0013.
+- [ ] Add a compact "How it works" strip: commit hidden position -> randomness selects jury -> revealed jury outcome pays.
+- [ ] Rework the demo risk modal so the random-jury game frame is visible before or inside the notice.
+- [ ] Pair "TruthMarket" with a persistent subtitle such as "random-jury belief game" if the name stays.
+
+**Market example tasks:**
+
+- [ ] Replace empirical/prediction-style demo markets with subjective, underdetermined, or rubric-based markets.
+- [ ] Add an agent-evaluation example: "Did this agent satisfy the bounty rubric?"
+- [ ] Add a DAO/community example: "Which proposal best matches this community mandate?"
+- [ ] Add a moderation/judgment example: "Was this moderation appeal fair under the posted rules?"
+- [ ] Add a creator/work review example: "Does this submission qualify for payout under the rules?"
+
+**Stake screen tasks:**
+
+- [ ] Add a pre-commit sentence: "You are staking on the selected jury's resolution, not on an objective answer."
+- [ ] Show the target jury size, minimum revealed jurors, and selected-juror full-stake penalty before the commit button.
+- [ ] Add a "luck boundary" note: "The jury is selected after commit by public randomness. If the selected jury leans against you, that is part of the game."
+- [ ] Ensure the Up/Down meanings are written as jury-resolution rules: "The jury should resolve Up if..." and "The jury should resolve Down if..."
+
+**Create flow tasks:**
+
+- [ ] Replace the default "Will..." placeholder with a judgment-market prompt such as "What should the jury resolve?"
+- [ ] Add market templates for agent review, DAO decision, moderation appeal, creator contest, and community taste/vibe decisions.
+- [ ] Add a creator warning when a draft looks like an objective prediction-market claim instead of a jury-belief claim.
+- [ ] Add fields for "what jurors should consider" and "what jurors should ignore" in the claim/rules document.
+
+**Dashboard/result tasks:**
+
+- [ ] Rename result language from "Outcome: YES/NO" to "Jury resolved Up/Down" in user-facing surfaces.
+- [ ] Show "selected jury" as the central status object after voting closes.
+- [ ] Make the randomness proof visible as the reason the jury is legitimate.
+- [ ] Show final settlement as "matched jury" or "missed jury," not "right" or "wrong."
+
+**Agent/human positioning tasks:**
+
+- [ ] Explain that both humans and agents can create, stake, reveal, and be selected as jurors if eligible.
+- [ ] Use agent-rubric markets as the first serious wedge: agents create work, humans/agents stake on whether it satisfies a rubric, and the random jury resolves.
+- [ ] Keep Apify as a market discovery/input agent, not as a resolver or truth source.
+
+**Acceptance:**
+
+- A first-time visitor understands within 5 seconds that this is a random-jury belief game.
+- The landing page does not sound like an oracle, fact-checker, or conventional prediction market.
+- Default markets demonstrate ambiguous judgment, community preference, or rubric resolution.
+- Before committing, users see that randomness selects the jury and that matching the jury is the win condition.
+- Result copy never implies the protocol discovered objective truth.
+
+---
+
 ## Stage 2 — Immutable Claim Rules On Swarm
 
 **Goal:** Every market has immutable rules that voters can inspect before staking.

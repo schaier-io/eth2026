@@ -7,7 +7,7 @@ This is the entry point for project context. Teammates and agents should use the
 - [Agent Operating Guide](../AGENTS.md): instructions for Codex, Claude, and other agents.
 - [Context](../CONTEXT.md): project language, canonical terms, and resolved ambiguities.
 - [Root README](../README.md): hackathon monorepo overview and workspace map.
-- [Task Plan](../tasks.md): staged implementation and hackathon plan.
+- [Task Plan](../tasks.md): staged implementation and hackathon plan, including Stage 1A for landing/app UI positioning around the random-jury belief game.
 - [PRD](./random-jury-belief-resolution-prd.md): product requirements for random-jury belief resolution.
 - [Architecture Review](./architecture-review.md): current code gaps and recommended module boundaries.
 - [Swarm Integration Plan](./swarm-integration-plan.md): minimal Swarm build plan for immutable rules, verified fetch, KV discovery, and audit artifacts.
@@ -19,6 +19,7 @@ This is the entry point for project context. Teammates and agents should use the
 ## Document Inventory
 
 - [Documentation Index](./INDEX.md): this document map.
+- [Task Plan](../tasks.md): active staged plan; see Stage 1A for positioning, landing page, app UI copy, market examples, and agent/human framing tasks.
 - [Evidence](./evidence.md): Sepolia demo proof and transaction references.
 - [MVP Live Demo Walkthrough](./mvp-demo.md): local anvil and web demo steps.
 - [PRD](./random-jury-belief-resolution-prd.md): product requirements and acceptance boundaries.
@@ -39,6 +40,7 @@ This is the entry point for project context. Teammates and agents should use the
 - [ADR 0010](./adr/0010-agent-policy-heartbeat-and-auto-reveal.md): agent policy, heartbeat, and auto-reveal.
 - [ADR 0011](./adr/0011-market-registry.md): MarketRegistry factory.
 - [ADR 0012](./adr/0012-apify-agent-market-loop.md): Apify-powered agent loop.
+- [ADR 0013](./adr/0013-random-jury-game-positioning.md): random-jury game positioning for landing/app UI copy.
 
 ## Decisions
 
@@ -54,6 +56,7 @@ This is the entry point for project context. Teammates and agents should use the
 - [ADR 0010](./adr/0010-agent-policy-heartbeat-and-auto-reveal.md): require explicit agent policy, local reveal vaults, heartbeat monitoring, and agent-side auto-reveal.
 - [ADR 0011](./adr/0011-market-registry.md): introduce a `MarketRegistry` that bakes in operational addresses and exposes a single `createMarket` entry point.
 - [ADR 0012](./adr/0012-apify-agent-market-loop.md): the Apify-powered agent lives in `agents/apify`, is exposed through `truthmarket agent run/tick`, calls the existing web route, dedupes via a local state file, and uses a placeholder ipfsHash until Swarm upload lands.
+- [ADR 0013](./adr/0013-random-jury-game-positioning.md): position TruthMarket as a random-jury belief game where matching the selected jury outcome is the win condition.
 
 ## Local Skill Provenance
 
