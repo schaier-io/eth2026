@@ -954,7 +954,7 @@ export default function TruthMarketApp() {
           return;
         }
         const stakeUnits = parseUnits(String(stake), tokenDecimals);
-        const minStake = readContractResult(14, 0n);
+        const minStake = readContractResult<bigint>(19, 0n);
         if (stakeUnits < minStake) {
           setCommitStatus({ message: `Minimum stake is ${formatUnits(minStake, tokenDecimals)} ${tokenSymbol}.`, kind: "error" });
           return;
