@@ -8,9 +8,8 @@
 
 # Environment and local runtime state.
 .env
-.env.e2e
-.env.e2e.local
-packages/swarm-kv/.env.swarm
+.env.*
+!.env.example
 packages/*/.e2e/
 packages/*/test/fixtures/*.fixture.json
 *.local

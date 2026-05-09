@@ -282,11 +282,13 @@ export function buildApifyInput(policy: GeneratorPolicy = {}) {
   if (policy.apify?.input) return policy.apify.input;
 
   return {
-    subreddits: withDefaults.allowedSubreddits,
-    searchTerms: withDefaults.keywords,
-    maxPosts: policy.apify?.maxItems ?? 20,
-    maxComments: 50,
+    urls: withDefaults.allowedSubreddits.map((subreddit) => `https://www.reddit.com/r/${normalizeSubreddit(subreddit)}/hot/`),
     sort: "hot",
+    maxPostsPerSource: policy.apify?.maxItems ?? 20,
+    includeComments: true,
+    maxCommentsPerPost: 50,
+    commentDepth: 2,
+    filterKeywords: withDefaults.keywords,
   };
 }
 

@@ -236,7 +236,7 @@ Environment:
 
 ```txt
 APIFY_TOKEN=<server-side Apify token>
-APIFY_REDDIT_ACTOR_ID=<Actor id>
+APIFY_REDDIT_ACTOR_ID=prodiger/reddit-scraper
 ```
 
 Live Apify request:
@@ -248,10 +248,16 @@ Live Apify request:
     "maxMarketsCreatedPerRun": 1
   },
   "apifyInput": {
-    "subreddits": ["AskReddit", "NoStupidQuestions"],
-    "searchTerms": ["real", "fake", "scam", "AI"],
-    "maxPosts": 20,
-    "maxComments": 50
+    "urls": [
+      "https://www.reddit.com/r/AskReddit/hot/",
+      "https://www.reddit.com/r/NoStupidQuestions/hot/"
+    ],
+    "sort": "hot",
+    "maxPostsPerSource": 20,
+    "includeComments": true,
+    "maxCommentsPerPost": 50,
+    "commentDepth": 2,
+    "filterKeywords": ["real", "fake", "scam", "AI"]
   }
 }
 ```
