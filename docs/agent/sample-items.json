@@ -1,0 +1,46 @@
+[
+  {
+    "id": "demo-1",
+    "title": "Is this front-page screenshot real or fake?",
+    "permalink": "https://reddit.com/r/AskReddit/comments/demo-1",
+    "subreddit": "AskReddit",
+    "author": "demo-mod",
+    "score": 1287,
+    "numComments": 412,
+    "selftext": "Reasonable people are calling this both real and fake. Some say authentic, others say it's an obvious hoax. Source? Proof? Comments are split. Selected jurors should decide whether the screenshot is credible after a normal-effort review of the linked image and the original thread.",
+    "createdAt": "2026-05-09T18:00:00Z"
+  },
+  {
+    "id": "demo-2",
+    "title": "Is this clip from the town hall actually authentic, or has it been edited?",
+    "permalink": "https://reddit.com/r/OutOfTheLoop/comments/demo-2",
+    "subreddit": "OutOfTheLoop",
+    "author": "demo-mod",
+    "score": 1843,
+    "numComments": 712,
+    "selftext": "Some commenters say the clip is real and confirmed by the official video. Others say it's fake — edited and out of context. Is this clip authentic? Selected jurors compare against the full video and call it.",
+    "createdAt": "2026-05-09T16:00:00Z"
+  },
+  {
+    "id": "demo-3",
+    "title": "Did this technology launch actually hit 80% positive Steam reviews, or is the number being faked?",
+    "permalink": "https://reddit.com/r/technology/comments/demo-3",
+    "subreddit": "technology",
+    "author": "demo-mod",
+    "score": 962,
+    "numComments": 245,
+    "selftext": "Reviewers say the score is real and credible. Others claim it's a fake bot-driven number. I disagree with both takes — selected jurors should pull up the Steam page tomorrow and confirm what's true.",
+    "createdAt": "2026-05-09T14:00:00Z"
+  },
+  {
+    "id": "demo-4",
+    "title": "Is the receipt photo on the front page real or a hoax?",
+    "permalink": "https://reddit.com/r/NoStupidQuestions/comments/demo-4",
+    "subreddit": "NoStupidQuestions",
+    "author": "demo-mod",
+    "score": 8423,
+    "numComments": 1284,
+    "selftext": "Receipt photo with store name visible and totals matching the menu. Some say it's authentic; others say it's fake or a scam. Source? Proof? Selected jurors review the image and the linked menu, then decide is this credible.",
+    "createdAt": "2026-05-09T15:30:00Z"
+  }
+]

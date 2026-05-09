@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { type Address, type Hex } from "viem";
 import { fetchCandidates } from "../agent/apify.js";
 import { hasSeen, loadAgentState, recordSeen, saveAgentState } from "../agent/state.js";
@@ -32,6 +33,12 @@ export interface AgentRunOpts extends ConfigOverrides, PolicyOverrides {
   minStake?: string;
   /** Run a single iteration and exit. */
   once?: boolean;
+  /**
+   * Local JSON file with a Reddit-items array. When set, the agent posts these
+   * to the web endpoint instead of letting it hit Apify. Useful for offline
+   * demos and CI smoke tests where APIFY_TOKEN is not available.
+   */
+  itemsFile?: string;
 }
 
 export interface TickResult {
@@ -53,9 +60,35 @@ export async function runAgentTick(
   emitEvent: (e: Record<string, unknown>) => void,
 ): Promise<TickResult> {
   const endpoint = opts.endpoint ?? DEFAULT_ENDPOINT;
-  emitEvent({ ts: new Date().toISOString(), event: "tick_start", endpoint });
+  let items: unknown[] | undefined;
+  if (opts.itemsFile) {
+    const raw = await readFile(opts.itemsFile, "utf8");
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        throw new CliError(
+          "ITEMS_FILE_INVALID",
+          `${opts.itemsFile} must be a JSON array of Reddit items`,
+        );
+      }
+      items = parsed;
+    } catch (e) {
+      if (e instanceof CliError) throw e;
+      throw new CliError(
+        "ITEMS_FILE_PARSE",
+        `could not parse ${opts.itemsFile}: ${(e as Error).message}`,
+      );
+    }
+  }
+  emitEvent({
+    ts: new Date().toISOString(),
+    event: "tick_start",
+    endpoint,
+    source: items ? "items_file" : "apify",
+    itemsFile: opts.itemsFile,
+  });
 
-  const result = await fetchCandidates({ endpoint });
+  const result = await fetchCandidates({ endpoint, items });
   emitEvent({
     ts: new Date().toISOString(),
     event: "candidates_fetched",

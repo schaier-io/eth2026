@@ -12,6 +12,7 @@ This is the entry point for project context. Teammates and agents should use the
 - [Architecture Review](./architecture-review.md): current code gaps and recommended module boundaries.
 - [Swarm Integration Plan](./swarm-integration-plan.md): minimal Swarm build plan for immutable rules, verified fetch, KV discovery, and audit artifacts.
 - [Apify Reddit Agent Market Plan](./apify-reddit-agent-market-plan.md): Apify-powered plan for agent-created markets from viral ambiguous Reddit questions.
+- [MVP Live Demo Walkthrough](./mvp-demo.md): end-to-end demo path — deploy registry on anvil, run the agent, vote/reveal/resolve through the web app.
 
 ## Decisions
 

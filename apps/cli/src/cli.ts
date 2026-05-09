@@ -8,6 +8,7 @@ import { loadDotenv } from "./util/dotenv.js";
 loadDotenv();
 import {
   cmdDevDown,
+  cmdDevSeedAgent,
   cmdDevStatus,
   cmdDevUp,
 } from "./commands/dev.js";
@@ -164,6 +165,7 @@ const agentSharedOpts = (cmd: Command): Command =>
     .option("--min-commits <n>", "minimum committed voters", (v) => Number(v))
     .option("--min-revealed-jurors <n>", "minimum jurors revealing for a decisive resolution", (v) => Number(v))
     .option("--min-stake <amount>", "override candidate stake hint (token base units)")
+    .option("--items-file <path>", "JSON file with Reddit-items array; bypasses Apify (useful offline / for demos)")
     .option("--ignore-policy", "skip the policy.allowCreateMarkets gate", false);
 
 shared(agentSharedOpts(agent.command("run").description("loop forever: fetch candidates, create one market per interval (NDJSON when --json)")))
@@ -274,6 +276,10 @@ shared(dev.command("down").description("kill the managed anvil process"))
 
 shared(dev.command("status").description("report whether managed anvil is running"))
   .action(async (opts) => run(() => cmdDevStatus(ctx(opts), opts), ctx(opts)));
+
+shared(dev.command("seed-agent").description("write a permissive policy so 'agent run' and 'registry create-market' work end-to-end on dev"))
+  .option("--max-stake <amount>", "policy maxStake in token base units", "1000000000000000000000")
+  .action(async (opts) => run(() => cmdDevSeedAgent(ctx(opts), opts), ctx(opts)));
 
 // -------- tui --------
 shared(program.command("tui").description("launch the interactive TUI"))

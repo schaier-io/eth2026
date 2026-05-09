@@ -6,9 +6,10 @@ import {
   unlinkSync,
 } from "node:fs";
 import path from "node:path";
-import { resolveConfig } from "../config.js";
+import { type ConfigOverrides, resolveConfig } from "../config.js";
 import { CliError } from "../errors.js";
 import { type OutputContext, emitResult } from "../io.js";
+import { DEFAULT_POLICY, type Policy, savePolicy } from "../policy/policy.js";
 import { atomicWriteFile } from "../util/atomic.js";
 
 /**
@@ -317,6 +318,56 @@ export async function cmdDevDown(
   emitResult(ctx, { stopped, pid }, () => {
     process.stdout.write(stopped ? `stopped pid ${pid}\n` : `pid ${pid} was already gone\n`);
   });
+}
+
+export interface DevSeedAgentOpts extends ConfigOverrides {
+  /** Override the maxStake written to the policy file (token base units). */
+  maxStake?: string;
+}
+
+/**
+ * Local-dev shortcut: write a permissive policy so `truthmarket agent run`
+ * and `truthmarket registry create-market` work end-to-end against anvil
+ * without flipping flags by hand. Uses defaultPolicy with allowCreateMarkets,
+ * allowJuryCommit, and a generous maxStake. Idempotent.
+ */
+export async function cmdDevSeedAgent(
+  ctx: OutputContext,
+  opts: DevSeedAgentOpts,
+): Promise<void> {
+  const cfg = resolveConfig(opts);
+  const policy: Policy = {
+    ...DEFAULT_POLICY,
+    allowCreateMarkets: true,
+    allowJuryCommit: true,
+    autoReveal: true,
+    autoWithdraw: true,
+    requireSwarmVerification: false,
+    maxStake: opts.maxStake ?? "1000000000000000000000",
+  };
+  const written = await savePolicy(cfg, policy);
+
+  emitResult(
+    ctx,
+    {
+      policyFile: written,
+      policy,
+      registryAddress: cfg.registryAddress,
+      agentStatePath: cfg.agentStatePath,
+    },
+    () => {
+      process.stdout.write(
+        `wrote policy: ${written}\n` +
+          `  allowCreateMarkets: true\n` +
+          `  allowJuryCommit:    true\n` +
+          `  maxStake:           ${policy.maxStake}\n` +
+          `next:\n` +
+          `  1. start the web app: (cd apps/web && npm run dev) — needed by 'agent tick'\n` +
+          `  2. truthmarket agent tick   # fetches Apify candidates and creates one market\n` +
+          `     (or: truthmarket agent tick --items-file <sample-items.json> for offline runs)\n`,
+      );
+    },
+  );
 }
 
 export async function cmdDevStatus(
