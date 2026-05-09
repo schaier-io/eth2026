@@ -25,6 +25,7 @@ This is the entry point for project context. Teammates and agents should use the
 - [ADR 0008](./adr/0008-identity-required-for-sybil-resistance.md): future production jury entry requires identity-backed Sybil resistance.
 - [ADR 0009](./adr/0009-swarm-verification-and-discovery-boundaries.md): separate immutable Swarm verification from mutable KV/feed discovery.
 - [ADR 0010](./adr/0010-agent-policy-heartbeat-and-auto-reveal.md): require explicit agent policy, local reveal vaults, heartbeat monitoring, and agent-side auto-reveal.
+- [ADR 0011](./adr/0011-market-registry.md): introduce a `MarketRegistry` that bakes in operational addresses and exposes a single `createMarket` entry point.
 
 ## Local Skill Provenance
 

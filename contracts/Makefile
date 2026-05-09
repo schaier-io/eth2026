@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: help setup install update build test test-gas coverage fmt fmt-check snapshot clean anvil anvil-up anvil-down deploy-market simulate simulate-anvil new-key new-key-write
+.PHONY: help setup install update build test test-gas coverage fmt fmt-check snapshot clean anvil anvil-up anvil-down deploy-market deploy-registry simulate simulate-anvil new-key new-key-write
 
 help:
 	@echo "Targets:"
@@ -19,7 +19,8 @@ help:
 	@echo "  anvil-down      - stop background anvil (bin/anvil-down)"
 	@echo "  new-key         - generate fresh keypair (bin/new-key)"
 	@echo "  new-key-write   - generate keypair AND write to .env"
-	@echo "  deploy-market  NETWORK=anvil  - deploy TruthMarket"
+	@echo "  deploy-market   NETWORK=anvil  - deploy TruthMarket"
+	@echo "  deploy-registry NETWORK=anvil  - deploy MarketRegistry"
 	@echo "  simulate        - run lifecycle scenario in-process (no anvil)"
 	@echo "  simulate-anvil  - run full lifecycle against fresh anvil (bin/sim-anvil)"
 	@echo "  clean           - remove build artifacts"
@@ -75,6 +76,9 @@ new-key-write:
 
 deploy-market:
 	$(FORGE) script script/TruthMarket.s.sol:TruthMarketScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv
+
+deploy-registry:
+	$(FORGE) script script/MarketRegistry.s.sol:MarketRegistryScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv
 
 simulate:
 	$(FORGE) script script/Simulate.s.sol --sig 'lifecycle()' -vv
