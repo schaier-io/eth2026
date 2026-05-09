@@ -73,6 +73,23 @@ function storeDemoTermsAccepted() {
   }
 }
 
+const directionUi = {
+  Up: {
+    tone: "up",
+    label: "Upward signal",
+    ariaLabel: "Choose upward signal",
+    meaningLabel: "Upward signal resolves when",
+    placeholder: "Define the upward outcome",
+  },
+  Down: {
+    tone: "down",
+    label: "Downward signal",
+    ariaLabel: "Choose downward signal",
+    meaningLabel: "Downward signal resolves when",
+    placeholder: "Define the downward outcome",
+  },
+} satisfies Record<Direction, { tone: "up" | "down"; label: string; ariaLabel: string; meaningLabel: string; placeholder: string }>;
+
 const initialMarkets: Market[] = [
   {
     id: "agent-support",
@@ -89,8 +106,8 @@ const initialMarkets: Market[] = [
     juryUpCount: 0,
     juryDownCount: 0,
     pool: 2310,
-    timeLeft: "3h 12m",
-    deadlineLabel: "Voting closes in 3h 12m",
+    timeLeft: "12m",
+    deadlineLabel: "Voting closes in 12m",
     upPercent: 63,
     upMeaning: "Agents close a higher count of qualifying tickets before the cutoff.",
     downMeaning: "Humans close an equal or higher count of qualifying tickets before the cutoff.",
@@ -118,8 +135,8 @@ const initialMarkets: Market[] = [
     juryUpCount: 2,
     juryDownCount: 1,
     pool: 1780,
-    timeLeft: "54m",
-    deadlineLabel: "Reveal closes in 54m",
+    timeLeft: "4m",
+    deadlineLabel: "Reveal closes in 4m",
     upPercent: 48,
     upMeaning: "The clearing price is below the rule-defined threshold.",
     downMeaning: "The clearing price is at or above the rule-defined threshold.",
@@ -147,7 +164,7 @@ const initialMarkets: Market[] = [
     juryUpCount: 0,
     juryDownCount: 0,
     pool: 890,
-    timeLeft: "1d 4h",
+    timeLeft: "Next draw",
     deadlineLabel: "Waiting for randomness",
     upPercent: 71,
     upMeaning: "The replay tool is public and reproduces the selected jury.",
@@ -165,7 +182,7 @@ const initialMarkets: Market[] = [
     id: "model-release",
     symbol: "AI",
     title: "Will an open model top the coding benchmark this month?",
-    description: "A fast-moving AI claim with hidden Up/Down positions until reveal.",
+    description: "A fast-moving AI claim with hidden signal positions until reveal.",
     phase: "Voting",
     uiStage: "Voting",
     stake: 22140,
@@ -176,8 +193,8 @@ const initialMarkets: Market[] = [
     juryUpCount: 0,
     juryDownCount: 0,
     pool: 3180,
-    timeLeft: "8h 41m",
-    deadlineLabel: "Voting closes in 8h 41m",
+    timeLeft: "8m",
+    deadlineLabel: "Voting closes in 8m",
     upPercent: 58,
     upMeaning: "An open model takes the top published score under the claim/rules document.",
     downMeaning: "No open model takes the top published score under the claim/rules document.",
@@ -278,6 +295,41 @@ function lifecycleIndex(stage: Stage) {
   return ["Voting", "Jury selection", "Reveal", "Resolved"].indexOf(stage);
 }
 
+function DirectionMark({ direction, size = "small" }: { direction: Direction; size?: "small" | "large" }) {
+  const ui = directionUi[direction];
+  return <span className={`direction-mark ${ui.tone}${size === "large" ? " is-large" : ""}`} aria-hidden="true" />;
+}
+
+function DirectionLabel({ direction }: { direction: Direction }) {
+  const ui = directionUi[direction];
+  return (
+    <span className={`direction-label ${ui.tone}`}>
+      <DirectionMark direction={direction} />
+      <span className="sr-only">{ui.label}</span>
+    </span>
+  );
+}
+
+function DirectionSummary({ direction }: { direction: Direction }) {
+  const ui = directionUi[direction];
+  return (
+    <span className={`direction-summary ${ui.tone}`} aria-label={ui.label}>
+      <DirectionMark direction={direction} />
+      <span>{ui.label}</span>
+    </span>
+  );
+}
+
+function DirectionCount({ direction, count }: { direction: Direction; count: number }) {
+  const ui = directionUi[direction];
+  return (
+    <span className={`direction-count ${ui.tone}`} aria-label={`${count} jury votes for ${ui.label}`}>
+      <DirectionMark direction={direction} />
+      <span aria-hidden="true">{count}</span>
+    </span>
+  );
+}
+
 function processCopy(market: Market, position: Position | null) {
   if (market.uiStage === "Voting") {
     return position
@@ -294,7 +346,7 @@ function processCopy(market: Market, position: Position | null) {
 }
 
 function nextStepCopy(market: Market, position: Position | null) {
-  if (!position) return ["No position in this market yet.", "Open a market and commit Up or Down."];
+  if (!position) return ["No position in this market yet.", "Open a claim and cast a signal."];
   if (market.uiStage === "Voting") {
     return ["Keep the reveal key in this browser.", "Reminder: reveal opens after jury selection.", "You do not need to do anything until the reveal window opens."];
   }
@@ -372,6 +424,9 @@ export default function TruthMarketApp() {
   const [commitStatus, setCommitStatus] = useState({ message: "", kind: "" as StatusKind });
   const [createStatus, setCreateStatus] = useState({ message: "", kind: "" as StatusKind });
   const [revealStatus, setRevealStatus] = useState({ message: "", kind: "" as StatusKind });
+  const [autoRevealEnabled, setAutoRevealEnabled] = useState(true);
+  const [autoRevealArmed, setAutoRevealArmed] = useState(false);
+  const [autoRevealStatus, setAutoRevealStatus] = useState("Auto-reveal will keep the nonce local and reveal from this browser.");
   const [isCommitting, setIsCommitting] = useState(false);
   const [latestTxHash, setLatestTxHash] = useState<Hex | undefined>();
   const [walletMenuOpen, setWalletMenuOpen] = useState(false);
@@ -496,6 +551,41 @@ export default function TruthMarketApp() {
     return () => document.body.classList.remove("demo-terms-locked");
   }, [hasAcceptedDemoTerms]);
 
+  useEffect(() => {
+    if (truthMarketAddress || !autoRevealArmed || !positionForSelected || revealed) return;
+    setAutoRevealStatus("Heartbeat armed. Waiting for the jury draw...");
+    const juryTimer = window.setTimeout(() => {
+      setAutoRevealStatus("Jury draw received. Reveal window opening...");
+      setMarkets((current) =>
+        current.map((market) =>
+          market.id === positionForSelected.marketId
+            ? {
+                ...market,
+                uiStage: "Reveal",
+                phase: "Reveal",
+                revealedJurors: Math.min(1, market.minRevealedJurors),
+                juryUpCount: positionForSelected.direction === "Up" ? 1 : 0,
+                juryDownCount: positionForSelected.direction === "Down" ? 1 : 0,
+                timeLeft: "2m",
+                deadlineLabel: "Reveal closes in 2m",
+                jurors: market.jurors.length ? market.jurors : ["you", "agent.alice.eth", "0x71B4...0D2c"],
+              }
+            : market,
+        ),
+      );
+    }, 900);
+    const revealTimer = window.setTimeout(() => {
+      setRevealed(true);
+      setAutoRevealArmed(false);
+      setRevealStatus({ message: "Auto-revealed from local vault.", kind: "success" });
+      setAutoRevealStatus("Reveal complete. Your signal was submitted from this browser.");
+    }, 1900);
+    return () => {
+      window.clearTimeout(juryTimer);
+      window.clearTimeout(revealTimer);
+    };
+  }, [autoRevealArmed, positionForSelected, revealed]);
+
   const visibleMarkets = useMemo(() => {
     const source = truthMarketAddress ? [selectedMarket, ...markets.filter((market) => market.id !== selectedMarket.id)] : markets;
     if (filter === "New") return [...source].reverse();
@@ -516,6 +606,8 @@ export default function TruthMarketApp() {
     setSelectedMarketId(marketId);
     setDirection("Up");
     setRevealed(false);
+    setAutoRevealArmed(false);
+    setAutoRevealStatus("Auto-reveal will keep the nonce local and reveal from this browser.");
     setCommitStatus({ message: "", kind: "" });
     showScreen("stake");
   }
@@ -558,7 +650,7 @@ export default function TruthMarketApp() {
     const downMeaning = String(formData.get("downMeaning") || "").trim();
     const targetJurySize = Number.parseInt(String(formData.get("targetJurySize") || ""), 10);
     const minRevealedJurors = Number.parseInt(String(formData.get("minRevealed") || ""), 10);
-    const votingWindow = String(formData.get("votingWindow") || "12h");
+    const votingWindow = String(formData.get("votingWindow") || "10m");
     const symbol = (String(formData.get("symbol") || "").trim() || symbolFromQuestion(title)).slice(0, 5).toUpperCase();
 
     if (!title || !description || !upMeaning || !downMeaning) {
@@ -702,6 +794,14 @@ export default function TruthMarketApp() {
         txHash,
       });
       setRevealed(false);
+      setAutoRevealArmed(autoRevealEnabled);
+      setAutoRevealStatus(
+        autoRevealEnabled
+          ? truthMarketAddress
+            ? "Auto-reveal policy armed. This wallet must still sign the reveal transaction."
+            : "Auto-reveal armed. The demo heartbeat will open reveal shortly."
+          : "Auto-reveal off. You will need to reveal manually.",
+      );
       setCommitStatus({ message: txHash ? `Commit confirmed: ${shortHash(txHash)}` : "", kind: txHash ? "success" : "" });
       showScreen("dashboard");
     } catch (error) {
@@ -740,6 +840,8 @@ export default function TruthMarketApp() {
         });
       }
       setRevealed(true);
+      setAutoRevealArmed(false);
+      setAutoRevealStatus("Reveal complete. Your signal was submitted.");
     } catch (error) {
       setRevealStatus({ message: error instanceof Error ? error.message : "Could not reveal the position.", kind: "error" });
     }
@@ -839,7 +941,10 @@ export default function TruthMarketApp() {
             <div className="feed-shell">
               <div className="feed-hero">
                 <p className="eyebrow">Live claims</p>
-                <h1 id="feedTitle">Pick a market. Commit Up or Down.</h1>
+                <h1 id="feedTitle">
+                  <span>Pick a claim.</span>
+                  <span>Cast your signal.</span>
+                </h1>
                 <p>Votes stay hidden until reveal. The selected jury resolves the claim.</p>
               </div>
 
@@ -937,12 +1042,12 @@ export default function TruthMarketApp() {
 
                   <div className="meaning-grid">
                     <label className="field meaning-field">
-                      <span>Up means</span>
-                      <textarea name="upMeaning" rows={3} placeholder="Define the upward outcome" required />
+                      <span>{directionUi.Up.meaningLabel}</span>
+                      <textarea name="upMeaning" rows={3} placeholder={directionUi.Up.placeholder} required />
                     </label>
                     <label className="field meaning-field">
-                      <span>Down means</span>
-                      <textarea name="downMeaning" rows={3} placeholder="Define the downward outcome" required />
+                      <span>{directionUi.Down.meaningLabel}</span>
+                      <textarea name="downMeaning" rows={3} placeholder={directionUi.Down.placeholder} required />
                     </label>
                   </div>
 
@@ -961,11 +1066,11 @@ export default function TruthMarketApp() {
                     </label>
                     <label className="field">
                       <span>Voting window</span>
-                      <select name="votingWindow" defaultValue="12h">
-                        <option value="6h">6h</option>
-                        <option value="12h">12h</option>
-                        <option value="1d">1d</option>
-                        <option value="3d">3d</option>
+                      <select name="votingWindow" defaultValue="10m">
+                        <option value="5m">5m</option>
+                        <option value="10m">10m</option>
+                        <option value="20m">20m</option>
+                        <option value="1h">1h</option>
                       </select>
                     </label>
                   </div>
@@ -1010,22 +1115,36 @@ export default function TruthMarketApp() {
 
                 <div className="meaning-grid">
                   <div>
-                    <span className="direction-label up">Up</span>
+                    <DirectionLabel direction="Up" />
                     <p>{selectedMarket.upMeaning}</p>
                   </div>
                   <div>
-                    <span className="direction-label down">Down</span>
+                    <DirectionLabel direction="Down" />
                     <p>{selectedMarket.downMeaning}</p>
                   </div>
                 </div>
 
                 <form className="stake-form" onSubmit={handleCommit}>
                   <div className="direction-picker" role="group" aria-label="Choose direction">
-                    <button className={`direction-button up${direction === "Up" ? " is-selected" : ""}`} type="button" aria-pressed={direction === "Up"} onClick={() => setDirection("Up")}>
-                      Up
+                    <button
+                      className={`direction-button up${direction === "Up" ? " is-selected" : ""}`}
+                      type="button"
+                      aria-label={directionUi.Up.ariaLabel}
+                      aria-pressed={direction === "Up"}
+                      onClick={() => setDirection("Up")}
+                    >
+                      <DirectionMark direction="Up" size="large" />
+                      <span className="sr-only">{directionUi.Up.label}</span>
                     </button>
-                    <button className={`direction-button down${direction === "Down" ? " is-selected" : ""}`} type="button" aria-pressed={direction === "Down"} onClick={() => setDirection("Down")}>
-                      Down
+                    <button
+                      className={`direction-button down${direction === "Down" ? " is-selected" : ""}`}
+                      type="button"
+                      aria-label={directionUi.Down.ariaLabel}
+                      aria-pressed={direction === "Down"}
+                      onClick={() => setDirection("Down")}
+                    >
+                      <DirectionMark direction="Down" size="large" />
+                      <span className="sr-only">{directionUi.Down.label}</span>
                     </button>
                   </div>
 
@@ -1044,6 +1163,13 @@ export default function TruthMarketApp() {
                       <strong>{formatToken(refundable.toFixed(2))}</strong>
                     </div>
                   </div>
+                  <label className={`auto-reveal-card${autoRevealEnabled ? " is-armed" : ""}`}>
+                    <input type="checkbox" checked={autoRevealEnabled} onChange={(event) => setAutoRevealEnabled(event.currentTarget.checked)} />
+                    <span>
+                      <strong>Auto-reveal</strong>
+                      <small>Keep the nonce local and reveal from this browser when the window opens.</small>
+                    </span>
+                  </label>
                   <p className="risk-note">
                     Losing voters and non-revealing non-jurors lose {contractRiskPercent}%. Selected jurors who skip reveal forfeit their full stake.
                     {truthMarketAddress ? ` Connected to ${tokenSymbol} staking.` : ""}
@@ -1080,7 +1206,9 @@ export default function TruthMarketApp() {
                       <>
                         <div>
                           <span>Direction</span>
-                          <strong className={positionForSelected.direction.toLowerCase()}>{positionForSelected.direction}</strong>
+                          <strong>
+                            <DirectionSummary direction={positionForSelected.direction} />
+                          </strong>
                         </div>
                         <div>
                           <span>Stake</span>
@@ -1092,7 +1220,7 @@ export default function TruthMarketApp() {
                         </div>
                         <div>
                           <span>Reveal</span>
-                          <strong>{revealed ? "Done" : "Required later"}</strong>
+                          <strong>{revealed ? "Done" : autoRevealArmed ? "Auto armed" : "Required later"}</strong>
                         </div>
                         <div>
                           <span>Juror status</span>
@@ -1106,6 +1234,10 @@ export default function TruthMarketApp() {
                   <button className="primary-action" type="button" disabled={!positionForSelected || selectedMarket.uiStage !== "Reveal"} onClick={handleReveal}>
                     {selectedMarket.uiStage === "Reveal" ? "Reveal position" : "Reveal when open"}
                   </button>
+                  <div className={`automation-status${revealed ? " is-complete" : ""}`} role="status">
+                    <span className="automation-dot" aria-hidden="true" />
+                    <p>{autoRevealStatus}</p>
+                  </div>
                   <button className="secondary-action" type="button" disabled={!truthMarketAddress || selectedMarket.uiStage !== "Resolved"} onClick={handleWithdraw}>
                     Withdraw payout
                   </button>
@@ -1163,8 +1295,9 @@ export default function TruthMarketApp() {
                     </div>
                     <div>
                       <span>Jury vote</span>
-                      <strong>
-                        {selectedMarket.juryUpCount} Up / {selectedMarket.juryDownCount} Down
+                      <strong className="direction-counts">
+                        <DirectionCount direction="Up" count={selectedMarket.juryUpCount} />
+                        <DirectionCount direction="Down" count={selectedMarket.juryDownCount} />
                       </strong>
                     </div>
                   </div>
