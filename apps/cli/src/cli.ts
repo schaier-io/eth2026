@@ -40,6 +40,10 @@ import {
   cmdRegistryList,
 } from "./commands/registry.js";
 import {
+  cmdAgentRun,
+  cmdAgentTick,
+} from "./commands/agent.js";
+import {
   cmdSwarmShowHash,
   cmdSwarmVerify,
 } from "./commands/swarm.js";
@@ -147,6 +151,27 @@ shared(registry.command("create-market").description("deploy a new TruthMarket v
   .requiredOption("--spec <path>", "path to a market spec JSON file")
   .option("--ignore-policy", "skip the policy.allowCreateMarkets gate", false)
   .action(async (opts) => run(() => cmdRegistryCreateMarket(ctx(opts), opts), ctx(opts)));
+
+// -------- agent --------
+const agent = program.command("agent").description("automated market-creation loop (Apify → registry)");
+const agentSharedOpts = (cmd: Command): Command =>
+  cmd
+    .option("--endpoint <url>", "apify generator endpoint (default: TM_APIFY_ENDPOINT or http://localhost:3000/api/apify/generated-markets)")
+    .option("--interval-seconds <n>", "seconds between iterations (run only)", (v) => Number(v), 3600)
+    .option("--duration-seconds <n>", "total market lifetime in seconds (split 40/20/40 across phases)", (v) => Number(v), 3600)
+    .option("--fee-percent <n>", "protocol fee percent (0–10)", (v) => Number(v), 5)
+    .option("--jury-size <n>", "jury draw size (odd)", (v) => Number(v))
+    .option("--min-commits <n>", "minimum committed voters", (v) => Number(v))
+    .option("--min-revealed-jurors <n>", "minimum jurors revealing for a decisive resolution", (v) => Number(v))
+    .option("--min-stake <amount>", "override candidate stake hint (token base units)")
+    .option("--ignore-policy", "skip the policy.allowCreateMarkets gate", false);
+
+shared(agentSharedOpts(agent.command("run").description("loop forever: fetch candidates, create one market per interval (NDJSON when --json)")))
+  .option("--once", "run a single iteration and exit", false)
+  .action(async (opts) => run(() => cmdAgentRun(ctx(opts), opts), ctx(opts)));
+
+shared(agentSharedOpts(agent.command("tick").description("run one iteration of the agent loop and exit")))
+  .action(async (opts) => run(() => cmdAgentTick(ctx(opts), opts), ctx(opts)));
 
 // -------- vote --------
 const vote = program.command("vote").description("commit-reveal flows");
