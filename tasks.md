@@ -1,389 +1,236 @@
-# TruthMarket — Random Jury Belief Resolution Plan
+# TruthMarket Agent Task Board
+
+TruthMarket is a random-jury belief-resolution protocol. It is not a
+fact-checker, not an oracle, and not an external truth source.
+
+Use this file as the active agent work board. Keep each item short, mark status
+with the boxes below, and move finished implementation facts into `Done`.
+
+## Status Legend
+
+- [x] Done / fixed
+- [~] Partly done / needs verification
+- [ ] Not done
+- [!] Blocked / decision needed
+
+## Do Not Regress
+
+- [x] Say "random-jury belief resolution" or "random-jury belief game".
+- [x] Keep Swarm focused on immutable claim/rules documents.
+- [x] Keep SpaceComputer randomness central to jury selection.
+- [x] Preserve classic commit-reveal; the operator must not reveal votes.
+- [x] Keep Apify optional and out of the critical path.
+- [x] Avoid "fact-checking oracle", "source of truth", and "operator reveals votes".
+
+## Current Done State
+
+- [x] Product frame changed away from fact-checking/oracle language.
+- [x] Solidity core uses fixed 20% normal risked stake.
+- [x] Commitment hash binds vote, nonce, voter, chain id, and contract address.
+- [x] Non-juror losers and non-revealing non-jurors lose only normal risked stake.
+- [x] Selected jurors who fail to reveal forfeit full stake.
+- [x] Jury outcome is count-based: one selected juror equals one vote.
+- [x] Winner reward distribution is weighted by each winner's risked stake.
+- [x] Treasury fee and creator accrual use pull-pattern withdrawals.
+- [x] Claim metadata is stored on-chain: name, description, and up to five tags.
+- [x] `revokeStake` handles nonce leaks during the voting phase only.
+- [x] Contract/events avoid fact-checker and oracle framing.
+- [x] ADRs capture core decisions through ADR 0013.
 
-TruthMarket is no longer framed as a fact-checking oracle. It is a random-jury belief-resolution market:
+## 1. Product And UI Reframe
 
-- participants stake on immutable claims;
-- votes are private during the commit phase;
-- SpaceComputer randomness selects a subset of staked voters as the resolving jury;
-- selected jurors reveal and decide the outcome;
-- all voters reveal to settle their stake;
-- winners receive their remaining stake plus upside from slashed losing/non-revealed stake.
+Goal: A first-time visitor understands that users are staking on the selected
+jury's resolution, not objective truth.
 
-Core principle: there is no oracle and no external source of truth. The protocol only resolves what the selected staked jury believes under the immutable rules of the claim.
+- [x] Canonical product language is documented in `CONTEXT.md`.
+- [x] ADR 0013 defines the random-jury game positioning.
+- [ ] Replace landing hero copy with game-first copy from ADR 0013.
+- [ ] Add a compact flow: commit hidden position -> randomness selects jury -> revealed jury outcome pays.
+- [ ] Keep a persistent subtitle such as "random-jury belief game".
+- [ ] Replace empirical demo markets with judgment/rubric/community markets.
+- [ ] Add examples for agent rubric review, DAO decisions, moderation appeals, creator contests, and community preference.
+- [ ] Stake screen says users are staking on the selected jury resolution.
+- [ ] Stake screen shows jury size, minimum revealed jurors, and selected-juror full-stake penalty before commit.
+- [ ] Result screens say "Jury resolved Up/Down" and "matched/missed jury".
+- [ ] Result screens avoid "right", "wrong", "true", or "false" framing.
+
+Acceptance:
+
+- [ ] Visitor understands the random-jury belief game within 5 seconds.
+- [ ] Default examples are ambiguous judgment, community preference, or rubric-resolution markets.
+- [ ] Commit flow makes the randomness and jury win condition obvious.
+
+## 2. Swarm Immutable Rules
 
----
+Goal: Every market has immutable rules that voters can inspect and verify before
+staking.
+
+- [x] Contract stores an immutable content reference and exact-byte `claimRulesHash`.
+- [x] Swarm verification/discovery boundary is documented in ADR 0009.
+- [x] `packages/swarm-verified-fetch` exists as a standalone verified-fetch package.
+- [ ] Create one canonical claim/rules JSON schema.
+- [ ] Upload claim/rules JSON to Swarm during market creation.
+- [ ] Store the returned Swarm reference in the market spec.
+- [ ] Compute and display `claimRulesHash` before deployment.
+- [ ] Fetch by reference in the UI/agent and verify bytes against the contract hash.
+- [ ] Block commit when fetched rules do not match `claimRulesHash`.
+- [ ] Keep Swarm feeds/KV discovery-only; never use them as canonical market rules.
 
-## Stage 1 — Reframe Product And Submission
+Acceptance:
 
-**Goal:** Align every part of the project around random-jury belief resolution.
+- [ ] A voter can read the immutable claim/rules document before commit.
+- [ ] UI/agent refuses to commit if the document hash does not match the contract.
+- [ ] Rules cannot be quietly changed after market creation.
 
-**Positioning:**
+## 3. Core Contract Tests
 
-> A belief-resolution protocol where staked voters privately commit to claims, SpaceComputer randomness selects a resolving jury, and the count majority of revealing jurors determines the outcome. Stake sizes economic exposure and reward share; the normal losing/non-reveal slash is fixed at 20% of stake.
+Goal: Broaden settlement coverage around the already-implemented contract model.
 
-**Primary hackathon track:** Network Economy.
+- [x] Core lifecycle and fixed-risk model are implemented.
+- [~] Existing lifecycle tests cover the main happy path and several slash paths.
+- [ ] Test losing non-juror receives only refundable stake.
+- [ ] Test non-juror non-revealer loses only 1x risked stake.
+- [ ] Test selected juror non-revealer loses full stake.
+- [ ] Test no selected juror reveals -> Invalid and creator accrual.
+- [ ] Test partial-reveal tie -> Invalid and revealing voters refunded.
+- [ ] Test small stake that rounds risked stake to zero reverts.
+- [ ] Test extreme aggregate stake/revocation pools avoid `uint96` boundary issues.
+- [ ] Test paginated dust sweeping preserves unclaimed payouts.
 
-**Secondary track:** Future Society, if the demo emphasizes community/governance dispute resolution.
+Acceptance:
 
-**Sponsor priority:**
+- [ ] Settlement behavior is covered for Yes, No, Invalid, non-reveal, and dust paths.
 
-1. SpaceComputer — core random jury selection.
-2. Umia — venture/token story around protocol fees and staking.
-3. Swarm — immutable claim/rules documents.
-4. ENS — optional identity/reputation layer.
-5. Sourcify — optional contract verification if still eligible and cheap.
-6. Apify — optional only; not part of the core mechanism.
+## 4. SpaceComputer Jury Selection
 
-**Acceptance:**
+Goal: Make randomness selection replayable and judge-legible.
 
-- README and submission copy do not describe the product as a fact-checker or oracle.
-- Demo language consistently says "random jury belief resolution."
-- Apify is removed from the critical path.
+- [x] SpaceComputer-first strategy is documented in ADR 0005.
+- [x] Contract records selected jurors and randomness evidence fields.
+- [x] Jury draw is replayable from committer list plus posted randomness.
+- [ ] Build service command to fetch SpaceComputer cTRNG output from the public IPFS/IPNS beacon.
+- [ ] Persist audit artifact with beacon address, sequence, timestamp, cTRNG index, randomness hash, and selected jurors.
+- [ ] Submit `commitJury(randomness, metadata, auditHash)` through one clean service operation.
+- [ ] Add replay script/process for reviewers.
+- [ ] Show randomness proof/evidence in the frontend as the core resolution moment.
 
----
+Acceptance:
 
-## Stage 1A — Positioning And App UI Reframe
+- [ ] Reviewer can see the randomness value, metadata, selected jurors, and replay process.
+- [ ] Demo makes SpaceComputer visibly central.
 
-**Goal:** Reposition the landing page and app UI around the random-jury belief game described in [ADR 0013](./docs/adr/0013-random-jury-game-positioning.md).
+## 5. Frontend Market Lifecycle
 
-**Decision summary:** Users stake on how a randomly selected jury will resolve a claim. Randomness and luck are part of the game. Winning means matching the selected jury outcome, not being objectively correct.
+Goal: Make one full lifecycle demo understandable without reading contract state.
 
-**Landing page tasks:**
+- [ ] Create market screen verifies immutable rules before deployment/commit.
+- [ ] Commit screen shows hidden vote, stake, fixed 20% risk, and selected-juror penalty.
+- [ ] Jury screen centers the selected jury and randomness evidence.
+- [ ] Reveal screen supports selected jurors and non-selected voters.
+- [ ] Settlement screen shows matched/missed jury, refund, slash, bonus, and withdraw state.
+- [ ] Add typed client wrapper around generated getters when frontend work starts.
 
-- [ ] Replace generic hero copy with a game-first headline and subtitle from ADR 0013.
-- [ ] Add a compact "How it works" strip: commit hidden position -> randomness selects jury -> revealed jury outcome pays.
-- [ ] Rework the demo risk modal so the random-jury game frame is visible before or inside the notice.
-- [ ] Pair "TruthMarket" with a persistent subtitle such as "random-jury belief game" if the name stays.
+Acceptance:
 
-**Market example tasks:**
+- [ ] One market can be created, committed to, jury-selected, revealed, resolved, and withdrawn through the app.
 
-- [ ] Replace empirical/prediction-style demo markets with subjective, underdetermined, or rubric-based markets.
-- [ ] Add an agent-evaluation example: "Did this agent satisfy the bounty rubric?"
-- [ ] Add a DAO/community example: "Which proposal best matches this community mandate?"
-- [ ] Add a moderation/judgment example: "Was this moderation appeal fair under the posted rules?"
-- [ ] Add a creator/work review example: "Does this submission qualify for payout under the rules?"
+## 6. Agent Productization
 
-**Stake screen tasks:**
+Goal: An agent can create, verify, commit, reveal, and withdraw without manually
+assembling low-level pieces.
 
-- [ ] Add a pre-commit sentence: "You are staking on the selected jury's resolution, not on an objective answer."
-- [ ] Show the target jury size, minimum revealed jurors, and selected-juror full-stake penalty before the commit button.
-- [ ] Add a "luck boundary" note: "The jury is selected after commit by public randomness. If the selected jury leans against you, that is part of the game."
-- [ ] Ensure the Up/Down meanings are written as jury-resolution rules: "The jury should resolve Up if..." and "The jury should resolve Down if..."
+- [x] Agent policy, heartbeat, and auto-reveal boundary is documented in ADR 0010.
+- [x] Apify agent loop boundary is documented in ADR 0012.
+- [ ] Add `truthmarket market create --rules <claim-rules.json> --image <image> --context <artifact> --json`.
+- [ ] Add `--dry-run` preview for registry, creator, token, timings, jury size, references, hash, and tx target.
+- [ ] Upload rules/image/context artifacts and include optional artifact references in the rules document.
+- [ ] Return stable JSON for every agent action: `ok`, `action`, `marketAddress`, `txHash`, `artifactReferences`, `claimRulesHash`, `vaultPath`, `error`.
+- [ ] Add token-decimal helpers for human stake amounts.
+- [ ] Add approve-and-commit helper with allowance check and 20% risk preview.
+- [ ] Make `policy.requireSwarmVerification` block placeholder-reference markets by default.
+- [ ] Add safe agent mode for heartbeat, selected-juror urgency, reveal, and withdraw.
+- [ ] Write first persona demo: Reddit ambiguity agent creates a market, commits, reveals, and withdraws.
 
-**Create flow tasks:**
+Acceptance:
 
-- [ ] Replace the default "Will..." placeholder with a judgment-market prompt such as "What should the jury resolve?"
-- [ ] Add market templates for agent review, DAO decision, moderation appeal, creator contest, and community taste/vibe decisions.
-- [ ] Add a creator warning when a draft looks like an objective prediction-market claim instead of a jury-belief claim.
-- [ ] Add fields for "what jurors should consider" and "what jurors should ignore" in the claim/rules document.
+- [ ] Agent can create a custom market from local rules plus optional artifacts.
+- [ ] Agent refuses unsafe placeholder markets when Swarm verification is required.
+- [ ] Vote, nonce, and reveal data remain local/private.
 
-**Dashboard/result tasks:**
+## 7. Timing And Market Creation UX
 
-- [ ] Rename result language from "Outcome: YES/NO" to "Jury resolved Up/Down" in user-facing surfaces.
-- [ ] Show "selected jury" as the central status object after voting closes.
-- [ ] Make the randomness proof visible as the reason the jury is legitimate.
-- [ ] Show final settlement as "matched jury" or "missed jury," not "right" or "wrong."
+Goal: Creators can choose clear lifecycle timing before deployment.
 
-**Agent/human positioning tasks:**
+- [ ] Add timing presets: fast demo, 5 minutes, 1 hour, 24 hours, custom.
+- [ ] Validate `votingPeriod`, `adminTimeout`, and `revealPeriod` against on-chain bounds.
+- [ ] Show absolute voting, jury-commit, and reveal deadlines before signing.
+- [!] Decide whether "1 minute market" means 1 minute per phase or 1 minute total lifecycle.
 
-- [ ] Explain that both humans and agents can create, stake, reveal, and be selected as jurors if eligible.
-- [ ] Use agent-rubric markets as the first serious wedge: agents create work, humans/agents stake on whether it satisfies a rubric, and the random jury resolves.
-- [ ] Keep Apify as a market discovery/input agent, not as a resolver or truth source.
+Acceptance:
 
-**Acceptance:**
+- [ ] Creator understands the full lifecycle timing before creating a market.
 
-- A first-time visitor understands within 5 seconds that this is a random-jury belief game.
-- The landing page does not sound like an oracle, fact-checker, or conventional prediction market.
-- Default markets demonstrate ambiguous judgment, community preference, or rubric resolution.
-- Before committing, users see that randomness selects the jury and that matching the jury is the win condition.
-- Result copy never implies the protocol discovered objective truth.
+## 8. Token And Umia Story
 
----
+Goal: Keep token mechanics simple while making the venture path credible.
 
-## Stage 2 — Immutable Claim Rules On Swarm
+- [x] Hackathon story: token is used for staking on claims.
+- [x] Venture story: protocol fees can support token staking/revenue share.
+- [ ] Pitch deck has a simple revenue model.
+- [ ] Demo avoids complex tokenomics.
 
-**Goal:** Every market has immutable rules that voters can inspect before staking.
+Deferred:
 
-**Core artifact:** claim/rules document stored on Swarm.
+- [ ] Governance over protocol settings.
+- [ ] Claim-creation token requirements.
+- [ ] Complex emissions.
+- [ ] Multi-token markets.
 
-**Claim document fields:**
+## 9. ENS Identity Layer
 
-- title
-- description
-- resolution rules
-- created timestamp
-- voting deadline
-- reveal deadline
-- target jury size
-- fixed normal risk percentage
-- stake token
-- creator address or identity
+Goal: Optional identity/reputation layer if time allows.
 
-**Contract relationship:**
+- [x] Production Sybil boundary documented in ADR 0008.
+- [ ] Resolve at least one voter, agent, or creator through ENS live.
+- [ ] Show ENS identity instead of only raw addresses.
+- [ ] Keep used ENS records public-safe.
 
-- Contract stores the Swarm reference and a hash of the exact claim/rules document bytes.
-- UI fetches the claim document from Swarm.
-- UI verifies the fetched bytes against the contract-stored hash before enabling commit.
-- Voters stake only after seeing the immutable rules.
+Boundary:
 
-**Mutable Swarm discovery:**
+- [x] ENS is not required for hackathon jury selection.
+- [ ] ENS must be live and functional if submitted for a bounty.
 
-- Swarm feeds/KV may store market indexes and creator indexes.
-- Feed/KV data is discovery-only and must not define market rules, outcomes, votes, selected jurors, or payouts.
-- Opening a market from a feed still requires reading the contract and verifying the immutable Swarm claim/rules document.
+## 10. Demo And Submission
 
-**Acceptance:**
+Goal: Ship a judge-legible demo that makes the random jury mechanism obvious.
 
-- A claim can be uploaded to Swarm.
-- The contract stores the returned Swarm reference.
-- The contract stores `claimRulesHash` for the exact JSON bytes.
-- The frontend can fetch and display the claim/rules document.
-- The frontend can verify the document before commit.
-- The UI communicates that rules cannot be changed after market creation.
+- [ ] Create claim with immutable rules on Swarm.
+- [ ] Multiple voters commit hidden votes with stake.
+- [ ] Voting closes.
+- [ ] SpaceComputer randomness selects the resolving jury.
+- [ ] Selected jurors reveal.
+- [ ] Outcome is published.
+- [ ] All voters reveal to settle.
+- [ ] Winners receive stake plus upside; losers lose the risked portion.
+- [ ] Submission lists chosen tracks and bounties.
+- [ ] README explains trust model and limitations.
 
----
+Judging beats:
 
-## Stage 3 — Commit Phase
-
-**Goal:** Voters privately stake on a YES/NO belief without revealing their vote.
-
-**Voter inputs:**
-
-- claim id
-- vote commitment
-- stake amount
-
-**Fixed Normal Risk:**
-
-The normal risked stake is fixed at 20% of the committed stake. A losing voter or non-revealing non-juror loses this normal risked amount.
-
-Example:
-
-- stake: 100 tokens
-- normal loss if wrong: 20 tokens
-- refund if wrong: 80 tokens
-
-Selected jurors who fail to reveal still lose their full stake.
-
-**Privacy model:**
-
-- Use classic commit-reveal.
-- The protocol/operator must not be able to decrypt or reveal votes.
-- Voters keep sovereignty over their vote and nonce.
-
-**Acceptance:**
-
-- Voters can commit a hidden vote with stake.
-- No vote is visible before reveal.
-- The contract tracks voter stake and derives the fixed 20% normal risked stake.
-
----
-
-## Stage 4 — SpaceComputer Jury Selection
-
-**Goal:** Use SpaceComputer randomness to select the resolving jury from committed voters.
-
-**Flow:**
-
-1. Voting closes.
-2. Off-chain service fetches SpaceComputer cTRNG output from the public IPFS/IPNS beacon.
-3. The cTRNG response, beacon IPFS address, sequence, timestamp, cTRNG index, and randomness hash are preserved for audit.
-4. The service deterministically selects `targetJurySize` voters from the committer set.
-5. The posted randomness, beacon metadata, and audit hash are committed on-chain.
-
-**Trust boundary:**
-
-- Hackathon version may use an off-chain service to post jurors.
-- The selection must be replayable from the committer list and randomness.
-- Future version can harden this with on-chain verification or signed cTRNG attestations.
-
-**Acceptance:**
-
-- A reviewer can see the randomness value, randomness hash, SpaceComputer IPFS address, beacon sequence/timestamp/index, selected jurors, and replay script/process.
-- The contract records the selected jurors.
-- The frontend shows the jury selection as the SpaceComputer-powered core moment.
-
----
-
-## Stage 5 — Reveal And Resolution
-
-**Goal:** Selected jurors reveal to determine the outcome; all voters reveal to settle their own stake.
-
-**Rules:**
-
-- Selected jurors determine the market outcome.
-- All voters must reveal to claim any returned stake or rewards.
-- Non-revealing voters lose the risked portion of their stake.
-- Revealed losing voters lose the risked portion of their stake.
-- Revealed winning voters receive stake back plus a share of the slashed pool.
-
-**Jury voting:**
-
-Jury outcome is count-based ([ADR 0006](./docs/adr/0006-count-based-jury-voting.md)):
-
-- each selected juror contributes exactly 1 vote;
-- stake does not influence the YES/NO decision;
-- target jury size is constrained to be odd (≤ 100); on full reveal, ties are impossible;
-- on partial reveal with an even count of revealing jurors, ties resolve to Invalid.
-
-**Reward weighting:**
-
-- Winner reward share is weighted by the winner's own `riskedStake` (= stake × `RISK_PERCENT` / 100).
-- Larger-stake winners take more absolute downside risk and receive a larger reward share if right.
-
-**Juror non-reveal penalty:**
-
-- Selected jurors who skip reveal forfeit their full stake (5× the fixed 20% normal slash).
-- The extra above the normal 1× risked slash joins the distributable pool on Yes/No, or accrues to the claim creator on Invalid (pull pattern via `withdrawCreator`).
-
-**Acceptance:**
-
-- Selected jurors reveal and the count majority decides the outcome.
-- Non-selected voters can reveal to settle.
-- Winners receive stake plus a risked-stake-weighted bonus.
-- Non-juror losers/non-revealers lose only their risked portion.
-- Selected jurors who skip reveal lose their full stake.
-
----
-
-## Stage 6 — Token And Umia Venture Story
-
-**Goal:** Keep token mechanics simple enough for the hackathon while making the venture path credible.
-
-**Hackathon token story:**
-
-- The protocol has a token.
-- Users can stake on claims with the token.
-- Users can stake the protocol token in the protocol to receive protocol fees/revenue share.
-
-**Deferred token mechanics:**
-
-- Governance over protocol settings.
-- Claim creation requirements.
-- Complex emissions.
-- Multi-token markets.
-
-**Umia pitch:**
-
-TruthMarket can become a venture because it monetizes belief-resolution markets through protocol fees, creates demand for a staking token, and can expand from prediction markets into DAO decisions, public disputes, and agent-mediated coordination.
-
-**Acceptance:**
-
-- Pitch deck has a simple revenue model.
-- Token value capture is fee/revenue-share driven, not hand-wavy governance.
-- Demo does not depend on complex tokenomics.
-
----
-
-## Stage 7 — ENS Identity Layer
-
-**Goal:** Add optional but visible identity and reputation if time allows.
-
-**Production Sybil boundary:** Future production markets must require identity-backed or eligibility-backed voter/jury entry before count-based jury voting is considered Sybil-resistant. The hackathon contract remains address-based for demo speed; see [ADR 0008](./docs/adr/0008-identity-required-for-sybil-resistance.md).
-
-**Use cases:**
-
-- Named voters or agents.
-- Market creators with ENS names.
-- Juror profiles.
-- Text records for reputation, role, or endpoint.
-
-**Boundary:**
-
-- ENS is not required for jury selection.
-- ENS must not be cosmetic if submitted for the bounty.
-- Live resolution/lookups are required if we pursue ENS seriously.
-
-**Acceptance:**
-
-- At least one voter/agent/creator is resolved through ENS live.
-- UI displays ENS identity instead of only raw addresses.
-- Any ENS records used are public-safe.
-
----
-
-## Stage 8 — Demo And Submission
-
-**Goal:** Ship a judge-legible demo that makes the random jury mechanism obvious.
-
-**Demo flow:**
-
-1. Create a claim with immutable rules on Swarm.
-2. Multiple voters commit hidden votes with stake.
-3. Voting closes.
-4. SpaceComputer randomness selects the resolving jury.
-5. Selected jurors reveal.
-6. Outcome is published.
-7. All voters reveal to settle.
-8. Winners receive stake plus upside; losers lose their risked portion.
-
-**Judging beats:**
-
-- "There is no oracle."
-- "Votes are private until reveal."
-- "Randomness selects the resolving jury."
-- "Each selected juror counts as one vote — stake decides exposure, not the outcome."
-- "Losing voters and non-revealing non-jurors lose 20%; stake size controls absolute exposure and reward share."
-- "A selected juror who skips reveal forfeits their full stake — 5× the normal slash."
-- "Immutable Swarm rules prevent post-stake rule changes."
-
-**Acceptance:**
-
-- One full market lifecycle is demoable end-to-end.
-- Submission clearly lists chosen tracks and bounties.
-- README explains the trust model and limitations.
-
----
-
-## Stage 9 — Agentic Market Productization
-
-**Goal:** Make the agent experience feel like a complete product flow: an AI agent can create a market with its own public artifacts, discover/access markets, vote with stake, reveal from its local vault, and withdraw after settlement without hand-assembling low-level pieces.
-
-**Current issues to fix:**
-
-- Agent market creation still feels like an operator toolkit. The agent needs prepared env vars, policy files, wallet setup, a `MarketSpec`, and sometimes placeholder `ipfsHash` behavior before it can create a market.
-- Public artifact upload is not first-class. Agents should be able to upload their own claim/rules document, optional image, and public context artifact to Swarm/IPFS, then create a market from those references.
-- Manual market creation is too raw. A user or agent has to hand-build `MarketSpec` JSON instead of using a guided command that validates fields and shows what will be deployed.
-- Creator-controlled timing is not visible enough in the agent flow. Creators should be able to choose market lifecycle presets such as fast demo, 5 minutes, 1 hour, 24 hours, or custom voting/admin/reveal windows before deployment.
-- Stake/vote flow still exposes base-unit complexity. Agents should get token-decimal helpers, allowance checks, dry-run previews, and clear risk summaries before signing.
-- Verification is correct in principle but not packaged well. Agents need one clear create/verify/commit path that refuses unsafe placeholder markets when policy requires real Swarm verification.
-- The safe unattended-agent loop is not obvious enough. Policy, encrypted reveal vault, heartbeat, selected-juror urgency, and withdraw should feel like one operating mode, not separate concepts.
-- The first target agent persona is still too broad. Optimize first for one concrete loop, such as a Reddit ambiguity agent that creates markets from public disputed posts and later votes/reveals under local policy.
-
-**Fix list:**
-
-- [ ] Add a single agent-native create command, for example `truthmarket market create --rules <claim-rules.json> --image <image> --context <artifact> --json`.
-- [ ] Upload claim/rules JSON to Swarm/IPFS and use the returned immutable reference in the market spec.
-- [ ] Support optional image/context artifact upload and include those references in the claim/rules document, not as canonical contract state.
-- [ ] Compute and display `claimRulesHash` before market creation; after deployment, read the contract and verify the uploaded bytes still match.
-- [ ] Add a `--dry-run`/preview mode for market creation that prints the exact registry, creator, stake token, timings, jury size, min commits, uploaded references, and expected transaction target.
-- [ ] Add creator-configurable timing inputs with presets and custom values for `votingPeriod`, `adminTimeout`, and `revealPeriod`; validate against the on-chain 1 minute minimum and 365 day maximum per phase, and show the resulting absolute voting, jury-commit, and reveal deadlines before signing.
-- [ ] Decide whether "1 minute market" means 1 minute per phase or 1 minute total lifecycle. The current contract supports 1 minute minimum per phase, so a true 1 minute total market requires a contract/design change.
-- [ ] Add token-decimal helpers for stake input so agents can pass human amounts while the CLI safely converts to base units.
-- [ ] Add an approve-and-commit helper or guided sequence that checks allowance, shows normal 20% risk, previews the commitment action, then commits.
-- [ ] Return stable JSON for every agent action with `ok`, `action`, `marketAddress`, `txHash`, `artifactReferences`, `claimRulesHash`, `vaultPath`, and `error` where applicable.
-- [ ] Make `policy.requireSwarmVerification` block generated placeholder markets by default unless a matching local document is supplied.
-- [ ] Add a single "safe agent mode" command or documented sequence that starts heartbeat monitoring after commit and handles reveal/withdraw according to local policy.
-- [ ] Add a dedicated README/demo for the first target agent persona: create a market from a public Reddit ambiguity, upload artifacts, create market, commit a vote, reveal, and withdraw.
-
-**Acceptance:**
-
-- An agent can create a custom market from a local rules document plus optional image/context artifact without hand-writing a full `MarketSpec`.
-- The created market stores an immutable rules reference and a verifiable `claimRulesHash`.
-- The creator can choose lifecycle timing before deployment, including fast demo, 5 minute, 1 hour, 24 hour, and custom timing paths within protocol bounds.
-- Agents that require Swarm verification refuse to commit on placeholder-reference markets.
-- The CLI can preview create/approve/commit actions before signing.
-- Vote, nonce, and reveal data remain local/private and are never uploaded to Swarm/IPFS/Apify.
-- The first persona demo runs end-to-end with machine-readable JSON output for every step.
-
----
+- [x] There is no oracle.
+- [x] Votes are private until reveal.
+- [x] Randomness selects the resolving jury.
+- [x] Each selected juror counts as one vote; stake decides exposure and reward share.
+- [x] Normal loser/non-reveal loss is 20% of stake.
+- [x] Selected juror non-reveal loss is full stake.
+- [x] Immutable Swarm rules prevent post-stake rule changes.
 
 ## Out Of Scope For Hackathon
 
-- Apify as core evidence tooling.
-- Operator-decrypted votes.
-- External truth oracle integration.
-- Full threshold encryption.
-- Full governance system.
-- Production audit readiness.
-- Complex revenue distribution implementation beyond a credible prototype/story.
+- [x] Apify as core evidence tooling.
+- [x] Operator-decrypted votes.
+- [x] External truth oracle integration.
+- [x] Full threshold encryption.
+- [x] Full governance system.
+- [x] Production audit readiness.
+- [x] Complex revenue distribution beyond credible prototype/story.

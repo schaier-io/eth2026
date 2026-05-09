@@ -21,7 +21,7 @@ Main workspaces:
 - [AGENTS.md](./AGENTS.md): operating guide for Codex, Claude, and other coding agents.
 - [CONTEXT.md](./CONTEXT.md): canonical project language and domain model.
 - [docs/INDEX.md](./docs/INDEX.md): full documentation index.
-- [tasks.md](./tasks.md): staged hackathon execution plan.
+- [tasks.md](./tasks.md): compact agent-readable task board.
 - [docs/random-jury-belief-resolution-prd.md](./docs/random-jury-belief-resolution-prd.md): product requirements.
 - [docs/architecture-review.md](./docs/architecture-review.md): current code/PRD gap analysis.
 

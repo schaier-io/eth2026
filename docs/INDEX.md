@@ -7,7 +7,7 @@ This is the entry point for project context. Teammates and agents should use the
 - [Agent Operating Guide](../AGENTS.md): instructions for Codex, Claude, and other agents.
 - [Context](../CONTEXT.md): project language, canonical terms, and resolved ambiguities.
 - [Root README](../README.md): hackathon monorepo overview and workspace map.
-- [Task Plan](../tasks.md): staged implementation and hackathon plan, including Stage 1A for landing/app UI positioning around the random-jury belief game.
+- [Task Board](../tasks.md): compact agent-readable status board for implementation, UI positioning, sponsor integrations, and demo/submission work.
 - [PRD](./random-jury-belief-resolution-prd.md): product requirements for random-jury belief resolution.
 - [Architecture Review](./architecture-review.md): current code gaps and recommended module boundaries.
 - [Swarm Integration Plan](./swarm-integration-plan.md): minimal Swarm build plan for immutable rules, verified fetch, KV discovery, and audit artifacts.
@@ -19,7 +19,7 @@ This is the entry point for project context. Teammates and agents should use the
 ## Document Inventory
 
 - [Documentation Index](./INDEX.md): this document map.
-- [Task Plan](../tasks.md): active staged plan; see Stage 1A for positioning, landing page, app UI copy, market examples, and agent/human framing tasks.
+- [Task Board](../tasks.md): active status board with done, partly done, not done, and blocked work items.
 - [Evidence](./evidence.md): Sepolia demo proof and transaction references.
 - [MVP Live Demo Walkthrough](./mvp-demo.md): local anvil and web demo steps.
 - [PRD](./random-jury-belief-resolution-prd.md): product requirements and acceptance boundaries.
