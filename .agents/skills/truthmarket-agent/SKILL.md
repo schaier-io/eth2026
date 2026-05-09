@@ -26,7 +26,6 @@ Require an explicit local policy before an agent commits:
   "revealBufferMinutes": 30,
   "autoWithdraw": true,
   "maxStake": "1000000000000000000",
-  "maxConvictionBps": 2500,
   "requireSwarmVerification": true,
   "allowCreateMarkets": true,
   "allowJuryCommit": true
@@ -48,7 +47,7 @@ Reject or ask for operator approval when a requested action exceeds policy.
 1. Choose YES or NO under the immutable claim/rules document.
 2. Generate a high-entropy nonce locally.
 3. Compute the contract commitment hash.
-4. Submit only the commitment hash, stake, and conviction.
+4. Submit only the commitment hash and stake.
 5. Store vote, nonce, market, chain, wallet, and deadlines in a local private vault.
 6. Start or update the heartbeat watcher.
 

@@ -17,7 +17,7 @@ A YES/NO proposition with immutable rules that voters stake on.
 _Avoid_: fact, truth claim
 
 **Claim/rules document**:
-The immutable Swarm-hosted document defining the claim, YES/NO meaning, deadlines, jury size, and weighting mode.
+The immutable Swarm-hosted document defining the claim, YES/NO meaning, deadlines, jury size, and risk model.
 _Avoid_: evidence bundle, mutable metadata
 
 **Committed vote**:
@@ -32,16 +32,12 @@ _Avoid_: decrypt
 A committed voter selected by SpaceComputer randomness to determine the market outcome.
 _Avoid_: oracle, truth oracle
 
-**Conviction**:
-The percentage of a voter stake that the voter is willing to risk.
-_Avoid_: leverage
-
 **Risked stake**:
 The portion of a voter stake that can be slashed when the voter loses or, as a non-juror, fails to reveal. Selected jurors who skip reveal are slashed their FULL stake regardless of this value — see _Juror non-reveal slash_.
-_Avoid_: full stake unless conviction is 100%
+_Avoid_: user-selected risk controls
 
 **Juror non-reveal slash**:
-The penalty applied when a selected juror skips reveal. Equal to the juror's full stake (conviction is ignored). At a typical 20%-conviction normal slash, this is roughly 5× the normal loss. The extra above the normal 1× risked slash joins the distributable pool on Yes/No, or accrues to the claim creator on Invalid.
+The penalty applied when a selected juror skips reveal. Equal to the juror's full stake. With the fixed 20% normal loss, this is 5× the normal loss. The extra above the normal 1× risked slash joins the distributable pool on Yes/No, or accrues to the claim creator on Invalid.
 _Avoid_: 1× risked, partial slash for jurors
 
 **Slashed pool**:
@@ -49,7 +45,7 @@ The pool formed from risked stake lost by losing or non-revealing voters, plus t
 _Avoid_: loser pool
 
 **Jury vote**:
-Each selected juror contributes one vote (1) to the YES/NO outcome. Stake and conviction do not influence the YES/NO decision.
+Each selected juror contributes one vote (1) to the YES/NO outcome. Stake does not influence the YES/NO decision.
 _Avoid_: weighted vote, square-root vote, stake-based vote
 
 **Claim metadata**:
@@ -73,8 +69,8 @@ _Avoid_: governance token unless governance is explicitly added later
 - A **Claim** has exactly one **Claim/rules document**.
 - A **Claim/rules document** is stored on Swarm before voters stake.
 - A voter creates one **Committed vote** per **Claim** (one wallet → one commit, hard-enforced).
-- A **Committed vote** includes stake and **Conviction**.
-- **Conviction** determines **Risked stake**.
+- A **Committed vote** includes stake.
+- **Risked stake** is fixed at 20% of stake for normal losing/non-reveal paths.
 - **SpaceComputer randomness** selects **Selected jurors** from committed voters via on-chain Fisher-Yates.
 - **Selected jurors** reveal; the market outcome is the simple count majority of revealing jurors (one juror = one **Jury vote**).
 - All voters reveal to settle their own stake.
@@ -97,7 +93,7 @@ _Avoid_: governance token unless governance is explicitly added later
 
 - "Truth" was originally used as if the protocol discovers objective truth. Resolved: the protocol resolves selected juror belief, not objective truth.
 - "Fact-checking agent" was originally treated as the protagonist. Resolved: agents may participate later, but the core protocol is voter/jury resolution.
-- "Leverage" was used for user-selected risk. Resolved: use **Conviction** because no borrowing or liquidation is implied.
+- Earlier user-selected-risk terminology was removed. Resolved: normal slash is fixed at 20% of stake.
 - "Oracle" appeared in contract wording. Resolved: avoid oracle language except when discussing rejected alternatives.
 - Apify was originally part of the critical path. Resolved: Apify is optional and not core.
-- "Jury weight" originally meant `sqrt(riskedStake)` per juror. Resolved (ADR 0006): each juror contributes 1 **Jury vote**; stake/conviction no longer affect the YES/NO decision, only slash and reward distribution.
+- "Jury weight" originally meant `sqrt(riskedStake)` per juror. Resolved (ADR 0006): each juror contributes 1 **Jury vote**; stake no longer affects the YES/NO decision.

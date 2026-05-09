@@ -19,7 +19,7 @@ Core principle: there is no oracle and no external source of truth. The protocol
 
 **Positioning:**
 
-> A belief-resolution protocol where staked voters privately commit to claims, SpaceComputer randomness selects a resolving jury, and the count majority of revealing jurors determines the outcome. Conviction governs only economic exposure — slash size and reward share — not voting power.
+> A belief-resolution protocol where staked voters privately commit to claims, SpaceComputer randomness selects a resolving jury, and the count majority of revealing jurors determines the outcome. Stake sizes economic exposure and reward share; the normal losing/non-reveal slash is fixed at 20% of stake.
 
 **Primary hackathon track:** Network Economy.
 
@@ -57,7 +57,7 @@ Core principle: there is no oracle and no external source of truth. The protocol
 - voting deadline
 - reveal deadline
 - jury size
-- weighting mode, initially `sqrt_stake_conviction`
+- fixed normal risk percentage
 - stake token
 - creator address or identity
 
@@ -94,20 +94,18 @@ Core principle: there is no oracle and no external source of truth. The protocol
 - claim id
 - vote commitment
 - stake amount
-- conviction percent
 
-**Conviction:**
+**Fixed Normal Risk:**
 
-Conviction is the percentage of the stake the voter is willing to risk if wrong or if they fail to reveal.
+The normal risked stake is fixed at 20% of the committed stake. A losing voter or non-revealing non-juror loses this normal risked amount.
 
 Example:
 
 - stake: 100 tokens
-- conviction: 25%
-- loss if wrong: 25 tokens
-- refund if wrong: 75 tokens
+- normal loss if wrong: 20 tokens
+- refund if wrong: 80 tokens
 
-At 100% conviction, the voter risks the full stake.
+Selected jurors who fail to reveal still lose their full stake.
 
 **Privacy model:**
 
@@ -117,9 +115,9 @@ At 100% conviction, the voter risks the full stake.
 
 **Acceptance:**
 
-- Voters can commit a hidden vote with stake and conviction.
+- Voters can commit a hidden vote with stake.
 - No vote is visible before reveal.
-- The contract tracks voter stake and conviction.
+- The contract tracks voter stake and derives the fixed 20% normal risked stake.
 
 ---
 
@@ -166,18 +164,18 @@ At 100% conviction, the voter risks the full stake.
 Jury outcome is count-based ([ADR 0006](./docs/adr/0006-count-based-jury-voting.md)):
 
 - each selected juror contributes exactly 1 vote;
-- stake and conviction do not influence the YES/NO decision;
+- stake does not influence the YES/NO decision;
 - jury size is constrained to be odd (≤ 100); on full reveal, ties are impossible;
 - on partial reveal with an even count of revealing jurors, ties resolve to Invalid.
 
 **Reward weighting:**
 
-- Winner reward share is weighted by the winner's own `riskedStake` (= stake × conviction).
-- High-conviction winners take more downside risk (1× risked slash if wrong) and receive a larger reward share if right.
+- Winner reward share is weighted by the winner's own `riskedStake` (= stake × `RISK_PERCENT` / 100).
+- Larger-stake winners take more absolute downside risk and receive a larger reward share if right.
 
 **Juror non-reveal penalty:**
 
-- Selected jurors who skip reveal forfeit their full stake regardless of conviction (~5× a typical normal slash).
+- Selected jurors who skip reveal forfeit their full stake (5× the fixed 20% normal slash).
 - The extra above the normal 1× risked slash joins the distributable pool on Yes/No, or accrues to the claim creator on Invalid (pull pattern via `withdrawCreator`).
 
 **Acceptance:**
@@ -253,7 +251,7 @@ TruthMarket can become a venture because it monetizes belief-resolution markets 
 **Demo flow:**
 
 1. Create a claim with immutable rules on Swarm.
-2. Multiple voters commit hidden votes with stake and conviction.
+2. Multiple voters commit hidden votes with stake.
 3. Voting closes.
 4. SpaceComputer randomness selects the resolving jury.
 5. Selected jurors reveal.
@@ -267,8 +265,8 @@ TruthMarket can become a venture because it monetizes belief-resolution markets 
 - "Votes are private until reveal."
 - "Randomness selects the resolving jury."
 - "Each selected juror counts as one vote — stake decides exposure, not the outcome."
-- "Conviction sizes your slash and your share of the winning pool, but never your jury vote."
-- "A selected juror who skips reveal forfeits their full stake — roughly 5× the normal slash."
+- "Losing voters and non-revealing non-jurors lose 20%; stake size controls absolute exposure and reward share."
+- "A selected juror who skips reveal forfeits their full stake — 5× the normal slash."
 - "Immutable Swarm rules prevent post-stake rule changes."
 
 **Acceptance:**

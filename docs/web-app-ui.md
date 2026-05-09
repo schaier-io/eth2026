@@ -11,8 +11,8 @@ Use:
 - claim/rules document
 - committed position
 - selected juror
-- conviction
 - risked stake
+- fixed normal risk
 - reveal key
 - slashed pool
 - revenue distribution pool
@@ -36,7 +36,7 @@ The contract still encodes vote values as `1` and `2`; the app maps those values
 
 2. Focused staking step
    - After opening a market, focus the user on one decision: Up or Down.
-   - Then show conviction and stake.
+   - Then show stake and the fixed normal risk preview.
    - Keep protocol/debug details out of the main path.
    - Store the local reveal key automatically using wallet-local protection where possible.
 
@@ -49,13 +49,14 @@ The contract still encodes vote values as `1` and `2`; the app maps those values
    - Keep as a secondary but first-class flow, not hidden in developer settings.
    - Claim title, description, optional image/reference artifact, Up meaning, Down meaning, voting window, jury size, and minimum revealed jurors.
    - Upload claim/rules document to Swarm before deploying/recording the market.
-   - Compute and preserve `claimRulesHash` from the exact claim/rules JSON bytes.
+   - Compute and preserve `claimRulesHash` from the exact claim/rules JSON bytes when the planned Swarm verification upgrade is implemented.
    - After creation, send the creator directly to the focused staking step for the new market.
 
 5. Swarm verification gate
-   - Read `swarmReference` and `claimRulesHash` from the contract.
+   - Read the current rules pointer from the contract (`ipfsHash` today; planned rename: `swarmReference`).
+   - Read `claimRulesHash` once the planned Swarm verification upgrade is implemented.
    - Fetch the claim/rules document from Swarm.
-   - Verify the fetched bytes against `claimRulesHash`.
+   - Verify the fetched bytes against `claimRulesHash` when available.
    - Compare key JSON fields against contract parameters.
    - Keep commit disabled until verification succeeds.
 
@@ -67,16 +68,16 @@ Commit flow:
 
 1. User chooses Up or Down.
 2. User enters stake.
-3. User chooses conviction.
+3. App shows the fixed normal risk amount (`stake * RISK_PERCENT / 100`; currently 20%).
 4. App generates a high-entropy nonce locally.
 5. App computes the commitment hash locally.
-6. App submits only the commitment hash, stake, and conviction.
+6. App submits only the commitment hash and stake.
 7. App stores the reveal key locally, encrypted with a passphrase or a wallet-derived key.
 
 Production commitment hash must match the contract:
 
 ```solidity
-keccak256(abi.encode(vote, nonce, voter, address(this)))
+keccak256(abi.encode(vote, nonce, voter, block.chainid, address(this)))
 ```
 
 The prototype uses browser Web Crypto to demonstrate the local-secret flow. Production should use `viem` ABI encoding and `keccak256`.
@@ -103,6 +104,7 @@ All committed voters need to reveal. The UI should not let non-jurors treat reve
 - Non-selected voter who does not reveal: cannot prove their side and loses the risked stake.
 - Losing revealed voter: loses only risked stake.
 - Winning revealed voter: receives stake plus a risked-stake-weighted share of the slashed pool.
+- The normal risked stake is fixed by contract `RISK_PERCENT` rather than chosen per vote.
 
 Until the user reveals, the app should not present them as a winner or loser. The outcome panel can show the market outcome, but the wallet-specific settlement state should remain "Reveal required" until their reveal transaction is complete.
 
@@ -122,7 +124,7 @@ The app-level lifecycle maps to the current contract as:
 
 1. Voting
    - Contract: `phase() == Voting` and current time is before `votingDeadline()`.
-   - User action: `commitVote(commitHash, stake, convictionBps)`.
+   - User action: `commitVote(commitHash, stake)`.
    - UI state: show time until voting closes and keep position hidden.
 
 2. Jury selection
@@ -149,7 +151,7 @@ Useful read model:
 
 - Market phase and deadlines: `phase`, `votingDeadline`, `juryCommitDeadline`, `revealDeadline`
 - Market parameters: `jurySize`, `minCommits`, `minRevealedJurors`, `minStake`, `protocolFeeBps`
-- Claim/rules document: `swarmReference`, `claimRulesHash`
+- Claim/rules document: `ipfsHash` today; planned Swarm verification fields are `swarmReference` and `claimRulesHash`
 - Commit aggregate: `commitCount`, `totalCommittedStake`, `totalRiskedStake`
 - Wallet position: `commits(wallet)`, `isJuror(wallet)`
 - Jury state: `getJury()`, `revealedJurorCount`, `juryYesCount`, `juryNoCount`

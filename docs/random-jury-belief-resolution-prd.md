@@ -8,7 +8,7 @@ The current product direction should be reframed away from "fact-checking" and t
 
 ## Solution
 
-TruthMarket lets users create immutable claim/rules documents, stake on YES/NO outcomes, privately commit votes, and later reveal votes after SpaceComputer randomness selects a resolving jury. Selected jurors determine the outcome on a one-juror-one-vote basis — stake and conviction do not influence the YES/NO decision. All voters reveal to settle their stake. Winners receive their stake back plus a share of the slashed pool, weighted by their own risked stake. Losers and non-revealing non-jurors lose their risked portion (stake × conviction). Selected jurors who fail to reveal are penalized far more harshly: they forfeit their full stake — at typical conviction levels this is roughly 5× the normal slash.
+TruthMarket lets users create immutable claim/rules documents, stake on YES/NO outcomes, privately commit votes, and later reveal votes after SpaceComputer randomness selects a resolving jury. Selected jurors determine the outcome on a one-juror-one-vote basis — stake does not influence the YES/NO decision. All voters reveal to settle their stake. Winners receive their stake back plus a share of the slashed pool, weighted by their own risked stake. Losers and non-revealing non-jurors lose the fixed normal risked portion (20% of stake). Selected jurors who fail to reveal are penalized far more harshly: they forfeit their full stake — 5× the normal slash.
 
 The product uses Swarm for immutable claim/rules documents, SpaceComputer for random jury selection, and a simple protocol-token story for Umia: protocol-token staking can receive protocol fees/revenue share. ENS is an optional identity/reputation layer. Apify is not core. Sourcify is optional verification hygiene if the bounty remains available and the integration is cheap.
 
@@ -21,16 +21,16 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 5. As a voter, I want to read the immutable claim rules before staking, so that I understand what YES and NO mean.
 6. As a voter, I want to commit a private vote, so that other voters cannot copy or react to my vote before the reveal phase.
 7. As a voter, I want to choose my stake amount, so that I can size my economic exposure.
-8. As a voter, I want to choose my conviction level, so that I decide how much of my stake I am willing to risk.
-9. As a low-conviction voter, I want to risk only part of my stake, so that I can participate without accepting full downside.
-10. As a high-conviction voter, I want a larger share of the slashed-pool reward when I win, so that risking more carries proportional upside even though jury votes are count-based.
+8. As a voter, I want to see the fixed 20% normal risk before committing, so that I understand my downside.
+9. As a voter, I want normal losses capped at 20% unless I am a selected juror who fails to reveal, so that participation does not require accepting full downside.
+10. As a larger staker, I want a larger share of the slashed-pool reward when I win, so that risking more capital carries proportional upside even though jury votes are count-based.
 11. As a voter, I want the operator to be unable to decrypt my vote, so that my voting sovereignty is preserved.
 12. As a voter, I want the protocol to use classic commit-reveal, so that votes stay private until voters reveal them.
 13. As a selected juror, I want to know I was selected by randomness, so that I understand why my reveal determines the outcome.
 14. As a selected juror, I want my reveal to count toward the market outcome, so that my staked belief participates in resolution.
 15. As a non-selected voter, I want to reveal after outcome selection, so that I can settle my stake and claim any reward.
 16. As a winning voter, I want my stake returned plus upside, so that correct belief and risk-taking are rewarded.
-17. As a losing voter, I want only my chosen risked portion slashed, so that my loss matches my conviction.
+17. As a losing voter, I want only the fixed normal risked portion slashed, so that my loss is predictable.
 18. As a non-revealing non-juror voter, I want clear consequences (lose my risked portion), so that I understand unrevealed votes cannot claim funds.
 18a. As a selected juror, I want to know that skipping reveal forfeits my full stake (~5× the normal slash), so that I am incentivized to follow through once selected.
 19. As a market observer, I want to see which jurors were selected, so that the resolution process is transparent.
@@ -68,9 +68,9 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - SpaceComputer randomness is the core sponsor integration and selects the resolving jury from committed voters.
 - Future production markets must require identity-backed or eligibility-backed Sybil resistance before address entries are treated as valid jury candidates. The hackathon contract remains address-based and demo-grade; see [ADR 0008](./adr/0008-identity-required-for-sybil-resistance.md).
 - The hackathon version uses a trusted off-chain `juryCommitter` to fetch SpaceComputer randomness and post it with an audit hash. The contract draws the jury on-chain from that posted randomness; the selection must be replayable, but the randomness proof is not verified on-chain in this scope.
-- Juror resolution is count-based: each selected juror contributes 1 vote, regardless of stake or conviction (see [ADR 0006](./adr/0006-count-based-jury-voting.md)).
-- Conviction controls the portion of stake at risk.
-- Conviction affects reward upside (winners' share of the slashed pool is weighted by their own risked stake) but does not affect the YES/NO outcome.
+- Juror resolution is count-based: each selected juror contributes 1 vote, regardless of stake (see [ADR 0006](./adr/0006-count-based-jury-voting.md)).
+- Normal risk is fixed at 20% of stake.
+- Stake affects reward upside because winners' share of the slashed pool is weighted by their own risked stake, but stake does not affect the YES/NO outcome.
 - All voters must reveal to settle their stake.
 - Selected jurors determine the outcome.
 - Non-selected voters do not determine the outcome but reveal to prove whether they won or lost.
@@ -91,14 +91,14 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 ## Implementation Modules
 
 - **Market lifecycle contract:** owns claim creation, voting phase transitions, jury commitment, reveal, resolution, payout, and treasury fee transfer.
-- **Commitment module:** owns commitment hash construction and verification, including vote, nonce, voter, chain id, and contract address so commitments cannot be replayed or copied across contexts. Stake and conviction are recorded at commit time rather than hidden inside the hash.
-- **Conviction accounting module:** owns risked stake, refundable stake, slashed-pool accounting (including the juror full-stake penalty extras), winner reward weights, and payout math.
+- **Commitment module:** owns commitment hash construction and verification, including vote, nonce, voter, chain id, and contract address so commitments cannot be replayed or copied across contexts. Stake is recorded at commit time rather than hidden inside the hash.
+- **Risk accounting module:** owns fixed 20% risked stake, refundable stake, slashed-pool accounting (including the juror full-stake penalty extras), winner reward weights, and payout math.
 - **Jury voting module:** owns count-based outcome resolution from selected juror reveals (`juryYesCount`/`juryNoCount`), tie-to-Invalid behavior, and the minimum-revealed-jurors gate.
 - **Jury selection service:** fetches SpaceComputer randomness, reads committed voters, deterministically selects jurors, persists/references the randomness audit artifact, uploads the audit artifact to Swarm when available, and submits selected jurors on-chain.
 - **Swarm claim document service:** creates, validates, uploads, fetches, and verifies immutable claim/rules documents. It computes `claimRulesHash` from the exact JSON bytes and never treats mutable feeds as canonical rules.
 - **Swarm discovery service:** maintains mutable market indexes and creator indexes for discovery only; opening a market still verifies the contract-stored immutable reference.
 - **Agent policy and heartbeat service:** enforces local participation policy, stores unrevealed votes/nonces in a private vault, monitors reveal deadlines and selected-juror status, auto-reveals when policy allows, and withdraws after resolution when policy allows.
-- **Demo frontend:** presents immutable rules, stake/conviction controls, commit/reveal states, selected jurors, randomness audit data, and settlement results.
+- **Demo frontend:** presents immutable rules, stake controls, fixed risk preview, commit/reveal states, selected jurors, randomness audit data, and settlement results.
 - **Identity/eligibility adapter:** resolves ENS names, credentials, reputation, membership, or another eligibility source. For the hackathon it may be display-only; for production it must gate voter or jury eligibility to prevent address-splitting attacks.
 
 ## Testing Decisions
@@ -107,12 +107,12 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - The claim lifecycle should be tested end-to-end: create claim, commit votes, close voting, select jury, reveal, resolve, withdraw.
 - Commit privacy should be tested by verifying no vote is known from the commitment alone.
 - Jury selection integration should be tested with deterministic mocked randomness.
-- Count-based jury outcome should be tested with mixed stakes/convictions to confirm the YES/NO decision tracks juror count, not stake.
-- Partial slashing should be tested for low-conviction and full-conviction non-juror losers/non-revealers.
+- Count-based jury outcome should be tested with mixed stakes to confirm the YES/NO decision tracks juror count, not stake.
+- Partial slashing should be tested for non-juror losers/non-revealers.
 - Winner payout should be tested to confirm winners receive returned stake plus slashed-pool upside, weighted by their own risked stake.
 - Losing payout should be tested to confirm only the risked portion is slashed for non-juror losers.
-- Non-reveal behavior should be tested for both non-juror non-revealers (1× risked slash) and selected jurors (full-stake slash, conviction ignored).
-- Juror full-stake penalty should be tested at low conviction to confirm the slash is independent of the original conviction setting.
+- Non-reveal behavior should be tested for both non-juror non-revealers (1× fixed risked slash) and selected jurors (full-stake slash).
+- Juror full-stake penalty should be tested to confirm it ignores the normal 20% risk cap.
 - Invalid or under-revealed market behavior should be defined and tested once the fallback rule is finalized.
 - Swarm upload/fetch behavior should be tested at the service boundary with fixture claim documents.
 - Claim/rules verification should test exact-byte `claimRulesHash` matching and contract parameter matching before commit.

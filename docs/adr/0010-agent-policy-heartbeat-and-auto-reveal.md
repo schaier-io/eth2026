@@ -4,7 +4,7 @@ Status: accepted
 
 Agents may participate as market creators, voters, selected jurors, and jury committers. Agent behavior must remain sovereign: the agent controls its own wallet, vote nonce, reveal action, and participation policy. The operator and protocol must not reveal votes for agents.
 
-Each agent must use an explicit local policy before committing. The policy controls stake limits, conviction limits, Swarm verification requirements, auto-reveal, auto-withdraw, market creation, and jury-commit permissions.
+Each agent must use an explicit local policy before committing. The policy controls stake limits, Swarm verification requirements, auto-reveal, auto-withdraw, market creation, and jury-commit permissions.
 
 Example policy:
 
@@ -14,7 +14,6 @@ Example policy:
   "revealBufferMinutes": 30,
   "autoWithdraw": true,
   "maxStake": "1000000000000000000",
-  "maxConvictionBps": 2500,
   "requireSwarmVerification": true,
   "allowCreateMarkets": true,
   "allowJuryCommit": true

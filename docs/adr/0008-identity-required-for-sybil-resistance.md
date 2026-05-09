@@ -11,7 +11,7 @@ Future production versions must require an identity or eligibility layer before 
 - Keep the hackathon contract address-based and document it as demo-grade.
 - Treat identity-backed eligibility as a production requirement for random-jury belief resolution.
 - Allow multiple possible implementations: ENS-linked reputation, allowlisted credentials, proof-of-personhood, organization membership, or another domain-appropriate identity system.
-- Keep conviction and stake economics as economic exposure, not as a replacement for Sybil resistance.
+- Keep stake economics as economic exposure, not as a replacement for Sybil resistance.
 
 **Consequences**
 
