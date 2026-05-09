@@ -13,6 +13,15 @@ import { baseSepolia, foundry, sepolia } from "viem/chains";
 export const TRUTHMARKET_ADDRESS: Address =
   "0x0000000000000000000000000000000000000000";
 
+/**
+ * Hardcoded MarketRegistry contract address.
+ *
+ * Replace this once a canonical deployment exists. For local development,
+ * export TM_REGISTRY_ADDRESS to override.
+ */
+export const REGISTRY_ADDRESS: Address =
+  "0x0000000000000000000000000000000000000000";
+
 export const DEFAULT_CHAIN: ChainKey = "baseSepolia";
 
 export type ChainKey = "foundry" | "baseSepolia" | "sepolia";
@@ -31,6 +40,7 @@ export const DEFAULT_RPC: Record<ChainKey, string> = {
 
 export interface ResolvedConfig {
   contractAddress: Address;
+  registryAddress: Address;
   chain: Chain;
   chainKey: ChainKey;
   rpcUrl: string;
@@ -38,10 +48,12 @@ export interface ResolvedConfig {
   keystorePath: string;
   vaultDir: string;
   policyPath: string;
+  agentStatePath: string;
 }
 
 export interface ConfigOverrides {
   address?: string;
+  registry?: string;
   chain?: string;
   rpc?: string;
 }
@@ -97,6 +109,16 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ResolvedConfig {
   }
   const contractAddress = rawAddress as Address;
 
+  const rawRegistry =
+    overrides.registry ?? process.env.TM_REGISTRY_ADDRESS ?? REGISTRY_ADDRESS;
+  if (!isAddress(rawRegistry)) {
+    throw new ConfigError(
+      "INVALID_ADDRESS",
+      `registry address '${rawRegistry}' is not a valid address`,
+    );
+  }
+  const registryAddress = rawRegistry as Address;
+
   const rpcUrl =
     overrides.rpc ??
     process.env.TM_RPC_URL ??
@@ -111,6 +133,7 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ResolvedConfig {
   const home = process.env.TM_HOME ?? path.join(homedir(), ".truthmarket");
   return {
     contractAddress,
+    registryAddress,
     chain,
     chainKey,
     rpcUrl,
@@ -118,5 +141,6 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ResolvedConfig {
     keystorePath: path.join(home, "keystore.json"),
     vaultDir: path.join(home, "vault"),
     policyPath: process.env.TM_POLICY_FILE ?? path.join(home, "policy.json"),
+    agentStatePath: process.env.TM_AGENT_STATE_FILE ?? path.join(home, "agent-state.json"),
   };
 }
