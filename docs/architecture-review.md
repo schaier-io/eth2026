@@ -57,13 +57,21 @@ The code intentionally remains one contract for hackathon speed, but the interna
 
 ### 3. Swarm Claim Rules Boundary
 
-**Cluster:** claim/rules schema, Swarm upload/fetch, contract `swarmDocHash`, frontend rendering.
+**Cluster:** claim/rules schema, Swarm upload/fetch, verified fetch, contract `swarmReference`, contract `claimRulesHash`, frontend rendering.
 
 **Dependency category:** true external for Swarm; mock at boundary.
 
-**Recommended interface:** a claim-document service should validate the PRD fields, upload to Swarm, fetch by reference, and give the contract only the immutable content reference.
+**Recommended interface:** a claim-document service should validate the PRD fields, upload one canonical JSON document to Swarm, compute `claimRulesHash`, fetch by reference, and give the contract only the immutable content reference plus exact-byte hash. Mutable Swarm feeds/KV should be used only for discovery indexes and cached read models. Opening a market from a feed must still verify the immutable contract-stored reference.
 
-### 4. Frontend Read Model
+### 4. Agent Policy And Heartbeat Boundary
+
+**Cluster:** agent policy, local reveal vault, heartbeat reminders, selected-juror reveal urgency, auto-withdraw.
+
+**Dependency category:** local agent automation; Swarm is public artifact storage only.
+
+**Recommended interface:** agents should use explicit local policy before committing, keep unrevealed votes and nonces out of Swarm, schedule a heartbeat after commit, auto-reveal from the local vault when policy allows, and auto-withdraw after resolution when policy allows.
+
+### 5. Frontend Read Model
 
 **Cluster:** public state getters (`phase`, `outcome`, `juryYesCount`, `juryNoCount`, `distributablePool`, `treasuryAccrued`, `randomness`, `juryAuditHash`, `commits`, `getJury`, `getCommitters`, `commitHashOf`).
 

@@ -49,7 +49,15 @@ The contract still encodes vote values as `1` and `2`; the app maps those values
    - Keep as a secondary but first-class flow, not hidden in developer settings.
    - Claim title, description, optional image/reference artifact, Up meaning, Down meaning, voting window, jury size, and minimum revealed jurors.
    - Upload claim/rules document to Swarm before deploying/recording the market.
+   - Compute and preserve `claimRulesHash` from the exact claim/rules JSON bytes.
    - After creation, send the creator directly to the focused staking step for the new market.
+
+5. Swarm verification gate
+   - Read `swarmReference` and `claimRulesHash` from the contract.
+   - Fetch the claim/rules document from Swarm.
+   - Verify the fetched bytes against `claimRulesHash`.
+   - Compare key JSON fields against contract parameters.
+   - Keep commit disabled until verification succeeds.
 
 ## Commit And Reveal UX
 
@@ -141,7 +149,7 @@ Useful read model:
 
 - Market phase and deadlines: `phase`, `votingDeadline`, `juryCommitDeadline`, `revealDeadline`
 - Market parameters: `jurySize`, `minCommits`, `minRevealedJurors`, `minStake`, `protocolFeeBps`
-- Claim/rules document: `ipfsHash`
+- Claim/rules document: `swarmReference`, `claimRulesHash`
 - Commit aggregate: `commitCount`, `totalCommittedStake`, `totalRiskedStake`
 - Wallet position: `commits(wallet)`, `isJuror(wallet)`
 - Jury state: `getJury()`, `revealedJurorCount`, `juryYesCount`, `juryNoCount`
@@ -155,6 +163,8 @@ Reminder triggers:
 - On `JuryCommitted`: notify committed users that reveal is open and tell selected jurors they are under the full-stake penalty.
 - Before `revealDeadline`: remind every committed wallet that has not revealed.
 - On `Resolved`: notify revealed users to withdraw and unrevealed users of the settlement consequence.
+
+Agent-oriented clients should run the same lifecycle as a heartbeat watcher. Auto-reveal is allowed only from the agent's own local reveal vault and only when explicit local policy enables it.
 
 ## Juror Penalty Pool
 

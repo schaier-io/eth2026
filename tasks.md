@@ -63,15 +63,24 @@ Core principle: there is no oracle and no external source of truth. The protocol
 
 **Contract relationship:**
 
-- Contract stores the Swarm reference/hash.
+- Contract stores the Swarm reference and a hash of the exact claim/rules document bytes.
 - UI fetches the claim document from Swarm.
+- UI verifies the fetched bytes against the contract-stored hash before enabling commit.
 - Voters stake only after seeing the immutable rules.
+
+**Mutable Swarm discovery:**
+
+- Swarm feeds/KV may store market indexes and creator indexes.
+- Feed/KV data is discovery-only and must not define market rules, outcomes, votes, selected jurors, or payouts.
+- Opening a market from a feed still requires reading the contract and verifying the immutable Swarm claim/rules document.
 
 **Acceptance:**
 
 - A claim can be uploaded to Swarm.
 - The contract stores the returned Swarm reference.
+- The contract stores `claimRulesHash` for the exact JSON bytes.
 - The frontend can fetch and display the claim/rules document.
+- The frontend can verify the document before commit.
 - The UI communicates that rules cannot be changed after market creation.
 
 ---

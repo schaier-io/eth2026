@@ -60,7 +60,9 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - Self-revocation is blocked so it cannot be used as an early-exit bypass of the slash mechanics.
 - The protocol does not decide external truth. It resolves outcomes from selected juror reveals.
 - Swarm stores immutable claim/rules documents.
-- The contract stores the Swarm reference for each claim.
+- The contract stores the Swarm reference and exact-byte claim/rules hash for each claim.
+- Voters, agents, and the UI verify the Swarm-fetched claim/rules document against the contract before committing.
+- Mutable Swarm feeds/KV may support market discovery, but must not define market rules, outcomes, votes, selected jurors, or payouts.
 - Votes use classic commit-reveal to preserve voter sovereignty.
 - Operator-encrypted votes are rejected for the hackathon design because they make the operator a privileged reveal service.
 - SpaceComputer randomness is the core sponsor integration and selects the resolving jury from committed voters.
@@ -83,6 +85,8 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - ENS is optional and should be pursued only if it can be live and functional.
 - Apify is optional and not part of the core product.
 - Sourcify is optional verification hygiene if the bounty remains active.
+- Agents may participate as creators, voters, selected jurors, and jury committers, subject to explicit local policy and classic commit-reveal.
+- Agent auto-reveal is agent-side only: the agent keeps its own nonce locally and reveals from its own vault when policy allows.
 
 ## Implementation Modules
 
@@ -90,8 +94,10 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - **Commitment module:** owns commitment hash construction and verification, including vote, nonce, voter, chain id, and contract address so commitments cannot be replayed or copied across contexts. Stake and conviction are recorded at commit time rather than hidden inside the hash.
 - **Conviction accounting module:** owns risked stake, refundable stake, slashed-pool accounting (including the juror full-stake penalty extras), winner reward weights, and payout math.
 - **Jury voting module:** owns count-based outcome resolution from selected juror reveals (`juryYesCount`/`juryNoCount`), tie-to-Invalid behavior, and the minimum-revealed-jurors gate.
-- **Jury selection service:** fetches SpaceComputer randomness, reads committed voters, deterministically selects jurors, persists/references the randomness audit artifact, and submits selected jurors on-chain.
-- **Swarm claim document service:** creates, validates, uploads, fetches, and optionally verifies immutable claim/rules documents.
+- **Jury selection service:** fetches SpaceComputer randomness, reads committed voters, deterministically selects jurors, persists/references the randomness audit artifact, uploads the audit artifact to Swarm when available, and submits selected jurors on-chain.
+- **Swarm claim document service:** creates, validates, uploads, fetches, and verifies immutable claim/rules documents. It computes `claimRulesHash` from the exact JSON bytes and never treats mutable feeds as canonical rules.
+- **Swarm discovery service:** maintains mutable market indexes and creator indexes for discovery only; opening a market still verifies the contract-stored immutable reference.
+- **Agent policy and heartbeat service:** enforces local participation policy, stores unrevealed votes/nonces in a private vault, monitors reveal deadlines and selected-juror status, auto-reveals when policy allows, and withdraws after resolution when policy allows.
 - **Demo frontend:** presents immutable rules, stake/conviction controls, commit/reveal states, selected jurors, randomness audit data, and settlement results.
 - **Identity/eligibility adapter:** resolves ENS names, credentials, reputation, membership, or another eligibility source. For the hackathon it may be display-only; for production it must gate voter or jury eligibility to prevent address-splitting attacks.
 
@@ -109,6 +115,9 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - Juror full-stake penalty should be tested at low conviction to confirm the slash is independent of the original conviction setting.
 - Invalid or under-revealed market behavior should be defined and tested once the fallback rule is finalized.
 - Swarm upload/fetch behavior should be tested at the service boundary with fixture claim documents.
+- Claim/rules verification should test exact-byte `claimRulesHash` matching and contract parameter matching before commit.
+- Mutable Swarm feed/index behavior should test discovery only; tests should not treat feed data as canonical market state.
+- Agent heartbeat behavior should test reveal reminders, selected-juror priority, policy-gated auto-reveal, and no storage of unrevealed votes/nonces on Swarm.
 - UI tests, if added, should verify the user can understand immutable rules, commit stake, see selected jurors, reveal, and inspect settlement.
 
 ## Out of Scope

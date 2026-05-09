@@ -9,6 +9,7 @@ This is the entry point for project context. Teammates and agents should use the
 - [Task Plan](../tasks.md): staged implementation and hackathon plan.
 - [PRD](./random-jury-belief-resolution-prd.md): product requirements for random-jury belief resolution.
 - [Architecture Review](./architecture-review.md): current code gaps and recommended module boundaries.
+- [Swarm Integration Plan](./swarm-integration-plan.md): minimal Swarm build plan for immutable rules, verified fetch, KV discovery, and audit artifacts.
 
 ## Decisions
 
@@ -20,8 +21,12 @@ This is the entry point for project context. Teammates and agents should use the
 - [ADR 0006](./adr/0006-count-based-jury-voting.md): one-juror-one-vote outcome with full-stake juror non-reveal penalty.
 - [ADR 0007](./adr/0007-nonce-leak-revocation.md): voting-phase `revokeStake` lets anyone with a leaked nonce claim the voter's stake.
 - [ADR 0008](./adr/0008-identity-required-for-sybil-resistance.md): future production jury entry requires identity-backed Sybil resistance.
+- [ADR 0009](./adr/0009-swarm-verification-and-discovery-boundaries.md): separate immutable Swarm verification from mutable KV/feed discovery.
+- [ADR 0010](./adr/0010-agent-policy-heartbeat-and-auto-reveal.md): require explicit agent policy, local reveal vaults, heartbeat monitoring, and agent-side auto-reveal.
 
 ## Local Skill Provenance
+
+Repo-local skill files live in [../.agents/skills](../.agents/skills). The `truthmarket-agent` skill captures the portable agent workflow for Swarm verification, local policy, heartbeat monitoring, and auto-reveal.
 
 The following local skills influenced the documents, but are not required to work on the repo:
 
