@@ -12,7 +12,7 @@ import {
 } from "wagmi";
 import { WalletConnect } from "./WalletConnect";
 
-const TARGET_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 31337);
+const TARGET_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 11155111);
 
 export function WalletPill() {
   const { address, isConnected } = useAccount();

@@ -23,7 +23,7 @@ import { erc20Abi } from "../../lib/truthmarket";
 import { presetsWithEnv, type TokenPreset } from "../../lib/tokens";
 import { WalletConnect } from "../components/WalletConnect";
 
-const DEFAULT_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 31337);
+const DEFAULT_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 11155111);
 const SECS_PER_MIN = 60n;
 
 const ENV_STAKE_TOKEN = sanitizeAddress(process.env.NEXT_PUBLIC_STAKE_TOKEN);
