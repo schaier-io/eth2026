@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { bytesToHex, keccak256, stringToHex } from "viem";
 import { makeContentAddressedChunk } from "@truth-market/swarm-verified-fetch";
 import { foundry } from "viem/chains";
+import { loadClaimDocument, referenceUrl } from "../src/swarm/claim-doc.js";
 import {
   swarmReferenceFromBytes,
   verifyLocalDocument,
@@ -158,6 +159,76 @@ describe("verifyOnchainClaimRulesDocument", () => {
     expect(result.mode).toBe("swarm-kv");
     expect(result.document?.title).toBe(doc.title);
     expect(result.swarmReference).toBe(`bzz://${indexChunk.reference}`);
+  });
+
+  it("returns a human-openable Swarm bytes URL for the verified claim document", async () => {
+    const doc = {
+      schema: "truthmarket.claim.v1",
+      title: "Was the hackathon demo legible?",
+      context: "YES if selected jurors believe the demo made the mechanism clear; NO otherwise.",
+      tags: ["demo"],
+      createdAt: "2026-05-10T00:00:00.000Z",
+    };
+    const docBytes = new TextEncoder().encode(JSON.stringify(doc));
+    const docChunk = makeContentAddressedChunk(docBytes);
+    const index = {
+      schema: "swarm-kv.index.v1",
+      namespace: "truthmarket:claim:v1",
+      revision: 1,
+      updatedAt: "2026-05-10T00:00:00.000Z",
+      entries: {
+        claim: {
+          key: "claim",
+          reference: docChunk.reference,
+          contentType: "application/json",
+          kind: "json",
+          encoding: "json",
+          encrypted: false,
+          size: docBytes.byteLength,
+          updatedAt: "2026-05-10T00:00:00.000Z",
+          topic: "00",
+          version: 1,
+        },
+      },
+      tombstones: {},
+    };
+    const indexBytes = new TextEncoder().encode(JSON.stringify(index));
+    const indexChunk = makeContentAddressedChunk(indexBytes);
+    const chunks = new Map([
+      [docChunk.reference, docChunk.bytes],
+      [indexChunk.reference, indexChunk.bytes],
+    ]);
+
+    const loaded = await loadClaimDocument(stringToHex(`bzz://${indexChunk.reference}`), {
+      gatewayUrl: "https://gateway.test",
+      fetch: async (input) => {
+        const url = String(input);
+        const found = [...chunks.entries()].find(([reference]) => url.includes(reference));
+        if (!found) throw new Error(`unknown reference in ${url}`);
+        const [, bytes] = found;
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          async arrayBuffer() {
+            return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+          },
+          async text() {
+            return "";
+          },
+        };
+      },
+    });
+
+    expect(loaded.verified).toBe(true);
+    expect(loaded.document?.title).toBe(doc.title);
+    expect(loaded.url).toBe(`https://gateway.test/bytes/${docChunk.reference}`);
+  });
+
+  it("uses the raw bytes endpoint for direct Swarm reference links", () => {
+    expect(referenceUrl(`bzz://${"a".repeat(64)}`, "https://gateway.test/")).toBe(
+      `https://gateway.test/bytes/${"a".repeat(64)}`,
+    );
   });
 
   it("decodes raw, hex-text, bzz, and swarm references from on-chain bytes", () => {
