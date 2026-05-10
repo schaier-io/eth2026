@@ -6,7 +6,7 @@ fact-checker, not an oracle, and not an external truth source.
 Use this file as the active agent work board. Keep each item short, mark status
 with the boxes below, and move finished implementation facts into `Done`.
 
-Last reviewed: 2026-05-10 Europe/Prague (chain default + outcome glyphs session).
+Last reviewed: 2026-05-10 Europe/Prague (Swarm/Sourcify verification link fix).
 
 ## Status Legend
 
@@ -21,7 +21,7 @@ Last reviewed: 2026-05-10 Europe/Prague (chain default + outcome glyphs session)
 - [x] CLI can create markets, commit/reveal/withdraw, fetch SpaceComputer randomness, verify Swarm rules, and run a foreground heartbeat.
 - [x] Web app can list registry markets, launch claim/rules documents to Swarm, open market details, commit/reveal/withdraw, and show jury/randomness receipts.
 - [~] Product copy is still behind ADR 0013; several screens still say "truth", "claim", or "verdict" instead of the random-jury belief-game frame.
-- [~] Swarm verification is visible in UI and enforceable by CLI policy, but the browser commit flow still does not hard-block unverified rules.
+- [~] Swarm verification is visible in UI and enforceable by CLI policy; badge links now open verified claim JSON, but the browser commit flow still does not hard-block unverified rules.
 - [~] Sepolia evidence exists for deployment, agent market creation, and one commit; full live lifecycle evidence is still missing.
 
 ## Do Not Regress
@@ -57,6 +57,8 @@ Last reviewed: 2026-05-10 Europe/Prague (chain default + outcome glyphs session)
 - [x] Web app defaults to Sepolia (chain id 11155111) instead of Foundry across `lib/server/viem.ts`, `lib/wagmi.ts`, `WalletPill`, `my-markets`, and `deploy`; chain pill and footer now read "Sepolia"; repo-root `/.env` aligned with the Sepolia registry from `f0114db` (`0xbDdC1066…7595517`), Sepolia stake token, and `NEXT_PUBLIC_JURY_COMMITTER` / `NEXT_PUBLIC_SWARM_GATEWAY_URL`.
 - [x] Outcome labels render as green ▲ / red ▼ (with `outcome-arrow up|down` spans, `aria-label` preserved) on home phase pill, market-detail outcome pill + jury verdict tally, and the VotePanel commit buttons / committed-vote line / reveal-time line / verdict headline; demo `DirectionSummary` strips the visible "Upward signal / Downward signal" copy to triangle-only.
 - [x] Wallet connectors restored: `@metamask/connect-evm`, `@coinbase/wallet-sdk`, and `@walletconnect/ethereum-provider` were declared in `package.json` but missing from `node_modules`; `npm install` re-hydrated 368 packages so MetaMask SDK + Coinbase Wallet picker work (WalletConnect still needs a `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`).
+- [x] Swarm verified badges now link to `/bytes/<claim-json-reference>` instead of `/bzz/<kv-index>/`, avoiding the challenge-page 404 while preserving verified KV fetches; checked live against Sepolia market `0xbCac...EBfE`.
+- [x] Sourcify verification route and badge resolve for the Sepolia registry implementation (`0x8179...8a7F`), with clone bytecode checked before showing "Sourcify verified".
 
 ## 1. Product And UI Reframe
 
@@ -93,13 +95,14 @@ staking.
 - [x] Upload claim/rules JSON to Swarm during web, CLI registry, and default agent market creation.
 - [x] Store the returned Swarm reference in the market spec.
 - [~] Display the Swarm reference and gateway URL before deployment/signing.
-- [~] Fetch by reference in the UI/agent and verify bytes against the contract-stored reference.
+- [x] Fetch by reference in the UI/CLI and verify bytes against the contract-stored reference.
+- [x] Market detail Swarm badge opens the verified claim JSON via the gateway `/bytes/<reference>` endpoint, not the KV index root.
 - [~] Block commit when fetched rules cannot be verified from the contract-stored Swarm reference.
 - [x] Keep Swarm feeds/KV discovery-only; never use mutable data as canonical market rules.
 
 Acceptance:
 
-- [ ] A voter can read the immutable claim/rules document before commit.
+- [x] A voter can read the immutable claim/rules document before commit.
 - [~] UI/agent refuses to commit if the document cannot be verified from the contract-stored Swarm reference.
 - [x] Rules cannot be quietly changed after market creation.
 
