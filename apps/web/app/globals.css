@@ -3225,20 +3225,14 @@ code {
 }
 
 .juror-deck-mantra {
-  display: grid;
-  gap: 2px;
   margin: 0;
-  color: var(--text);
+  color: var(--pop-deep);
   font-family: var(--font-display), var(--font-sans), system-ui;
-  font-size: clamp(34px, 6vw, 76px);
+  font-size: clamp(24px, 3.5vw, 40px);
   font-weight: 900;
   letter-spacing: 0;
-  line-height: 0.96;
+  line-height: 1.04;
   text-wrap: balance;
-}
-
-.juror-deck-mantra span:last-child {
-  color: var(--pop-deep);
 }
 
 .juror-deck-controls {

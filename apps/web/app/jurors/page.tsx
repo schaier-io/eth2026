@@ -208,10 +208,7 @@ export default function JurorsPage() {
               );
               const mantra =
                 idx === 1 ? (
-                  <p className="juror-deck-mantra">
-                    <span>You get the truth.</span>
-                    <span>Or you get the decision.</span>
-                  </p>
+                  <p className="juror-deck-mantra">You get the truth.</p>
                 ) : null;
               const body = isHero ? (
                 <div className="juror-deck-hero-grid">
@@ -243,8 +240,8 @@ export default function JurorsPage() {
                 </div>
               ) : (
                 <>
-                  {mantra}
                   {lede}
+                  {mantra}
                   {keywords}
                 </>
               );
