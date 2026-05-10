@@ -105,7 +105,7 @@ contract RegistryScript is Script {
         console2.log("Min stake:       ", m.minStake());
         console2.log("Min commits:     ", m.minCommits());
         console2.log("Max commits:     ", m.maxCommits());
-        console2.log("Target jury size:", m.targetJurySize());
+        console2.log("Max jury size:", m.targetJurySize());
         console2.log("Commit count:    ", m.commitCount());
     }
 

@@ -28,7 +28,7 @@ Create one canonical JSON document per market:
 }
 ```
 
-Do not duplicate contract-created parameters as canonical Swarm fields. Deadlines, target jury size, minimum commits, minimum revealed jurors, stake token, creator, and risk percentage come from the deployed contract. The UI may display those values beside the Swarm document, but contract getters remain canonical.
+Do not duplicate contract-created parameters as canonical Swarm fields. Deadlines, max jury size, minimum commits, minimum revealed jurors, stake token, creator, and risk percentage come from the deployed contract. The UI may display those values beside the Swarm document, but contract getters remain canonical.
 
 Upload the document to Swarm before deploying the market. Store only the returned Swarm reference in the contract:
 

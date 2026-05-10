@@ -13,7 +13,7 @@ import { MockERC20 } from "../test/MockERC20.sol";
 ///
 /// Phases:
 ///   deploy()         — deploy MockERC20 + TruthMarket, fund 7 voters
-///   commit()         — 7 voters commit hidden votes (targetJurySize=1, minCommits=7)
+///   commit()         — 7 voters commit hidden votes (max jury size=1, minCommits=1)
 ///   commitJury()     — jury committer posts randomness; contract draws 1 juror
 ///   reveal()         — 7 voters reveal
 ///   resolve()        — anyone resolves; voters and treasury withdraw
@@ -57,7 +57,7 @@ contract SimulateAnvilScript is Script {
     uint8 internal constant FEE_PERCENT = 5;
     uint96 internal constant MIN_STAKE = 1 ether;
     uint32 internal constant TARGET_JURY_SIZE = 1;
-    uint32 internal constant MIN_COMMITS = 7;
+    uint32 internal constant MIN_COMMITS = 1;
     uint32 internal constant MIN_REVEALED_JURORS = 1;
 
     uint96 internal constant VOTER_STAKE = 50 ether;
@@ -125,7 +125,7 @@ contract SimulateAnvilScript is Script {
         console2.log("Voting deadline:      ", market.votingDeadline());
         console2.log("Jury commit deadline: ", market.juryCommitDeadline());
         console2.log("Reveal deadline:      ", market.revealDeadline());
-        console2.log("Target jury size:     ", market.targetJurySize());
+        console2.log("Max jury size:        ", market.targetJurySize());
         console2.log("Min commits:          ", market.minCommits());
     }
 

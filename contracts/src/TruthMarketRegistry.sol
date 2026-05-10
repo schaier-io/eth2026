@@ -26,7 +26,7 @@ interface ITruthMarketRegistry {
 ///         creator but has no onchain market behind it.
 contract TruthMarketRegistry is ITruthMarketRegistry {
     bytes32 public constant CONTRACT_ID = keccak256("TruthMarketRegistry");
-    uint16 public constant CONTRACT_VERSION = 2;
+    uint16 public constant CONTRACT_VERSION = 1;
 
     error AlreadyRegistered();
     error ZeroCreator();

@@ -18,9 +18,9 @@ export interface BuildSpecOpts {
   durationSeconds: number;
   /** ERC20 minStake in token base units. */
   minStake: bigint;
-  /** Jury draw size (odd). Defaults to 1 for short demo markets. */
+  /** Max jury draw size (odd). Defaults to 1 for short demo markets. */
   jurySize?: number;
-  /** Minimum committed voters. Defaults satisfy `minCommits × 15 ≥ jurySize × 100`. */
+  /** Minimum committed voters. Defaults to the minimum juror floor. */
   minCommits?: number;
   /** Minimum jurors that must reveal for a decisive resolution. */
   minRevealedJurors?: number;
@@ -69,8 +69,14 @@ export function buildMarketSpec(
   if (jurySize % 2 === 0) {
     throw new Error(`jurySize must be odd (got ${jurySize})`);
   }
-  const minCommits = opts.minCommits ?? Math.max(jurySize, Math.ceil((jurySize * 100) / 15));
   const minRevealedJurors = opts.minRevealedJurors ?? Math.min(jurySize, 1);
+  const minCommits = opts.minCommits ?? minRevealedJurors;
+  if (minRevealedJurors < 1 || minRevealedJurors > jurySize) {
+    throw new Error(`minRevealedJurors must be between 1 and jurySize (got ${minRevealedJurors})`);
+  }
+  if (minCommits < minRevealedJurors) {
+    throw new Error(`minCommits must be at least minRevealedJurors (got ${minCommits} < ${minRevealedJurors})`);
+  }
   const swarmReference = opts.swarmReference ?? placeholderSwarmReference(candidate.claimRulesDraft);
   if ((swarmReference.length - 2) / 2 > MAX_SWARM_REFERENCE_BYTES) {
     throw new Error(`swarmReference too long: ${swarmReference}`);

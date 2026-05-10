@@ -52,9 +52,9 @@ interface JuryPreset {
 }
 
 const JURY_PRESETS: JuryPreset[] = [
-  { label: "Small (3)", jurySize: 3, minCommits: 20, minRevealedJurors: 2, hint: "fast resolution, smaller pool" },
-  { label: "Standard (5)", jurySize: 5, minCommits: 34, minRevealedJurors: 3, hint: "balanced" },
-  { label: "Large (9)", jurySize: 9, minCommits: 60, minRevealedJurors: 5, hint: "more deliberation" },
+  { label: "Small (max 3)", jurySize: 3, minCommits: 2, minRevealedJurors: 2, hint: "fast resolution, smaller pool" },
+  { label: "Standard (max 5)", jurySize: 5, minCommits: 3, minRevealedJurors: 3, hint: "balanced" },
+  { label: "Large (max 9)", jurySize: 9, minCommits: 5, minRevealedJurors: 5, hint: "more deliberation" },
 ];
 
 type StatusKind = "info" | "success" | "error" | "";
@@ -481,7 +481,7 @@ export default function DeployPage() {
             </div>
             <div className="advanced-grid">
               <SmallField
-                label="Jury size"
+                label="Max jury size"
                 value={form.customJurySize}
                 onChange={(v) => update("customJurySize", v)}
                 disabled={!formEditable || form.juryPresetIdx !== -1}
@@ -500,7 +500,7 @@ export default function DeployPage() {
               />
             </div>
             <p className="muted step-hint">
-              Rules: minCommits × 15 ≥ jurySize × 100. Jury size must be odd.
+              Draw size: min(max jury, max(min jurors, active votes × 15%)). Max jury size must be odd.
             </p>
           </div>
         </details>
@@ -668,17 +668,16 @@ function validate(form: FormState): { ok: boolean; errors: string[]; spec: Valid
   }
   const phases = totalMinutes !== null ? splitDuration(totalMinutes) : null;
 
-  const jurySize = parseIntField("Jury size", form.customJurySize, 1, 100, errors);
-  if (jurySize !== null && jurySize % 2 === 0) errors.push("Jury size must be odd.");
+  const jurySize = parseIntField("Max jury size", form.customJurySize, 1, 100, errors);
+  if (jurySize !== null && jurySize % 2 === 0) errors.push("Max jury size must be odd.");
   const minCommits = parseIntField("Min commits", form.customMinCommits, 1, 1_000_000, errors);
   const minRevealedJurors = parseIntField("Min revealed jurors", form.customMinRevealedJurors, 1, 1_000_000, errors);
 
-  if (jurySize !== null && minCommits !== null && minCommits * 15 < jurySize * 100) {
-    const required = Math.ceil((jurySize * 100) / 15);
-    errors.push(`Need ≥ ${required} commits to draw a jury this size.`);
-  }
   if (jurySize !== null && minRevealedJurors !== null && minRevealedJurors > jurySize) {
     errors.push("Min revealed jurors can't exceed jury size.");
+  }
+  if (minCommits !== null && minRevealedJurors !== null && minCommits < minRevealedJurors) {
+    errors.push("Min commits must be at least min revealed jurors.");
   }
 
   const minStakeRaw = form.minStake.trim();

@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: help setup install update build test test-gas coverage fmt fmt-check snapshot clean anvil anvil-up anvil-down predict-reference deploy-market deploy-reference deploy-registry simulate simulate-anvil new-key new-key-write
+.PHONY: help setup install update build test test-gas coverage fmt fmt-check snapshot clean anvil anvil-up anvil-down predict-reference predict-registry deploy-market deploy-reference deploy-registry simulate simulate-anvil new-key new-key-write
 
 help:
 	@echo "Targets:"
@@ -21,6 +21,7 @@ help:
 	@echo "  new-key-write   - generate keypair AND write to .env"
 	@echo "  deploy-market   NETWORK=anvil  - create TruthMarket clone"
 	@echo "  predict-reference          - print deterministic TruthMarket reference address"
+	@echo "  predict-registry           - print deterministic MarketRegistry address"
 	@echo "  deploy-reference NETWORK=sepolia - CREATE2-deploy TruthMarket reference implementation"
 	@echo "  deploy-registry NETWORK=anvil  - deploy MarketRegistry"
 	@echo "  simulate        - run lifecycle scenario in-process (no anvil)"
@@ -84,6 +85,9 @@ deploy-reference:
 
 predict-reference:
 	$(FORGE) script script/TruthMarketReference.s.sol:TruthMarketReferenceScript --sig 'predict()'
+
+predict-registry:
+	$(FORGE) script script/MarketRegistry.s.sol:MarketRegistryScript --sig 'predict()'
 
 deploy-registry:
 	$(FORGE) script script/MarketRegistry.s.sol:MarketRegistryScript --rpc-url $(NETWORK) $(BROADCAST) -vvvv

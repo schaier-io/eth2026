@@ -2,7 +2,7 @@
 
 Status: accepted
 
-Swarm is used for immutable claim/rules documents. The contract stores a Swarm reference so voters can inspect the claim, YES/NO meaning, deadlines, target jury size, and weighting mode before staking, and those rules cannot be quietly changed after stake enters the market.
+Swarm is used for immutable claim/rules documents. The contract stores a Swarm reference so voters can inspect the claim, YES/NO meaning, deadlines, max jury size, and weighting mode before staking, and those rules cannot be quietly changed after stake enters the market.
 
 **Considered Options**
 

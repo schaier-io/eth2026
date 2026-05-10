@@ -99,7 +99,8 @@ Everything you need lives in `bin/`. They source `.env` automatically, resolve d
 bin/anvil-up                       # start anvil in background (writes .anvil.pid)
 bin/deploy reference predict       # print predictable TruthMarket reference implementation
 bin/deploy reference sepolia       # CREATE2-deploy TruthMarket reference implementation
-bin/deploy registry sepolia        # deploy MarketRegistry; reuses/deploys the deterministic reference unless overridden
+bin/deploy registry predict        # print predictable MarketRegistry for the configured reference
+bin/deploy registry sepolia        # CREATE2-deploy MarketRegistry; reuses/deploys the deterministic reference unless overridden
 bin/deploy market                  # create a TruthMarket clone (provide REGISTRY_ADDRESS + STAKE_TOKEN in .env)
 bin/anvil-down                     # stop background anvil
 ```

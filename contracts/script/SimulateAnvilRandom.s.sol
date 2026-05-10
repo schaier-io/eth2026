@@ -8,8 +8,8 @@ import { TruthMarket } from "../src/TruthMarket.sol";
 import { MockERC20 } from "../test/MockERC20.sol";
 
 /// @notice Anvil-driven full simulation with seeded-random voter votes.
-///         175 voters, targetJurySize = 25, minRevealedJurors = 25 —
-///         odd target jury size with all jurors revealing means the outcome is the
+///         175 voters, max jury size = 25, minRevealedJurors = 25 —
+///         odd max jury size with all jurors revealing means the outcome is the
 ///         simple majority of the 25 drawn jurors and ties are impossible.
 ///
 ///         All 25 jurors reveal. Of the 150 non-jurors, ~25 are randomly
@@ -77,9 +77,9 @@ contract SimulateAnvilRandomScript is Script {
     uint8 internal constant FEE_PERCENT = 5;
     uint96 internal constant MIN_STAKE = 1 ether;
     uint96 internal constant VOTER_STAKE = 50 ether;
-    // Target jury size must be odd (contract enforces).
+    // Max jury size must be odd (contract enforces).
     uint32 internal constant TARGET_JURY_SIZE = 25;
-    // 175 * 15 = 2625 ≥ 25 * 100 = 2500 → satisfies MAX_TARGET_JURY_SIZE_PERCENT constraint.
+    // 175 active voters are enough for the 15% cap to grow the draw to the 25-juror max.
     uint32 internal constant MIN_COMMITS = 175;
     // All 25 jurors must reveal so the count majority is decisive (odd → no ties).
     uint32 internal constant MIN_REVEALED_JURORS = 25;
@@ -148,7 +148,7 @@ contract SimulateAnvilRandomScript is Script {
         console2.log("Implementation:       ", address(implementation));
         console2.log("Market:               ", address(market));
         console2.log("Voters:               ", VOTER_COUNT);
-        console2.log("Target jury size:     ", TARGET_JURY_SIZE);
+        console2.log("Max jury size:        ", TARGET_JURY_SIZE);
         console2.log("Min revealed jurors:  ", MIN_REVEALED_JURORS);
         console2.log("Treasury:             ", treasury);
         console2.log("Admin:                ", admin);

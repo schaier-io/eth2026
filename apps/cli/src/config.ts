@@ -20,7 +20,7 @@ export const TRUTHMARKET_ADDRESS: Address =
  * export TM_REGISTRY_ADDRESS to override.
  */
 export const REGISTRY_ADDRESS: Address =
-  "0xa50B3e0Ca53f28Fb8BD0a3e0DdbFbE7fE36047E5";
+  "0xb654cfE92373eD85B863dE3994E2Af5daf7626Fa";
 
 export const DEFAULT_CHAIN: ChainKey = "sepolia";
 

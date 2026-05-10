@@ -51,13 +51,14 @@ import { ITruthMarketRegistry } from "./TruthMarketRegistry.sol";
 ///           the entire juror penalty accrues to the **claim creator** while every
 ///           other voter is fully refunded.
 ///
-///         Jury composition limit: the jury is always a strict minority. The contract
-///         guarantees `targetJurySize ≤ MAX_TARGET_JURY_SIZE_PERCENT × commitCount / 100`, enforced at
-///         construction by requiring `minCommits × MAX_TARGET_JURY_SIZE_PERCENT ≥ targetJurySize × 100`.
+///         Jury composition limit: `targetJurySize` is the maximum draw size. The
+///         actual draw is:
+///         `min(targetJurySize, max(minRevealedJurors, activeCommitters × MAX_TARGET_JURY_SIZE_PERCENT / 100))`.
+///         This keeps small markets at the minimum juror floor, then grows the
+///         jury only after the 15% active-voter cap rises above that floor.
 ///
-///         Tie behavior: ties on juror count resolve to Invalid. Ties are impossible
-///         when `minRevealedJurors == targetJurySize` (all jurors reveal, odd count); they
-///         remain possible whenever the revealed-juror count is even.
+///         Tie behavior: ties on juror count resolve to Invalid. The max draw is odd,
+///         but dynamic intermediate draws and partial reveals can still be even.
 contract TruthMarket is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -87,11 +88,11 @@ contract TruthMarket is ReentrancyGuard {
     /// @notice Monotonic ABI/storage version of this contract. Bump on any breaking
     ///         change (storage layout, public function selector set, event topic[0]).
     ///         Consumers compare `CONTRACT_VERSION()` before decoding state.
-    uint16 public constant CONTRACT_VERSION = 2;
+    uint16 public constant CONTRACT_VERSION = 1;
     uint32 public constant MAX_TARGET_JURY_SIZE = 100;
-    /// @notice Upper bound on the target jury size as a percentage of committed voters. Enforced at
-    ///         construction via `minCommits × MAX_TARGET_JURY_SIZE_PERCENT ≥ targetJurySize × 100`, so
-    ///         once `commitCount ≥ minCommits` the rule holds for the actual draw too.
+    /// @notice Upper bound on jurors above the minimum floor as a percentage of
+    ///         active committed voters. Below the floor, `minRevealedJurors`
+    ///         takes precedence; above it, the draw grows up to `targetJurySize`.
     uint256 public constant MAX_TARGET_JURY_SIZE_PERCENT = 15;
     /// @notice Maximum bytes for the on-chain Swarm/Bee claim document reference.
     ///         Sized to fit any common CID/Swarm hash plus a short scheme prefix.
@@ -454,12 +455,10 @@ contract TruthMarket is ReentrancyGuard {
         }
         if (p.minStake == 0) revert BadParams();
         if (p.targetJurySize == 0 || p.targetJurySize > MAX_TARGET_JURY_SIZE) revert BadParams();
-        if (p.targetJurySize % 2 == 0) revert BadParams(); // target jury size must be odd
-        // Target jury size must stay within MAX_TARGET_JURY_SIZE_PERCENT of the minimum committer pool;
-        // this also implies minCommits >= targetJurySize, so the older subset check is subsumed.
-        if (uint256(p.minCommits) * MAX_TARGET_JURY_SIZE_PERCENT < uint256(p.targetJurySize) * 100) revert BadParams();
+        if (p.targetJurySize % 2 == 0) revert BadParams(); // max jury size must be odd
         if (p.minRevealedJurors == 0) revert BadParams();
         if (p.minRevealedJurors > p.targetJurySize) revert BadParams();
+        if (p.minCommits < p.minRevealedJurors) revert BadParams();
         if (p.maxCommits != 0 && p.maxCommits < p.minCommits) revert BadParams();
         stakeToken = p.stakeToken;
         juryCommitter = p.juryCommitter;
@@ -630,7 +629,7 @@ contract TruthMarket is ReentrancyGuard {
     ///         and an audit hash. The contract stores the evidence, computes a
     ///         `randomnessHash`, then draws the resolving jury on-chain from the active
     ///         (non-revoked) committer set via a virtual Fisher-Yates sampler with
-    ///         O(targetJurySize) memory.
+    ///         O(actualJurySize) memory.
     /// @dev    Solidity cannot fetch IPFS/IPNS. `metadata.ipfsAddress` is the fetched
     ///         SpaceComputer beacon path or immutable resolved block address used by
     ///         off-chain replay tools to verify the posted cTRNG value.
@@ -651,7 +650,7 @@ contract TruthMarket is ReentrancyGuard {
         }
         if (metadata.timestamp == 0) revert BadParams();
         if (auditHash == bytes32(0)) revert BadParams();
-        if (commitCount < minCommits) revert InsufficientCommits();
+        if (commitCount < minCommits || _activeCommitters.length < minRevealedJurors) revert InsufficientCommits();
 
         bytes32 _randomnessHash = _hashRandomness(_randomness);
         randomness = _randomness;
@@ -1014,14 +1013,14 @@ contract TruthMarket is ReentrancyGuard {
 
     // ---------- Internals ----------
 
-    /// @dev Floyd sampler. Picks `k = min(targetJurySize, activeCount)` unique indices into
+    /// @dev Floyd sampler. Picks `k = _juryDrawSize(activeCount)` unique indices into
     ///      `_activeCommitters` using `seed` as the entropy source. Memory cost is O(k)
     ///      regardless of `n`; work is bounded by one membership scan per selected
     ///      juror. This avoids both O(n) Fisher-Yates initialization and the previous
     ///      sparse-swap table's repeated lookup/update scans.
     function _drawJury(uint256 seed) internal {
         uint256 n = _activeCommitters.length;
-        uint256 k = targetJurySize > n ? n : targetJurySize;
+        uint256 k = _juryDrawSize(n);
         if (k == 0) return;
 
         uint256[] memory selected = new uint256[](k);
@@ -1044,6 +1043,14 @@ contract TruthMarket is ReentrancyGuard {
             _jury.push(juror);
             _isJuror[juror] = true;
         }
+    }
+
+    function _juryDrawSize(uint256 activeCount) internal view returns (uint256) {
+        uint256 percentCap = (activeCount * MAX_TARGET_JURY_SIZE_PERCENT) / 100;
+        uint256 floorOrCap = percentCap < minRevealedJurors ? minRevealedJurors : percentCap;
+        uint256 maxSize = targetJurySize;
+        uint256 drawSize = floorOrCap > maxSize ? maxSize : floorOrCap;
+        return drawSize > activeCount ? activeCount : drawSize;
     }
 
     /// @dev Uniform random integer in [0, upper). Uses rejection sampling to remove
@@ -1083,9 +1090,8 @@ contract TruthMarket is ReentrancyGuard {
         }
     }
 
-    /// @dev Returns Invalid on count tie. With odd `targetJurySize` and full juror reveal
-    ///      (`minRevealedJurors == targetJurySize`) ties are impossible. Partial reveals
-    ///      (even revealed-juror count) can still tie.
+    /// @dev Returns Invalid on count tie. Dynamic intermediate draw sizes and partial
+    ///      reveals can both produce even counts, so ties remain possible.
     function _juryOutcome() internal view returns (Outcome out, uint32 winningJuryCount) {
         if (juryYesCount > juryNoCount) {
             return (Outcome.Yes, juryYesCount);

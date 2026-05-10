@@ -47,7 +47,7 @@ Architecture decisions live in [docs/adr](./docs/adr):
 
 - Random-jury belief resolution, not oracle/fact-checking.
 - Classic commit-reveal for voter sovereignty.
-- Swarm for immutable claim/rules documents; on-chain claim name + description + up to 5 tags for discoverability.
+- Swarm for immutable claim/rules documents; clones store only the Swarm/Bee reference.
 - Fixed 20% normal risked-stake slash; jury voting is count-based (1 juror = 1 vote, ADR 0006 supersedes the original square-root weighting).
 - Selected jurors who skip reveal forfeit their full stake (~5× normal slash).
 - Nonce-leak revocation (voting phase only): anyone with a voter's leaked nonce can claim half of that voter's stake; the other half flows into the slash pool — see ADR 0007.

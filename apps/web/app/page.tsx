@@ -267,7 +267,7 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
                     <div>
                       <dt>Commits</dt>
                       <dd>
-                        {row.commitCount ?? "?"} / {row.targetJurySize ?? "?"} jury
+                        {row.commitCount ?? "?"} votes · max {row.targetJurySize ?? "?"} jurors
                       </dd>
                     </div>
                     {dl ? (

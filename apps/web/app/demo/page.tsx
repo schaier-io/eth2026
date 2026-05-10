@@ -883,11 +883,11 @@ export default function TruthMarketApp() {
       return;
     }
     if (!Number.isFinite(targetJurySize) || targetJurySize < 1 || targetJurySize % 2 === 0) {
-      setCreateStatus({ message: "Target jury size must be an odd number.", kind: "error" });
+      setCreateStatus({ message: "Max jury size must be an odd number.", kind: "error" });
       return;
     }
     if (!Number.isFinite(minRevealedJurors) || minRevealedJurors < 1 || minRevealedJurors > targetJurySize) {
-      setCreateStatus({ message: "Minimum revealed jurors must be between 1 and target jury size.", kind: "error" });
+      setCreateStatus({ message: "Minimum revealed jurors must be between 1 and max jury size.", kind: "error" });
       return;
     }
 
@@ -1292,7 +1292,7 @@ export default function TruthMarketApp() {
                       <input name="symbol" type="text" autoComplete="off" maxLength={5} placeholder="AI" />
                     </label>
                     <label className="field">
-                      <span>Target jury size</span>
+                      <span>Max jury size</span>
                       <input name="targetJurySize" type="number" min={1} step={2} defaultValue={5} inputMode="numeric" />
                     </label>
                     <label className="field">
@@ -1549,7 +1549,7 @@ export default function TruthMarketApp() {
                       <strong>{selectedMarket.commits} positions</strong>
                     </div>
                     <div>
-                      <span>Target jury</span>
+                      <span>Max jury</span>
                       <strong>{selectedMarket.targetJurySize} jurors</strong>
                     </div>
                     <div>

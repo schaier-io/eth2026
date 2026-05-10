@@ -64,7 +64,7 @@ contract MarketRegistryTest is Test {
 
     function testConstructorStoresImplementationAndVersions() public view {
         assertEq(registry.CONTRACT_ID(), keccak256("MarketRegistry"));
-        assertEq(registry.CONTRACT_VERSION(), 2);
+        assertEq(registry.CONTRACT_VERSION(), 1);
         assertEq(registry.implementation(), address(implementation));
         assertEq(registry.implementationVersion(), implementation.CONTRACT_VERSION());
     }
@@ -198,7 +198,7 @@ contract MarketRegistryTest is Test {
             revealPeriod: 1 days,
             minStake: 1 ether,
             jurySize: 1,
-            minCommits: 7,
+            minCommits: 1,
             maxCommits: 99,
             minRevealedJurors: 1,
             creatorBond: 7 ether

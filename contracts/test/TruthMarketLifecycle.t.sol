@@ -177,7 +177,7 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function test_FullLifecycleSingleJurorYesOutcome() public {
-        // targetJurySize=1 with MAX_TARGET_JURY_SIZE_PERCENT needs minCommits >= 7. All commit + reveal yes.
+        // Single-juror demo market. All commit + reveal yes.
         market = _deployMarket(1, 7, 1);
 
         V[] memory vs = _makeVoters(7, 50 ether, 1); // all YES, 40% conv → risked 20
@@ -244,7 +244,7 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function test_LifecycleSlashesLosersAndPaysWinners() public {
-        // targetJurySize=3 needs minCommits >= 20. Mix yes/no voters with different stakes.
+        // Max jury size=3. Mix yes/no voters with different stakes.
         // Risked stake is fixed at 20% per voter.
         market = _deployMarket(3, 20, 2);
 
@@ -320,7 +320,7 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function test_NonRevealingJurorAtValidOutcomeForfeitsFullStake() public {
-        // targetJurySize=3, minCommits=20. Find which addresses get drawn as jurors and pick
+        // Max jury size=3, minCommits=20. Find which addresses get drawn as jurors and pick
         // one of them to skip reveal — should forfeit full stake; rest of payouts work.
         market = _deployMarket(3, 20, 2);
         V[] memory vs = _makeVoters(20, 50 ether, 1); // all YES, risked 20
@@ -400,7 +400,7 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function test_InvalidWhenTooFewJurorsRevealRoutesPenaltyToCreator() public {
-        // targetJurySize=3, minRevealedJurors=2. Only one juror reveals → Invalid; the other
+        // Max jury size=3, minRevealedJurors=2. Only one juror reveals → Invalid; the other
         // two jurors lose full stakes, accruing to the CREATOR (not treasury).
         market = _deployMarket(3, 20, 2);
         V[] memory vs = _makeVoters(20, 80 ether, 1); // 100% conv → risked 80
@@ -463,9 +463,8 @@ contract TruthMarketLifecycleTest is Test {
         _expectNewMarketRevert(TruthMarket.BadParams.selector, _initParams(101, 700, 50));
     }
 
-    function test_RevertsConstructorWhenJuryExceedsMaxTargetJurySizePercentOfMinCommits() public {
-        // targetJurySize=3 needs minCommits >= 20. Below that should revert.
-        _expectNewMarketRevert(TruthMarket.BadParams.selector, _initParams(3, 19, 2));
+    function test_RevertsConstructorWhenMinCommitsBelowMinRevealedJurors() public {
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, _initParams(3, 1, 2));
     }
 
     function test_RevertsConstructorWhenMinRevealedJurorsZero() public {
@@ -1065,10 +1064,39 @@ contract TruthMarketLifecycleTest is Test {
         }
     }
 
+    function test_JuryDrawUsesMinFloorThenPercentCapThenTargetMax() public {
+        market = _deployMarket(5, 3, 3);
+        V[] memory minFloor = _makeVoters(3, 5 ether, 1);
+        _commitAll(minFloor);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(0x1111, _randomnessMetadata(), AUDIT_HASH);
+        assertEq(market.getJury().length, 3);
+
+        market = _deployMarket(5, 3, 3);
+        V[] memory percentGrowth = _makeVoters(27, 5 ether, 1);
+        _commitAll(percentGrowth);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(0x2222, _randomnessMetadata(), AUDIT_HASH);
+        assertEq(market.getJury().length, 4);
+
+        market = _deployMarket(5, 3, 3);
+        V[] memory maxTarget = _makeVoters(34, 5 ether, 1);
+        _commitAll(maxTarget);
+
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(0x3333, _randomnessMetadata(), AUDIT_HASH);
+        assertEq(market.getJury().length, 5);
+    }
+
     function test_JuryDrawHandlesLargeCommitterPool() public {
-        // Stress the virtual sampler with a wide pool. Memory is O(targetJurySize) so this
+        // Stress the virtual sampler with a wide pool. Memory is O(actual draw size) so this
         // shouldn't OOG even though `n` is large.
-        market = _deployMarket(7, 47, 4); // targetJurySize=7 -> minCommits>=47 (MAX_TARGET_JURY_SIZE_PERCENT)
+        market = _deployMarket(7, 4, 4);
         uint256 n = 200;
         V[] memory vs = _makeVoters(n, 5 ether, 1);
         _commitAll(vs);
@@ -1412,7 +1440,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_RevertsConstructorWhenMaxCommitsBelowMinCommits() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        p.maxCommits = 6; // below minCommits=7
+        p.maxCommits = 6; // below minCommits
         _expectNewMarketRevert(TruthMarket.BadParams.selector, p);
     }
 

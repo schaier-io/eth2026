@@ -161,10 +161,10 @@ cmd_demo() {
   ok "demo finished — read-only commands all wired up"
   cat <<EOF
 
-${DIM}For a full commit-reveal-withdraw lifecycle you need 7 voters
-(minCommits=7); the contracts repo's forge SimulateAnvil script has
-a commit() / commitJury() / reveal() / resolve() phase that drives
-the full thing. Run ./skills.sh clean when you're done.${RESET}
+${DIM}For a full commit-reveal-withdraw lifecycle, the contracts repo's
+forge SimulateAnvil script has a commit() / commitJury() / reveal() /
+resolve() phase that drives the full thing. Run ./skills.sh clean when
+you're done.${RESET}
 EOF
 }
 

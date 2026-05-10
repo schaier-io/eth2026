@@ -46,7 +46,7 @@ export interface MarketSpec {
   adminTimeout: bigint;
   revealPeriod: bigint;
   minStake: bigint;
-  /** targetJurySize in InitParams. */
+  /** Max jury draw size: targetJurySize in InitParams. */
   jurySize: number;
   minCommits: number;
   /** Optional hard cap on commits; 0 disables. */

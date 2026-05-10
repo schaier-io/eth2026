@@ -109,7 +109,7 @@ export const TIMING_MODES: Record<GeneratorMode, TimingMode> = {
     marketDefaults: {
       minStake: "100000000000000000",
       jurySize: 1,
-      minCommits: 7,
+      minCommits: 1,
       minRevealedJurors: 1,
     },
   },
@@ -121,7 +121,7 @@ export const TIMING_MODES: Record<GeneratorMode, TimingMode> = {
     marketDefaults: {
       minStake: "100000000000000000",
       jurySize: 1,
-      minCommits: 7,
+      minCommits: 1,
       minRevealedJurors: 1,
     },
   },
@@ -133,7 +133,7 @@ export const TIMING_MODES: Record<GeneratorMode, TimingMode> = {
     marketDefaults: {
       minStake: "100000000000000000",
       jurySize: 3,
-      minCommits: 20,
+      minCommits: 2,
       minRevealedJurors: 2,
     },
   },

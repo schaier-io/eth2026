@@ -234,7 +234,7 @@ export default async function MarketDetailPage({ params }: { params: Params }) {
       </header>
 
       <section className="card stats-grid">
-        <Stat label="Commits" value={`${data.commitCount} / ${data.targetJurySize} target`} />
+        <Stat label="Commits" value={`${data.commitCount} votes · max ${data.targetJurySize} jurors`} />
         <Stat
           label="Pot"
           value={`${formatUnits(data.totalCommittedStake, data.decimals)} ${data.symbol}`}

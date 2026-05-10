@@ -17,8 +17,8 @@ import { MockERC20 } from "../test/MockERC20.sol";
 /// All scenarios deploy a fresh TruthMarket + MockERC20 stake token in a local EVM, advance time
 /// through every phase, and print the resulting state. No anvil or broadcast needed.
 ///
-/// Configs respect the contract's MAX_TARGET_JURY_SIZE_PERCENT = 15 rule:
-///   targetJurySize=1 → minCommits ≥ 7, targetJurySize=3 → minCommits ≥ 20, etc.
+/// The selected jury size is dynamic:
+///   min(max jurors, max(min jurors, active voters * 15 / 100)).
 contract SimulateScript is Script {
     uint64 internal constant VOTING_PERIOD = 1 days;
     uint64 internal constant ADMIN_TIMEOUT = 12 hours;
@@ -53,9 +53,9 @@ contract SimulateScript is Script {
 
     // ---------- Scenarios ----------
 
-    /// @notice Happy-path: 7 voters, targetJurySize=1, all reveal — single juror's vote decides.
+    /// @notice Happy-path: 7 voters, max jury size=1, all reveal — single juror's vote decides.
     function lifecycle() external {
-        console2.log("=== Scenario: Lifecycle (targetJurySize=1, all reveal) ===");
+        console2.log("=== Scenario: Lifecycle (max jury size=1, all reveal) ===");
         Voter[] memory voters = _makeVoters(7, 50 ether, 1, true); // all YES
         (TruthMarket market, MockERC20 token) = _deployMarket(1, 7, 1);
 
@@ -90,7 +90,7 @@ contract SimulateScript is Script {
 
     /// @notice Selected jurors fail to reveal → outcome Invalid; non-revealing jurors
     ///         forfeit their full stakes to the CREATOR (not treasury). Other voters
-    ///         get full refunds. Uses targetJurySize=3 with 20 voters to satisfy MAX_TARGET_JURY_SIZE_PERCENT.
+    ///         get full refunds. Uses max jury size=3 with enough voters to draw all 3 jurors.
     function invalidJurorPenalty() external {
         console2.log("=== Scenario: Invalid juror penalty -> creator ===");
         Voter[] memory voters = _makeVoters(20, 80 ether, 1, true);
@@ -221,7 +221,7 @@ contract SimulateScript is Script {
         console2.log("Voting deadline:       ", market.votingDeadline());
         console2.log("Jury commit deadline:  ", market.juryCommitDeadline());
         console2.log("Reveal deadline:       ", market.revealDeadline());
-        console2.log("Target jury size:      ", market.targetJurySize());
+        console2.log("Max jury size:         ", market.targetJurySize());
         console2.log("Min commits:           ", market.minCommits());
         console2.log("Min revealed jurors:   ", market.minRevealedJurors());
         console2.log("Min stake:             ", market.minStake());

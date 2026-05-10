@@ -84,9 +84,9 @@ For a real Apify run instead, set `APIFY_TOKEN` and `APIFY_REDDIT_ACTOR_ID` in y
 
 ### 5. Vote, reveal, resolve
 
-The seed `TruthMarket` address is written to `.env` as `TM_CONTRACT_ADDRESS`. It was created as a minimal clone with `jurySize=1, minCommits=7, minRevealedJurors=1`. Use anvil voter accounts 5–11 (already funded with 1000 MockERC20 each) to commit through the CLI, advance time via cast, draw a juror, reveal, and resolve. This is documented per phase in [`contracts/README.md`](../contracts/README.md) under `bin/sim-anvil`.
+The seed `TruthMarket` address is written to `.env` as `TM_CONTRACT_ADDRESS`. It was created as a minimal clone with `jurySize=1, minCommits=1, minRevealedJurors=1`. Use anvil voter accounts 5–11 (already funded with 1000 MockERC20 each) to commit through the CLI, advance time via cast, draw a juror, reveal, and resolve. This is documented per phase in [`contracts/README.md`](../contracts/README.md) under `bin/sim-anvil`.
 
-Agent-created markets default to `jurySize=1, minCommits=7, minRevealedJurors=1` and a 1-hour split window (24m voting / 12m jury / 24m reveal); identical lifecycle, just different parameters.
+Agent-created markets default to `jurySize=1, minCommits=1, minRevealedJurors=1` and a 1-hour split window (24m voting / 12m jury / 24m reveal); identical lifecycle, just different parameters.
 
 #### Funding friend wallets
 

@@ -51,11 +51,11 @@ Use one of these modes instead of deciding timing ad hoc during the demo:
 
 | Mode | Creation cadence | Voting period | Jury commit timeout | Reveal period | Contract params |
 | --- | ---: | ---: | ---: | ---: | --- |
-| `demo-fast` | manual or every 15 min | 5 min | 2 min | 5 min | `jurySize=1`, `minCommits=7`, `minRevealedJurors=1` |
-| `live-mini` | every 60 min | 20 min | 5 min | 25 min | `jurySize=1`, `minCommits=7`, `minRevealedJurors=1` |
-| `public-hourly` | every 3 hours | 60 min | 10 min | 50 min | `jurySize=3`, `minCommits=20`, `minRevealedJurors=2` |
+| `demo-fast` | manual or every 15 min | 5 min | 2 min | 5 min | `jurySize=1`, `minCommits=1`, `minRevealedJurors=1` |
+| `live-mini` | every 60 min | 20 min | 5 min | 25 min | `jurySize=1`, `minCommits=1`, `minRevealedJurors=1` |
+| `public-hourly` | every 3 hours | 60 min | 10 min | 50 min | `jurySize=3`, `minCommits=2`, `minRevealedJurors=2` |
 
-The current contract requires `minCommits * 15 >= jurySize * 100`, so a 3-person jury requires at least 20 commits. Use `jurySize=1` for a fast demo unless we have enough agent wallets to reliably create 20 commits per market.
+The contract draws `min(maxJurors, max(minJurors, activeCommitters * 15 / 100))`. Small markets can start at the minimum juror floor; the 15% cap only grows the selected jury once enough active voters arrive.
 
 ## Generator Policy
 
@@ -80,7 +80,7 @@ Use a policy file so the generator can run unattended without creating bad marke
   "marketDefaults": {
     "minStake": "100000000000000000",
     "jurySize": 1,
-    "minCommits": 7,
+    "minCommits": 1,
     "minRevealedJurors": 1
   }
 }

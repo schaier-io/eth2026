@@ -21,13 +21,21 @@ The extra (above the normal 1× `riskedStake`) joins the distributable pool on a
 
 **Reveal Quorum**
 
-`minRevealedJurors` is intentionally a deployment-time market parameter. The contract enforces that it is non-zero and no greater than `targetJurySize`; it does not force a strict majority quorum. This is a liveness trade-off: some demo or low-stakes markets may prefer resolution from a smaller number of selected juror reveals instead of frequent Invalid outcomes, while higher-stakes markets can set `minRevealedJurors` to a majority or to the full odd target jury size.
+`minRevealedJurors` is intentionally a deployment-time market parameter. The contract enforces that it is non-zero and no greater than `targetJurySize`; it does not force a strict majority quorum. This is a liveness trade-off: some demo or low-stakes markets may prefer resolution from a smaller number of selected juror reveals instead of frequent Invalid outcomes, while higher-stakes markets can set `minRevealedJurors` to a majority or to the full odd max jury size.
 
 The claim/rules document should disclose the chosen reveal quorum before voters stake. A low quorum is not a contract bug, but it is a market-quality choice that affects how representative the resolved belief is.
+
+**Dynamic Jury Size**
+
+`targetJurySize` is the maximum jury draw size, not the guaranteed draw size. The actual draw uses active, non-revoked committers:
+
+`min(maxJurors, max(minJurors, activeCommitters * 15 / 100))`
+
+The 15% cap is ignored only until the minimum juror floor is reached. After that, the draw grows with voter turnout and stops at `targetJurySize`. Solidity integer division rounds the 15% term down.
 
 **Implications**
 
 - Jury composition matters more than juror wealth. Stake tunes economic exposure but does not bias the YES/NO decision.
-- Target jury size should be configured odd so a full-reveal jury cannot tie. Even-count partial reveals can still tie → Invalid.
+- Max jury size should be configured odd, but dynamic intermediate draw sizes and partial reveals can still be even → ties resolve to Invalid.
 - Reveal quorum is configurable for liveness; strict-majority or full-jury quorum should be chosen for higher-stakes markets.
 - A juror who knows they cannot reveal in time should ideally not commit; once selected, skipping reveal is the most expensive failure mode in the protocol.

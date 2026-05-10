@@ -22,7 +22,7 @@ contract MarketRegistry is ITruthMarketRegistry {
     /// @notice Contract-family identifier for indexers and clients.
     bytes32 public constant CONTRACT_ID = keccak256("MarketRegistry");
     /// @notice Registry ABI/storage version. Bump on breaking registry changes.
-    uint16 public constant CONTRACT_VERSION = 2;
+    uint16 public constant CONTRACT_VERSION = 1;
 
     /// @notice TruthMarket implementation cloned by `createMarket`.
     address public immutable implementation;

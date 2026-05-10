@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run a full TruthMarket lifecycle on a fresh anvil with seeded-random votes.
-# 175 voters, targetJurySize=25, all 25 jurors reveal, ~25 of 150 non-jurors skip
+# 175 voters, max jury size=25, all 25 jurors reveal, ~25 of 150 non-jurors skip
 # reveal (seed-driven). Outcome = simple majority of the 25 jurors. Losers
 # absorb the riskedStake slash; non-revealing non-jurors absorb the same;
 # winning revealers split the slashed pool. Reproducible via SEED env var.

@@ -17,7 +17,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 1. As a market creator, I want to create a claim with immutable rules, so that voters know the rules cannot be changed after staking.
 2. As a market creator, I want the claim document stored on decentralized storage, so that the market rules remain publicly available.
 3. As a market creator, I want to choose voting and reveal deadlines, so that the market has a clear lifecycle.
-4. As a market creator, I want to choose a target jury size, so that the resolution process fits the claim's risk level.
+4. As a market creator, I want to choose minimum and maximum jury sizing, so that the resolution process fits the claim's risk level and voter turnout.
 5. As a voter, I want to read the immutable claim rules before staking, so that I understand what YES and NO mean.
 6. As a voter, I want to commit a private vote, so that other voters cannot copy or react to my vote before the reveal phase.
 7. As a voter, I want to choose my stake amount, so that I can size my economic exposure.
@@ -45,7 +45,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 28. As a judge, I want to see SpaceComputer used in the core flow, so that the sponsor integration is meaningful.
 29. As a judge, I want to see Swarm used for immutable rules, so that decentralized storage is not a cosmetic add-on.
 30. As a judge, I want to understand the token story quickly, so that the Umia venture angle is credible.
-31. As a future operator, I want configurable market parameters, so that different claim classes can have different target jury sizes and deadlines.
+31. As a future operator, I want configurable market parameters, so that different claim classes can have different jury-size floors, jury-size maximums, and deadlines.
 32. As a future operator, I want identity and reputation hooks, so that reliable voters or agents can become recognizable over time.
 33. As an ENS-identified participant, I want my identity displayed in the UI, so that users can recognize me without reading raw addresses.
 34. As a developer, I want the contract source verified if practical, so that users can inspect the rules being enforced.
@@ -78,7 +78,9 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - Non-revealing non-juror voters lose the risked portion because unrevealed votes cannot be classified as winning or losing.
 - Selected jurors who fail to reveal forfeit their full stake (~5× a typical normal slash); the extra above the normal 1× risked portion joins the distributable pool on a Yes/No outcome or accrues to the claim creator on Invalid.
 - Winning voters receive stake back plus a share of slashed stake, weighted by their own risked stake.
-- Target jury size is constrained to be odd (≤ 100). Even-count partial reveals can still tie → Invalid.
+- `targetJurySize` is the maximum draw size and is constrained to be odd (≤ 100).
+- Actual jury draw size is `min(maxJurors, max(minJurors, activeCommitters * 15 / 100))`, rounded down by integer math. This ignores the 15% cap until the minimum juror floor is reached, then grows with voter turnout up to the max jury size.
+- Dynamic intermediate draws and partial reveals can be even; ties resolve to Invalid.
 - Minimum revealed jurors is a deployment-time market parameter. The contract permits low quorums as an intentional liveness trade-off, and the chosen quorum should be disclosed in the immutable claim/rules document.
 - The token story for the hackathon is limited to staking and protocol fee/revenue share.
 - Governance, claim-creation token requirements, and complex emissions are deferred.

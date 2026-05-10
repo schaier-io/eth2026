@@ -308,7 +308,7 @@ truthmarket policy set --file ./policy.json
   "revealPeriod": 1200,
   "minStake": "1000000000000000000",
   "jurySize": 1,
-  "minCommits": 7,
+  "minCommits": 1,
   "minRevealedJurors": 1
 }
 ```

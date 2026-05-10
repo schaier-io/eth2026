@@ -78,7 +78,7 @@ export async function cmdMarketInfo(
         `outcome:      ${outcomeLabel(outcome)} (${outcome})\n` +
         `stake token:  ${config.stakeToken}\n` +
         `min stake:    ${config.minStake}\n` +
-        `target jury:  ${config.targetJurySize} (min reveal ${config.minRevealedJurors}, min commits ${config.minCommits}, max commits ${config.maxCommits || "uncapped"})\n` +
+        `max jury:     ${config.targetJurySize} (min reveal ${config.minRevealedJurors}, min commits ${config.minCommits}, max commits ${config.maxCommits || "uncapped"})\n` +
         `risk percent: ${config.riskPercent}\n` +
         `voting ends:  ${new Date(Number(config.votingDeadline) * 1000).toISOString()}\n` +
         `jury cutoff:  ${new Date(Number(config.juryCommitDeadline) * 1000).toISOString()}\n` +

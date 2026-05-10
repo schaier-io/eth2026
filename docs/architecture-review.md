@@ -11,6 +11,7 @@ The Solidity core matches the current random-jury belief-resolution model:
 - normal risked stake is fixed at 20% of stake and determines the normal slash plus reward weight;
 - losers and non-revealing non-jurors lose only their risked stake;
 - jury outcome is count-based: each selected juror contributes 1 vote regardless of stake (see [ADR 0006](./adr/0006-count-based-jury-voting.md));
+- jury draw size is dynamic: `min(maxJurors, max(minJurors, activeCommitters * 15 / 100))`, so small markets draw the minimum juror floor and larger markets scale up to the configured maximum;
 - selected jurors who fail to reveal forfeit their full stake — 5× the fixed 20% normal slash;
 - the extra above the normal 1× risked slash joins the distributable pool on a Yes/No outcome or accrues to the claim creator on Invalid;
 - winner upside is distributed by risked stake;

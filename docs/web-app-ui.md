@@ -42,12 +42,12 @@ The contract still encodes vote values as `1` and `2`; the app maps those values
 
 3. Monitoring dashboard
    - Only show after the user commits.
-   - Show the user's committed position, phase, commit count, target jury size, pool, reveal action, and the next required step.
+   - Show the user's committed position, phase, commit count, max jury size, pool, reveal action, and the next required step.
    - Put randomness, audit hash, jury addresses, commitment hash, and local vault status in a developer settings panel.
 
 4. Create market
    - Keep as a secondary but first-class flow, not hidden in developer settings.
-   - Claim title, detailed YES meaning, detailed NO meaning, edge cases/Invalid conditions, optional image/reference artifact, voting window, target jury size, and minimum revealed jurors.
+   - Claim title, detailed YES meaning, detailed NO meaning, edge cases/Invalid conditions, optional image/reference artifact, voting window, max jury size, and minimum revealed jurors.
    - Upload claim/rules document to Swarm KV before deploying/recording the market.
    - Store only the returned immutable Swarm reference on-chain.
    - After creation, send the creator directly to the focused staking step for the new market.
