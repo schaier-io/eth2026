@@ -5,6 +5,7 @@ import {
   runApifyRedditScrape,
   type GeneratorPolicy,
 } from "../../../../lib/apify-market-generator";
+import { curateWithOpenRouter } from "../../../../lib/server/openrouter-market-curator";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,8 @@ type GenerateRequest = {
   apifyInput?: Record<string, unknown>;
   waitForFinishSeconds?: number;
   pollAttempts?: number;
+  curateWithLlm?: boolean;
+  maxOptions?: number;
 };
 
 function errorResponse(status: number, message: string, extra: Record<string, unknown> = {}) {
@@ -49,13 +52,20 @@ export async function POST(request: Request) {
 
   if (requestItems) {
     const generated = generateMarketCandidates(requestItems, policy);
+    const curation = await maybeCurate(generated.candidates, body);
     return NextResponse.json({
       ok: true,
       action: "draft_from_supplied_reddit_items",
       source: "request_items",
-      createdMarketCount: generated.candidates.length,
-      skippedReason: generated.candidates.length === 0 ? "no_candidate_passed_policy" : undefined,
+      createdMarketCount: curation.candidates.length,
+      skippedReason: curation.candidates.length === 0 ? "no_candidate_passed_policy" : undefined,
       ...generated,
+      candidates: curation.candidates,
+      curation: {
+        usedLlm: curation.usedLlm,
+        model: curation.model,
+        error: curation.error,
+      },
     });
   }
 
@@ -86,6 +96,7 @@ export async function POST(request: Request) {
       pollAttempts: body.pollAttempts ?? policy.apify?.pollAttempts,
     });
     const generated = generateMarketCandidates(items, policy);
+    const curation = await maybeCurate(generated.candidates, body);
 
     return NextResponse.json({
       ok: true,
@@ -96,13 +107,36 @@ export async function POST(request: Request) {
       runStatus: run.status,
       input,
       itemCount: items.length,
-      createdMarketCount: generated.candidates.length,
-      skippedReason: generated.candidates.length === 0 ? "no_candidate_passed_policy" : undefined,
+      createdMarketCount: curation.candidates.length,
+      skippedReason: curation.candidates.length === 0 ? "no_candidate_passed_policy" : undefined,
       ...generated,
+      candidates: curation.candidates,
+      curation: {
+        usedLlm: curation.usedLlm,
+        model: curation.model,
+        error: curation.error,
+      },
     });
   } catch (error) {
     return errorResponse(502, "apify_generation_failed", {
       detail: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+async function maybeCurate(
+  candidates: ReturnType<typeof generateMarketCandidates>["candidates"],
+  body: GenerateRequest,
+) {
+  const shouldCurate = body.curateWithLlm ?? Boolean(process.env.OPENROUTER_API_KEY);
+  const maxOptions = body.maxOptions ?? 5;
+  if (!shouldCurate) {
+    return {
+      usedLlm: false,
+      model: process.env.OPENROUTER_MODEL,
+      candidates: candidates.slice(0, maxOptions),
+      error: undefined,
+    };
+  }
+  return curateWithOpenRouter(candidates, { maxOptions });
 }

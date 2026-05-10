@@ -154,7 +154,7 @@ export const DEFAULT_GENERATOR_POLICY: Required<Omit<GeneratorPolicy, "apify" | 
   keywords: ["real", "fake", "scam", "true", "AI", "proof", "rumor", "shopped", "staged", "deepfake", "verified", "evidence", "source"],
   minRedditScore: 25,
   minCommentCount: 15,
-  minAmbiguityScore: 0.65,
+  minAmbiguityScore: 0.25,
   stake: "100000000000000000",
   marketDefaults: TIMING_MODES["live-mini"].marketDefaults,
 };
@@ -360,7 +360,8 @@ export function scoreRedditItem(item: NormalizedRedditItem, policy: GeneratorPol
   const keywordHits = withDefaults.keywords.filter((term) => content.toLowerCase().includes(term.toLowerCase())).length;
   const questionBoost = item.title.includes("?") ? 0.18 : 0;
   const disagreementBoost = includesAny(content, ["i disagree", "not true", "source?", "proof?", "fake", "real"]) ? 0.2 : 0;
-  const ambiguity = clamp(termHits / 8 + keywordHits / 10 + questionBoost + disagreementBoost);
+  const sourceGenreBoost = includesAny(item.subreddit, ["IsItBullshit", "IsItAI", "Scams", "nottheonion", "quityourbullshit"]) ? 0.25 : 0;
+  const ambiguity = clamp(termHits / 8 + keywordHits / 10 + questionBoost + disagreementBoost + sourceGenreBoost);
 
   const virality = clamp(Math.log10(Math.max(1, item.score + 1)) / 4 + Math.log10(Math.max(1, item.commentCount + 1)) / 4);
   const publicResolvable = item.url ? 1 : 0.55;
@@ -372,6 +373,7 @@ export function scoreRedditItem(item: NormalizedRedditItem, policy: GeneratorPol
   if (ambiguity >= withDefaults.minAmbiguityScore) reasons.push("ambiguity_threshold_met");
   if (questionBoost > 0) reasons.push("question_title");
   if (disagreementBoost > 0) reasons.push("comment_disagreement_signals");
+  if (sourceGenreBoost > 0) reasons.push("source_genre_signal");
 
   if (item.score < withDefaults.minRedditScore) return { total, virality, ambiguity, publicResolvable, safety, reasons, rejectedReason: "score_too_low" };
   if (item.commentCount < withDefaults.minCommentCount) return { total, virality, ambiguity, publicResolvable, safety, reasons, rejectedReason: "comments_too_low" };

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   decodeEventLog,
+  formatUnits,
   isAddress,
   parseUnits,
   type Address,
@@ -62,6 +63,8 @@ interface Status {
   kind: StatusKind;
   message: string;
 }
+
+type AgentLaunchStep = "idle" | "drafting" | "options" | "swarm" | "signing" | "mining" | "done" | "error";
 
 interface FormState {
   name: string;
@@ -126,6 +129,10 @@ export default function DeployPage() {
   const [pendingTx, setPendingTx] = useState<Hex | undefined>();
   const [status, setStatus] = useState<Status>({ kind: "", message: "" });
   const [busy, setBusy] = useState(false);
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [agentStep, setAgentStep] = useState<AgentLaunchStep>("idle");
+  const [agentCandidateTitle, setAgentCandidateTitle] = useState<string | null>(null);
+  const [agentOptions, setAgentOptions] = useState<ApifyGeneratedCandidate[]>([]);
 
   const selectedPreset = presets.find((p) => p.address === form.selectedTokenKey);
   const customTokenValid =
@@ -176,6 +183,7 @@ export default function DeployPage() {
         }
       }
       if (market) {
+        setAgentStep((prev) => (prev === "idle" ? prev : "done"));
         setStatus({ kind: "success", message: `Live at ${market}. Taking you there…` });
         router.push(`/markets/${market}`);
         return;
@@ -258,6 +266,105 @@ export default function DeployPage() {
     }
   }
 
+  async function onAgentLaunch() {
+    if (!isConnected || !address) {
+      setStatus({ kind: "error", message: "Wallet first." });
+      return;
+    }
+    if (walletChainId !== DEFAULT_CHAIN_ID) {
+      setStatus({ kind: "error", message: `Switch to chain ${DEFAULT_CHAIN_ID} first.` });
+      return;
+    }
+
+    setAgentBusy(true);
+    setAgentStep("drafting");
+    setAgentCandidateTitle(null);
+    setAgentOptions([]);
+    setStatus({ kind: "info", message: "Apify Reddit agent is fetching and ranking market options…" });
+
+    try {
+      const options = await fetchApifyAgentOptions();
+      setAgentOptions(options);
+      setAgentStep("options");
+      setStatus({ kind: "success", message: `Agent found ${options.length} market option${options.length === 1 ? "" : "s"}. Pick one to launch.` });
+    } catch (err) {
+      setAgentStep("error");
+      setStatus({ kind: "error", message: errorMessage(err) });
+    } finally {
+      setAgentBusy(false);
+    }
+  }
+
+  async function launchAgentCandidate(candidate: ApifyGeneratedCandidate) {
+    if (!registryAddress) {
+      setStatus({ kind: "error", message: "Registry address not configured." });
+      return;
+    }
+    if (!stakeTokenAddr) {
+      setStatus({ kind: "error", message: "Pick a token first." });
+      return;
+    }
+    if (!isConnected || !address) {
+      setStatus({ kind: "error", message: "Wallet first." });
+      return;
+    }
+    if (walletChainId !== DEFAULT_CHAIN_ID) {
+      setStatus({ kind: "error", message: `Switch to chain ${DEFAULT_CHAIN_ID} first.` });
+      return;
+    }
+
+    setBusy(true);
+    setAgentBusy(true);
+    setAgentCandidateTitle(candidate.claimRulesDraft.title);
+
+    try {
+      const agentSpec = specFromAgentCandidate(candidate, decimals);
+      setAgentCandidateTitle(agentSpec.name);
+      setForm((prev) => ({
+        ...prev,
+        name: agentSpec.name,
+        description: agentSpec.description,
+        tags: agentSpec.tags.join(", "),
+        durationPresetIdx: 1,
+        juryPresetIdx: -1,
+        customJurySize: String(agentSpec.jurySize),
+        customMinCommits: String(agentSpec.minCommits),
+        customMinRevealedJurors: String(agentSpec.minRevealedJurors),
+        minStake: agentSpec.minStakeRaw,
+        creatorBond: "",
+      }));
+
+      setAgentStep("swarm");
+      setStatus({ kind: "info", message: "Stashing the selected agent market rules on Swarm…" });
+      const claimDoc = await publishClaimDocument(agentSpec);
+      const marketSpec = buildMarketSpec({
+        v: agentSpec,
+        swarmReference: claimDoc.referenceBytes,
+        stakeToken: stakeTokenAddr,
+        juryCommitter: juryCommitterAddr ?? address,
+        decimals,
+      });
+
+      setAgentStep("signing");
+      setStatus({ kind: "info", message: "Selected agent market is ready. Sign to launch…" });
+      const hash = await writeContractAsync({
+        address: registryAddress,
+        abi: truthMarketRegistryAbi,
+        functionName: "createMarket",
+        args: [marketSpec],
+      });
+      setPendingTx(hash);
+      setAgentStep("mining");
+      setStatus({ kind: "info", message: `Tx ${hash.slice(0, 10)}… submitted. Mining…` });
+    } catch (err) {
+      setAgentStep("error");
+      setStatus({ kind: "error", message: errorMessage(err) });
+    } finally {
+      setAgentBusy(false);
+      setBusy(false);
+    }
+  }
+
   if (!registryAddress) {
     return (
       <main className="page-shell">
@@ -298,6 +405,47 @@ export default function DeployPage() {
           <button type="button" onClick={() => switchChain({ chainId: DEFAULT_CHAIN_ID })} disabled={isSwitching}>
             {isSwitching ? "Switching…" : `Switch to ${DEFAULT_CHAIN_ID}`}
           </button>
+        </section>
+      ) : null}
+
+      <section className="agent-launch-card" aria-label="Apify Reddit agent launcher">
+        <div className="agent-launch-copy">
+          <p className="eyebrow">Apify Reddit agent</p>
+          <h2>Auto create from live Reddit disputes.</h2>
+          <p className="muted">
+            Fetches Apify data, asks the LLM curator for options, then you choose which market to launch.
+          </p>
+          {agentCandidateTitle ? <p className="agent-launch-picked">Picked: {agentCandidateTitle}</p> : null}
+        </div>
+        <div className="agent-launch-actions">
+          <button
+            type="button"
+            className="agent-launch-button"
+            onClick={onAgentLaunch}
+            disabled={!formReady || busy || agentBusy}
+          >
+            {agentBusy ? agentStepLabel(agentStep) : "Auto create market"}
+          </button>
+          <AgentLaunchFlow step={agentStep} />
+        </div>
+      </section>
+
+      {agentOptions.length > 0 ? (
+        <section className="agent-options" aria-label="Apify agent market options">
+          <div className="agent-options-head">
+            <h2>Agent options</h2>
+            <p className="muted">Review the LLM-curated candidates. Launching still requires your wallet signature.</p>
+          </div>
+          <div className="agent-option-grid">
+            {agentOptions.map((candidate) => (
+              <AgentOptionCard
+                key={candidate.id}
+                candidate={candidate}
+                disabled={!formReady || busy || agentBusy}
+                onLaunch={() => launchAgentCandidate(candidate)}
+              />
+            ))}
+          </div>
         </section>
       ) : null}
 
@@ -626,6 +774,77 @@ function SmallField({
   );
 }
 
+function AgentLaunchFlow({ step }: { step: AgentLaunchStep }) {
+  const steps: Array<{ key: AgentLaunchStep; label: string }> = [
+    { key: "drafting", label: "Draft" },
+    { key: "options", label: "Pick" },
+    { key: "swarm", label: "Swarm" },
+    { key: "signing", label: "Sign" },
+    { key: "mining", label: "Mine" },
+  ];
+  const current = steps.findIndex((item) => item.key === step);
+  return (
+    <ol className="agent-launch-flow" aria-label="Apify agent launch progress">
+      {steps.map((item, index) => {
+        const isDone = step === "done" || current > index;
+        const isCurrent = current === index;
+        return (
+          <li
+            key={item.key}
+            className={isDone ? "is-done" : isCurrent ? "is-current" : ""}
+            aria-current={isCurrent ? "step" : undefined}
+          >
+            <span aria-hidden="true">{isDone ? "✓" : index + 1}</span>
+            {item.label}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function AgentOptionCard({
+  candidate,
+  disabled,
+  onLaunch,
+}: {
+  candidate: ApifyGeneratedCandidate;
+  disabled?: boolean;
+  onLaunch: () => void;
+}) {
+  const curation = candidate.curation;
+  return (
+    <article className="agent-option-card">
+      <div className="agent-option-card-head">
+        <span>r/{candidate.subreddit || "reddit"}</span>
+        {curation ? <strong>{Math.round(curation.confidence * 100)}%</strong> : null}
+      </div>
+      <h3>{candidate.claimRulesDraft.title}</h3>
+      {curation?.rationale ? <p>{curation.rationale}</p> : <p>{candidate.claimRulesDraft.contextSummary}</p>}
+      <dl className="agent-option-rules">
+        <div>
+          <dt>YES</dt>
+          <dd>{candidate.claimRulesDraft.yesMeaning}</dd>
+        </div>
+        <div>
+          <dt>NO</dt>
+          <dd>{candidate.claimRulesDraft.noMeaning}</dd>
+        </div>
+      </dl>
+      {curation?.riskNotes?.length ? (
+        <ul className="agent-option-risks">
+          {curation.riskNotes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      ) : null}
+      <button type="button" onClick={onLaunch} disabled={disabled}>
+        Launch this market
+      </button>
+    </article>
+  );
+}
+
 function StatusBanner({ status }: { status: Status }) {
   if (!status.message) return null;
   return <p className={`vote-status vote-status-${status.kind}`}>{status.message}</p>;
@@ -644,6 +863,106 @@ interface ValidatedSpec {
   jurySize: number;
   minCommits: number;
   minRevealedJurors: number;
+}
+
+interface ApifyGeneratedCandidate {
+  id: string;
+  subreddit: string;
+  stake: string;
+  curation?: {
+    rationale: string;
+    confidence: number;
+    riskNotes: string[];
+  };
+  claimRulesDraft: {
+    title: string;
+    description: string;
+    yesMeaning: string;
+    noMeaning: string;
+    resolutionRules: string;
+    sourceUrl: string;
+    contextSummary: string;
+  };
+}
+
+interface ApifyGenerateResponse {
+  ok?: boolean;
+  error?: string;
+  detail?: string;
+  candidates?: ApifyGeneratedCandidate[];
+  skippedReason?: string;
+}
+
+function agentStepLabel(step: AgentLaunchStep): string {
+  switch (step) {
+    case "drafting":
+      return "Finding options…";
+    case "options":
+      return "Options ready";
+    case "swarm":
+      return "Stashing rules…";
+    case "signing":
+      return "Waiting for signature…";
+    case "mining":
+      return "Mining…";
+    default:
+      return "Working…";
+  }
+}
+
+async function fetchApifyAgentOptions(): Promise<ApifyGeneratedCandidate[]> {
+  const res = await fetch("/api/apify/generated-markets", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      curateWithLlm: true,
+      maxOptions: 5,
+      policy: {
+        maxMarketsCreatedPerRun: 8,
+        marketDefaults: {
+          jurySize: 1,
+          minCommits: 1,
+          minRevealedJurors: 1,
+        },
+      },
+    }),
+  });
+  const body = (await res.json().catch(() => ({}))) as ApifyGenerateResponse;
+  if (!res.ok || body.ok !== true) {
+    throw new Error(body.detail || body.error || "Apify agent could not find market options.");
+  }
+  const candidates = body.candidates ?? [];
+  if (candidates.length === 0) {
+    throw new Error(body.skippedReason || "Apify agent returned no launchable options.");
+  }
+  return candidates;
+}
+
+function specFromAgentCandidate(candidate: ApifyGeneratedCandidate, decimals: number): ValidatedSpec {
+  const draft = candidate.claimRulesDraft;
+  const minStakeRaw = formatUnits(BigInt(candidate.stake), decimals);
+  return {
+    name: draft.title,
+    description: [
+      draft.description,
+      "",
+      `YES: ${draft.yesMeaning}`,
+      `NO: ${draft.noMeaning}`,
+      "",
+      `Resolution rules: ${draft.resolutionRules}`,
+      draft.contextSummary ? `Context: ${draft.contextSummary}` : "",
+      draft.sourceUrl ? `Source: ${draft.sourceUrl}` : "",
+    ].filter(Boolean).join("\n"),
+    tags: ["apify", "reddit", candidate.subreddit].filter(Boolean).slice(0, 5),
+    votingMinutes: 24n,
+    adminMinutes: 12n,
+    revealMinutes: 24n,
+    minStakeRaw,
+    creatorBondRaw: "",
+    jurySize: 1,
+    minCommits: 1,
+    minRevealedJurors: 1,
+  };
 }
 
 function validate(form: FormState): { ok: boolean; errors: string[]; spec: ValidatedSpec | null } {
