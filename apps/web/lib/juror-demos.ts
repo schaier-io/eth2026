@@ -554,9 +554,6 @@ return {
       secondaryHref:
         "https://github.com/schaier-io/eth2026/blob/main/docs/adr/0005-spacecomputer-first-sponsor-strategy.md",
     },
-    limits: [
-      "This build verifies deterministic jury selection from a posted public cTRNG value and stores replay evidence on-chain; beacon proof validation is shown as external audit evidence rather than enforced by the contract.",
-    ],
   },
   {
     slug: "apify-x402",
@@ -663,9 +660,6 @@ const created = await deps.createMarket(spec, { candidate });`,
       secondaryLabel: "Open agent code",
       secondaryHref: "https://github.com/schaier-io/eth2026/tree/main/agents/apify",
     },
-    limits: [
-      "The payment gate is explicit at the fetch boundary; the full Apify-to-market path runs behind that boundary.",
-    ],
   },
   {
     slug: "agentic-venture",

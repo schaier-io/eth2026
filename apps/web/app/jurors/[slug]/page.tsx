@@ -85,6 +85,8 @@ export default async function JurorDemoPage({ params }: { params: Params }) {
 }
 
 function JudgingView({ demo }: { demo: JurorDemo }) {
+  const isPackageTrack = demo.slug === "swarm-verified-fetch" || demo.slug === "swarm-kv";
+
   return (
     <div className="juror-impl">
       <section className="juror-impl-grid juror-impl-build">
@@ -181,42 +183,71 @@ function JudgingView({ demo }: { demo: JurorDemo }) {
         <header className="juror-section-card-head">
           <span className="juror-section-step">04</span>
           <div>
-            <p className="eyebrow">Run it yourself</p>
-            <h2>Two published packages, one bootstrap script</h2>
-            <p className="juror-section-sub">
-              The Swarm packages are live on npm. The CLI script installs, builds, starts anvil,
-              deploys local contracts, and writes a local agent policy — full stack in one command.
-            </p>
+            {isPackageTrack ? (
+              <>
+                <p className="eyebrow">Run it yourself</p>
+                <h2>Two published packages, one bootstrap script</h2>
+                <p className="juror-section-sub">
+                  The Swarm packages are live on npm. The CLI script installs, builds, starts
+                  anvil, deploys local contracts, and writes a local agent policy — full stack
+                  in one command.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="eyebrow">Try the marketplace</p>
+                <h2>Open the live market surface</h2>
+                <p className="juror-section-sub">
+                  Inspect live claims, locked rules, Swarm verification, selected jurors,
+                  reveal state, and settlement from the same marketplace judges can try.
+                </p>
+              </>
+            )}
           </div>
         </header>
-        <div className="juror-install-grid">
-          {jurorPackageLinks.map((pkg) => (
-            <article className="juror-install-card" key={pkg.name}>
-              <h3>{pkg.name}</h3>
-              <p>{pkg.description}</p>
+        {isPackageTrack ? (
+          <div className="juror-install-grid">
+            {jurorPackageLinks.map((pkg) => (
+              <article className="juror-install-card" key={pkg.name}>
+                <h3>{pkg.name}</h3>
+                <p>{pkg.description}</p>
+                <pre className="juror-command">
+                  <code>{pkg.install}</code>
+                </pre>
+                <a href={pkg.url} target="_blank" rel="noreferrer">
+                  Open npm package &rarr;
+                </a>
+              </article>
+            ))}
+            <article className="juror-install-card juror-script-card">
+              <h3>{jurorBootstrapScript.label}</h3>
+              <p>{jurorBootstrapScript.description}</p>
               <pre className="juror-command">
-                <code>{pkg.install}</code>
+                <code>{jurorBootstrapScript.command}</code>
               </pre>
-              <a href={pkg.url} target="_blank" rel="noreferrer">
-                Open npm package &rarr;
+              <a
+                href={githubSourceUrl(jurorBootstrapScript.source, jurorBootstrapScript.line)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open skills.sh &rarr;
               </a>
             </article>
-          ))}
-          <article className="juror-install-card juror-script-card">
-            <h3>{jurorBootstrapScript.label}</h3>
-            <p>{jurorBootstrapScript.description}</p>
-            <pre className="juror-command">
-              <code>{jurorBootstrapScript.command}</code>
-            </pre>
-            <a
-              href={githubSourceUrl(jurorBootstrapScript.source, jurorBootstrapScript.line)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open skills.sh &rarr;
-            </a>
-          </article>
-        </div>
+          </div>
+        ) : (
+          <div className="juror-install-grid">
+            <article className="juror-install-card juror-script-card">
+              <h3>TruthMarket marketplace</h3>
+              <p>
+                Start from the market list, open any claim, and walk the judge through
+                staking, commit, jury selection, reveal, and settlement.
+              </p>
+              <Link href="/" className="juror-install-link">
+                Try the marketplace &rarr;
+              </Link>
+            </article>
+          </div>
+        )}
       </section>
 
       {demo.limits?.length ? (
