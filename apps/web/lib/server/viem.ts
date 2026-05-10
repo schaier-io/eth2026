@@ -22,7 +22,7 @@ const clientCache = new Map<number, PublicClient>();
 
 export function getChainId(): number {
   const raw = process.env.NEXT_PUBLIC_CHAIN_ID;
-  if (!raw) return foundry.id;
+  if (!raw) return sepolia.id;
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) {
     throw new Error(`Invalid NEXT_PUBLIC_CHAIN_ID=${raw}.`);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { formatUnits, parseUnits, type Address, type Hex } from "viem";
 import {
@@ -346,6 +346,17 @@ function CommitPanel(props: Props) {
   });
   const allowanceVal = (allowance.data as bigint | undefined) ?? 0n;
   const needsApprove = stakeBig > 0n && allowanceVal < stakeBig;
+  const balance = useReadContract({
+    address: props.stakeToken,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address) && !existing, refetchInterval: 4000 },
+  });
+  const balanceVal = (balance.data as bigint | undefined) ?? 0n;
+  const balanceKnown = balance.data !== undefined;
+  const balanceTooLow = balanceKnown && stakeBig > balanceVal;
+  const tokenBalanceUnreadable = Boolean(balance.error);
 
   const { isLoading: txMining, isSuccess: txMined } = useWaitForTransactionReceipt({ hash: pendingTx });
 
@@ -371,7 +382,15 @@ function CommitPanel(props: Props) {
 
         <div className="vote-existing">
           <span>
-            Committed vote: <strong>{existing.vote === 1 ? "YES" : "NO"}</strong> · stake{" "}
+            Committed vote:{" "}
+            <strong>
+              {existing.vote === 1 ? (
+                <span className="outcome-arrow up" aria-label="Yes">▲</span>
+              ) : (
+                <span className="outcome-arrow down" aria-label="No">▼</span>
+              )}
+            </strong>{" "}
+            · stake{" "}
             <code>{formatUnits(BigInt(existing.stake), props.decimals)} {props.symbol}</code>
           </span>
           <button type="button" className="vault-download" onClick={() => downloadVaultBackup(existing)}>
@@ -430,6 +449,13 @@ function CommitPanel(props: Props) {
       });
 
       setStatus({ kind: "info", message: "Sending it on-chain…" });
+      await publicClient!.simulateContract({
+        account: address,
+        address: props.market,
+        abi: truthMarketAbi,
+        functionName: "commitVote",
+        args: [commitHash, stakeBig],
+      });
       const hash = await writeContractAsync({
         address: props.market,
         abi: truthMarketAbi,
@@ -456,7 +482,7 @@ function CommitPanel(props: Props) {
         message: `Locked in: ${formatUnits(stakeBig, props.decimals)} ${props.symbol} on ${direction.toUpperCase()}. Reveal nonce saved in this browser — back it up.`,
       });
     } catch (err) {
-      setStatus({ kind: "error", message: errorMessage(err) });
+      setStatus({ kind: "error", message: commitErrorMessage(err, props.symbol) });
     } finally {
       setBusy(false);
     }
@@ -483,16 +509,18 @@ function CommitPanel(props: Props) {
           className={`vote-dir vote-dir-yes ${direction === "Yes" ? "is-active" : ""}`}
           onClick={() => setDirection("Yes")}
           disabled={inputsDisabled}
+          aria-label="Vote yes"
         >
-          YES
+          <span className="outcome-arrow up" aria-hidden="true">▲</span>
         </button>
         <button
           type="button"
           className={`vote-dir vote-dir-no ${direction === "No" ? "is-active" : ""}`}
           onClick={() => setDirection("No")}
           disabled={inputsDisabled}
+          aria-label="Vote no"
         >
-          NO
+          <span className="outcome-arrow down" aria-hidden="true">▼</span>
         </button>
       </div>
 
@@ -507,8 +535,24 @@ function CommitPanel(props: Props) {
         />
         <small className="muted">
           Min: {formatUnits(minStakeBig, props.decimals)} {props.symbol} · 20% on the line.
+          {balanceKnown ? (
+            <>
+              {" "}· Balance: {formatUnits(balanceVal, props.decimals)} {props.symbol}
+            </>
+          ) : null}
         </small>
       </label>
+
+      {balanceTooLow ? (
+        <p className="vote-status vote-status-error">
+          You only have {formatUnits(balanceVal, props.decimals)} {props.symbol}. Lower the stake or fund this wallet.
+        </p>
+      ) : null}
+      {tokenBalanceUnreadable ? (
+        <p className="vote-status vote-status-error">
+          This market's stake token does not look like a readable ERC-20. Commits need a plain ERC-20 token.
+        </p>
+      ) : null}
 
       <div className="vote-actions">
         {needsApprove && !votingClosed ? (
@@ -516,7 +560,7 @@ function CommitPanel(props: Props) {
             type="button"
             className="primary"
             onClick={onApprove}
-            disabled={inputsDisabled || stakeBelowMin || stakeBig === 0n}
+            disabled={inputsDisabled || stakeBelowMin || stakeBig === 0n || balanceTooLow || tokenBalanceUnreadable}
           >
             {busy ? "Approving…" : `Approve ${formatUnits(stakeBig, props.decimals)} ${props.symbol}`}
           </button>
@@ -525,7 +569,7 @@ function CommitPanel(props: Props) {
           type="button"
           className="primary"
           onClick={onCommit}
-          disabled={inputsDisabled || needsApprove || stakeBelowMin || stakeBig === 0n}
+          disabled={inputsDisabled || needsApprove || stakeBelowMin || stakeBig === 0n || balanceTooLow || tokenBalanceUnreadable}
         >
           {votingClosed
             ? "Voting closed"
@@ -599,7 +643,15 @@ function RevealPanel(props: Props) {
         </p>
       ) : null}
       <p>
-        Time to reveal · <strong>{vault.vote === 1 ? "YES" : "NO"}</strong> · stake{" "}
+        Time to reveal ·{" "}
+        <strong>
+          {vault.vote === 1 ? (
+            <span className="outcome-arrow up" aria-label="Yes">▲</span>
+          ) : (
+            <span className="outcome-arrow down" aria-label="No">▼</span>
+          )}
+        </strong>{" "}
+        · stake{" "}
         <code>{formatUnits(BigInt(vault.stake), props.decimals)} {props.symbol}</code>
         {!revealClosed && secondsLeft !== null ? (
           <>
@@ -702,16 +754,24 @@ function withdrawCopy(
   previewVal: bigint,
   decimals: number,
   symbol: string,
-): { headline: string; detail?: string } {
+): { headline: ReactNode; detail?: string } {
   switch (outcome) {
     case 1: // Yes
       return {
-        headline: "Verdict: YES",
+        headline: (
+          <>
+            Verdict: <span className="outcome-arrow up" aria-label="Yes">▲</span>
+          </>
+        ),
         detail: previewVal > 0n ? "your stake + share of the slashed pool" : "no participating stake to claim",
       };
     case 2: // No
       return {
-        headline: "Verdict: NO",
+        headline: (
+          <>
+            Verdict: <span className="outcome-arrow down" aria-label="No">▼</span>
+          </>
+        ),
         detail: previewVal > 0n ? "your stake + share of the slashed pool" : "no participating stake to claim",
       };
     case 3: // Invalid
@@ -743,4 +803,19 @@ function errorMessage(err: unknown): string {
   }
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+function commitErrorMessage(err: unknown, symbol: string): string {
+  const message = errorMessage(err);
+  const lower = message.toLowerCase();
+  if (lower.includes("gas limit too high")) {
+    return `The stake token rejected transferFrom with "gas limit too high". This market is probably using an incompatible stake token. Use a market backed by a plain ERC-20 token, and make sure this wallet holds enough ${symbol}.`;
+  }
+  if (lower.includes("transfer amount exceeds balance") || lower.includes("insufficient balance")) {
+    return `This wallet does not have enough ${symbol} to cover the stake. Lower the stake or fund the wallet.`;
+  }
+  if (lower.includes("transfer amount exceeds allowance") || lower.includes("insufficient allowance")) {
+    return "The approval is too low. Approve the stake token again, then commit.";
+  }
+  return message;
 }

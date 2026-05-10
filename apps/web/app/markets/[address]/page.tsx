@@ -32,6 +32,10 @@ function fmtTimestamp(epoch: bigint | undefined): string {
   return new Date(Number(epoch) * 1000).toISOString().replace("T", " ").slice(0, 19) + " UTC";
 }
 
+function claimDocumentApiUrl(reference: Hex): string {
+  return `/api/swarm/claim-doc?reference=${encodeURIComponent(reference)}`;
+}
+
 interface MarketView {
   contractId: `0x${string}`;
   contractVersion: number;
@@ -176,7 +180,7 @@ async function loadMarket(address: Address): Promise<MarketView | null> {
     title: claim.document?.title ?? "(claim unavailable)",
     context: claim.document?.context ?? "",
     tags: claim.document?.tags ?? [],
-    claimUrl: claim.url,
+    claimUrl: claimDocumentApiUrl(core[2]),
     claimVerified: claim.verified,
     claimError: claim.error,
     phase: Number(phase),
@@ -335,7 +339,15 @@ export default async function MarketDetailPage({ params }: { params: Params }) {
         <div>
           <p className="eyebrow">
             <span className={displayPhase.className}>{displayPhase.label}</span>
-            {displayPhase.outcomeLabel ? (
+            {displayPhase.outcomeLabel === "YES" ? (
+              <span className="outcome-pill outcome-yes">
+                <span className="outcome-arrow up" aria-label="Yes">▲</span>
+              </span>
+            ) : displayPhase.outcomeLabel === "NO" ? (
+              <span className="outcome-pill outcome-no">
+                <span className="outcome-arrow down" aria-label="No">▼</span>
+              </span>
+            ) : displayPhase.outcomeLabel ? (
               <span className={`outcome-pill outcome-${displayPhase.outcomeLabel.toLowerCase()}`}>
                 {displayPhase.outcomeLabel}
               </span>
@@ -385,9 +397,13 @@ export default async function MarketDetailPage({ params }: { params: Params }) {
           label="Jury verdict"
           value={
             <>
-              <span className="tally-yes">YES {data.juryYesCount}</span>
+              <span className="tally-yes">
+                <span className="outcome-arrow up" aria-label="Yes">▲</span> {data.juryYesCount}
+              </span>
               <span className="tally-divider"> · </span>
-              <span className="tally-no">NO {data.juryNoCount}</span>
+              <span className="tally-no">
+                <span className="outcome-arrow down" aria-label="No">▼</span> {data.juryNoCount}
+              </span>
             </>
           }
         />

@@ -139,6 +139,62 @@ export default function JurorsPage() {
         </div>
       </section>
 
+      <section className="juror-intro-grid" aria-label="What jurors can inspect">
+        <div>
+          <p className="eyebrow">Opening frame</p>
+          <h2>Prediction markets for questions normal oracles cannot answer.</h2>
+        </div>
+        <p>
+          TruthMarket is for probabilistic, subjective, or hard-to-verify claims.
+          The product promise is process: immutable claim/rules documents,
+          private committed votes, public randomness, selected jurors,
+          count-based reveals, slashing, and pull-pattern payouts.
+        </p>
+      </section>
+
+      <section className="juror-market-hook" aria-label="Try TruthMarket yourself">
+        <div>
+          <p className="eyebrow">Or try it yourself</p>
+          <h2>Open a market and feel the mechanism before the pitch.</h2>
+          <p>
+            Start from the live market surface: inspect the claim, read the
+            locked rules, connect a wallet, and follow the commit, selected
+            juror, reveal, and settlement flow.
+          </p>
+        </div>
+        <div className="juror-market-hook-actions">
+          <Link href="/" className="page-header-cta">
+            Try a market yourself
+          </Link>
+          <Link href="/deploy" className="page-header-cta page-header-cta-ghost">
+            Launch a market
+          </Link>
+        </div>
+      </section>
+
+      <section className="juror-review-steps" aria-label="Review steps">
+        <article>
+          <span>01</span>
+          <h3>Pick a track</h3>
+          <p>Choose the sponsor lens a judge cares about.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h3>Read the root story</h3>
+          <p>Start with the all-tracks deck before diving into proof.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h3>Inspect evidence</h3>
+          <p>Each track has implementation, demo path, criteria, code, and install proof.</p>
+        </article>
+        <article>
+          <span>04</span>
+          <h3>Run the flow</h3>
+          <p>Use the live market surface after the narrative is clear.</p>
+        </article>
+      </section>
+
       <section className="juror-root-presentation" aria-labelledby="root-pitch-title">
         <div className="juror-section-head juror-root-presentation-head">
           <div>

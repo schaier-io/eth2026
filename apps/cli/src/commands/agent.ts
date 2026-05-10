@@ -23,6 +23,7 @@ export interface AgentRunOpts
     PolicyOverrides,
     ApifyAgentOptions {
   noSwarmPublish?: boolean;
+  policyJson?: Record<string, unknown>;
 }
 
 export async function cmdAgentTick(
@@ -33,7 +34,7 @@ export async function cmdAgentTick(
   const { runApifyAgentTick } = await loadApifyAgent();
   const result = await runApifyAgentTick(
     { agentStatePath: cfg.agentStatePath },
-    opts,
+    normalizeAgentOptions(opts),
     createAgentDeps(cfg, opts),
     () => {
       /* discard tick events for one-shot */
@@ -77,11 +78,18 @@ export async function cmdAgentRun(
 
   await runApifyAgentLoop(
     { agentStatePath: cfg.agentStatePath },
-    opts,
+    normalizeAgentOptions(opts),
     createAgentDeps(cfg, opts),
     emit,
     () => stopped,
   );
+}
+
+function normalizeAgentOptions(opts: AgentRunOpts): ApifyAgentOptions {
+  return {
+    ...opts,
+    policy: opts.policy ?? opts.policyJson,
+  };
 }
 
 type ApifyAgentModule = typeof import("../../../../agents/apify/dist/index.js");

@@ -5,6 +5,7 @@
 !.agents/skills/
 !.agents/skills/**
 .superstack/
+.vercel/
 
 # Environment and local runtime state.
 .env

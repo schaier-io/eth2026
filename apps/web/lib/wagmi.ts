@@ -14,7 +14,7 @@ const APP_ICON = `${APP_URL.replace(/\/$/, "")}/brand-mark.svg`;
 
 export const wagmiConfig = createConfig({
   ssr: true,
-  chains: [foundry, baseSepolia, sepolia],
+  chains: [sepolia, baseSepolia, foundry],
   // Order = display order in the connect modal. Mobile-first connectors first
   // (MetaMask SDK + Coinbase Wallet handle deep links to their mobile apps).
   connectors: [

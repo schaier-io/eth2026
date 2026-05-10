@@ -165,6 +165,7 @@ const agent = program.command("agent").description("automated market-creation lo
 const agentSharedOpts = (cmd: Command): Command =>
   cmd
     .option("--endpoint <url>", "apify generator endpoint (default: TM_APIFY_ENDPOINT or http://localhost:3000/api/apify/generated-markets)")
+    .option("--policy-json <json>", "generator policy JSON forwarded to the Apify endpoint", parseJsonOption)
     .option("--interval-seconds <n>", "seconds between iterations (run only)", (v) => Number(v), 3600)
     .option("--duration-seconds <n>", "total market lifetime in seconds (split 40/20/40 across phases)", (v) => Number(v), 3600)
     .option("--jury-size <n>", "jury draw size (odd)", (v) => Number(v))
@@ -181,6 +182,14 @@ shared(agentSharedOpts(agent.command("run").description("loop forever: fetch can
 
 shared(agentSharedOpts(agent.command("tick").description("run one iteration of the agent loop and exit")))
   .action(async (opts) => run(() => cmdAgentTick(ctx(opts), opts), ctx(opts)));
+
+function parseJsonOption(value: string): Record<string, unknown> {
+  const parsed = JSON.parse(value) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("expected a JSON object");
+  }
+  return parsed as Record<string, unknown>;
+}
 
 // -------- vote --------
 const vote = program.command("vote").description("commit-reveal flows");
