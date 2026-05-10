@@ -18,6 +18,7 @@ export function SiteHeader() {
           <NavLink href="/">Markets</NavLink>
           <NavLink href="/my-markets">Yours</NavLink>
           <NavLink href="/deploy">Launch</NavLink>
+          <NavLink href="/jurors">Jurors</NavLink>
         </nav>
         <div className="site-header-meta">
           <span className="site-chain-pill" title={`Target chain id ${chainId}`}>

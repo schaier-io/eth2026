@@ -5,7 +5,7 @@ import { coinbaseWallet, injected, metaMask, walletConnect } from "wagmi/connect
 const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 
 const APP_NAME = "TruthMarket";
-const APP_DESCRIPTION = "Bet on what's true. A random jury rules.";
+const APP_DESCRIPTION = "Random-jury belief resolution with private commit-reveal.";
 const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL ||
   (typeof window !== "undefined" ? window.location.origin : "https://truthmarket.local");

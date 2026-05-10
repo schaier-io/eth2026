@@ -21,6 +21,7 @@ export const truthMarketAbi = parseAbi([
   "function totalRiskedStake() view returns (uint256)",
   "function distributablePool() view returns (uint256)",
   "function targetJurySize() view returns (uint32)",
+  "function minCommits() view returns (uint32)",
   "function minRevealedJurors() view returns (uint32)",
   "function revealedJurorCount() view returns (uint32)",
   "function juryYesCount() view returns (uint32)",

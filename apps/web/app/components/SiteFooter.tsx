@@ -16,9 +16,10 @@ export function SiteFooter() {
           <Link href="/">Markets</Link>
           <Link href="/my-markets">Yours</Link>
           <Link href="/deploy">Launch</Link>
+          <Link href="/jurors">Jurors</Link>
         </nav>
         <p className="site-footer-meta">
-          <span>Truth, settled by a random jury.</span>
+          <span>Random-jury belief resolution.</span>
           <span>·</span>
           <span>{chain.name}</span>
           <span>·</span>
