@@ -346,6 +346,17 @@ function CommitPanel(props: Props) {
   });
   const allowanceVal = (allowance.data as bigint | undefined) ?? 0n;
   const needsApprove = stakeBig > 0n && allowanceVal < stakeBig;
+  const balance = useReadContract({
+    address: props.stakeToken,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address) && !existing, refetchInterval: 4000 },
+  });
+  const balanceVal = (balance.data as bigint | undefined) ?? 0n;
+  const balanceKnown = balance.data !== undefined;
+  const balanceTooLow = balanceKnown && stakeBig > balanceVal;
+  const tokenBalanceUnreadable = Boolean(balance.error);
 
   const { isLoading: txMining, isSuccess: txMined } = useWaitForTransactionReceipt({ hash: pendingTx });
 
@@ -438,6 +449,13 @@ function CommitPanel(props: Props) {
       });
 
       setStatus({ kind: "info", message: "Sending it on-chain…" });
+      await publicClient!.simulateContract({
+        account: address,
+        address: props.market,
+        abi: truthMarketAbi,
+        functionName: "commitVote",
+        args: [commitHash, stakeBig],
+      });
       const hash = await writeContractAsync({
         address: props.market,
         abi: truthMarketAbi,
@@ -464,7 +482,7 @@ function CommitPanel(props: Props) {
         message: `Locked in: ${formatUnits(stakeBig, props.decimals)} ${props.symbol} on ${direction.toUpperCase()}. Reveal nonce saved in this browser — back it up.`,
       });
     } catch (err) {
-      setStatus({ kind: "error", message: errorMessage(err) });
+      setStatus({ kind: "error", message: commitErrorMessage(err, props.symbol) });
     } finally {
       setBusy(false);
     }
@@ -517,8 +535,24 @@ function CommitPanel(props: Props) {
         />
         <small className="muted">
           Min: {formatUnits(minStakeBig, props.decimals)} {props.symbol} · 20% on the line.
+          {balanceKnown ? (
+            <>
+              {" "}· Balance: {formatUnits(balanceVal, props.decimals)} {props.symbol}
+            </>
+          ) : null}
         </small>
       </label>
+
+      {balanceTooLow ? (
+        <p className="vote-status vote-status-error">
+          You only have {formatUnits(balanceVal, props.decimals)} {props.symbol}. Lower the stake or fund this wallet.
+        </p>
+      ) : null}
+      {tokenBalanceUnreadable ? (
+        <p className="vote-status vote-status-error">
+          This market's stake token does not look like a readable ERC-20. Commits need a plain ERC-20 token.
+        </p>
+      ) : null}
 
       <div className="vote-actions">
         {needsApprove && !votingClosed ? (
@@ -526,7 +560,7 @@ function CommitPanel(props: Props) {
             type="button"
             className="primary"
             onClick={onApprove}
-            disabled={inputsDisabled || stakeBelowMin || stakeBig === 0n}
+            disabled={inputsDisabled || stakeBelowMin || stakeBig === 0n || balanceTooLow || tokenBalanceUnreadable}
           >
             {busy ? "Approving…" : `Approve ${formatUnits(stakeBig, props.decimals)} ${props.symbol}`}
           </button>
@@ -535,7 +569,7 @@ function CommitPanel(props: Props) {
           type="button"
           className="primary"
           onClick={onCommit}
-          disabled={inputsDisabled || needsApprove || stakeBelowMin || stakeBig === 0n}
+          disabled={inputsDisabled || needsApprove || stakeBelowMin || stakeBig === 0n || balanceTooLow || tokenBalanceUnreadable}
         >
           {votingClosed
             ? "Voting closed"
@@ -769,4 +803,19 @@ function errorMessage(err: unknown): string {
   }
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+function commitErrorMessage(err: unknown, symbol: string): string {
+  const message = errorMessage(err);
+  const lower = message.toLowerCase();
+  if (lower.includes("gas limit too high")) {
+    return `The stake token rejected transferFrom with "gas limit too high". This market is probably using an incompatible stake token. Use a market backed by a plain ERC-20 token, and make sure this wallet holds enough ${symbol}.`;
+  }
+  if (lower.includes("transfer amount exceeds balance") || lower.includes("insufficient balance")) {
+    return `This wallet does not have enough ${symbol} to cover the stake. Lower the stake or fund the wallet.`;
+  }
+  if (lower.includes("transfer amount exceeds allowance") || lower.includes("insufficient allowance")) {
+    return "The approval is too low. Approve the stake token again, then commit.";
+  }
+  return message;
 }
