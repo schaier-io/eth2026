@@ -10,11 +10,10 @@ import { SourcifyBadge } from "../components/SourcifyBadge";
 import { SwarmBadge } from "../components/SwarmBadge";
 import { registryAddress, truthMarketRegistryAbi } from "../../lib/registry";
 import { TRUTH_MARKET_CONTRACT_ID, truthMarketAbi } from "../../lib/truthmarket";
+import { getMarketDisplayPhase } from "../../lib/market-phase";
 import type { ContractVerification } from "../../lib/contract-verification";
 
 const DEFAULT_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 31337);
-const PHASE_LABEL = ["Voting", "Reveal", "Resolved"] as const;
-const OUTCOME_LABEL = ["Unresolved", "YES", "NO", "Invalid"] as const;
 
 type FieldName =
   | "CONTRACT_ID"
@@ -25,6 +24,7 @@ type FieldName =
   | "bondPosted"
   | "stakeToken"
   | "votingDeadline"
+  | "juryCommitDeadline"
   | "revealDeadline"
   | "commitCount";
 
@@ -37,6 +37,7 @@ const FIELDS: readonly FieldName[] = [
   "bondPosted",
   "stakeToken",
   "votingDeadline",
+  "juryCommitDeadline",
   "revealDeadline",
   "commitCount",
 ];
@@ -50,6 +51,7 @@ interface MarketRow {
   bondPosted?: boolean;
   stakeToken?: Address;
   votingDeadline?: bigint;
+  juryCommitDeadline?: bigint;
   revealDeadline?: bigint;
   commitCount?: number;
 }
@@ -98,8 +100,9 @@ export default function MyMarketsPage() {
         bondPosted: slice[5]?.result as boolean | undefined,
         stakeToken: slice[6]?.result as Address | undefined,
         votingDeadline: slice[7]?.result as bigint | undefined,
-        revealDeadline: slice[8]?.result as bigint | undefined,
-        commitCount: slice[9]?.result as number | undefined,
+        juryCommitDeadline: slice[8]?.result as bigint | undefined,
+        revealDeadline: slice[9]?.result as bigint | undefined,
+        commitCount: slice[10]?.result as number | undefined,
       };
     });
   }, [reads.data, addresses]);
@@ -213,9 +216,16 @@ export default function MyMarketsPage() {
           </p>
         </section>
       ) : list.isLoading ? (
-        <section className="card">
-          <p className="muted">Pulling your launches…</p>
-        </section>
+        <ul className="markets-grid" aria-busy="true" aria-label="Loading your launches">
+          {[0, 1, 2].map((i) => (
+            <li key={i} className="market-card skeleton-card">
+              <div className="skeleton-line skeleton-line-md" />
+              <div className="skeleton-line skeleton-line-sm" />
+              <div className="skeleton-line skeleton-line-sm" />
+              <div className="skeleton-line skeleton-line-xs" />
+            </li>
+          ))}
+        </ul>
       ) : addresses.length === 0 ? (
         <section className="empty-state">
           <h2>Nothing here yet.</h2>
@@ -249,16 +259,13 @@ function MyMarketCard({
   verification?: ContractVerification;
 }) {
   const bondPending = (row.creatorBond ?? 0n) > 0n && row.bondPosted === false;
-  const phase = row.phase ?? 0;
-  const outcome = row.outcome ?? 0;
-  const resolvedVariant =
-    outcome === 1 ? "phase-resolved-yes" : outcome === 2 ? "phase-resolved-no" : "phase-resolved-invalid";
-  const phaseClass =
-    phase === 0
-      ? "phase-pill phase-voting"
-      : phase === 1
-        ? "phase-pill phase-reveal"
-        : `phase-pill ${outcome > 0 ? resolvedVariant : "phase-resolved"}`;
+  const display = getMarketDisplayPhase({
+    phase: row.phase,
+    outcome: row.outcome,
+    votingDeadline: row.votingDeadline,
+    juryCommitDeadline: row.juryCommitDeadline,
+    revealDeadline: row.revealDeadline,
+  });
 
   return (
     <li className={`market-card ${bondPending ? "market-card-pending" : ""}`}>
@@ -271,9 +278,9 @@ function MyMarketCard({
                 post your bond
               </span>
             ) : (
-              <span className={phaseClass}>
-                {PHASE_LABEL[phase] ?? "?"}
-                {phase === 2 && outcome > 0 ? ` · ${OUTCOME_LABEL[outcome] ?? "?"}` : ""}
+              <span className={display.className}>
+                {display.label}
+                {display.outcomeLabel ? ` · ${display.outcomeLabel}` : ""}
               </span>
             )}
           </div>
@@ -292,17 +299,18 @@ function MyMarketCard({
               <dd>{row.commitCount ?? "?"}</dd>
             </div>
           )}
-          {row.votingDeadline ? (
+          {display.deadline ? (
             <div>
-              <dt>{phase === 0 ? "Voting ends" : phase === 1 ? "Reveal ends" : "Resolved"}</dt>
+              <dt>{display.deadline.label}</dt>
               <dd>
-                {phase === 2 ? (
-                  <span className="muted">final</span>
-                ) : (
-                  <TimeAgo
-                    deadline={Number(phase === 0 ? row.votingDeadline : row.revealDeadline ?? row.votingDeadline)}
-                  />
-                )}
+                <TimeAgo deadline={display.deadline.epoch} />
+              </dd>
+            </div>
+          ) : row.phase === 2 ? (
+            <div>
+              <dt>Resolved</dt>
+              <dd>
+                <span className="muted">final</span>
               </dd>
             </div>
           ) : null}

@@ -246,7 +246,7 @@ contract TruthMarketLifecycleTest is Test {
     function test_LifecycleSlashesLosersAndPaysWinners() public {
         // Max jury size=3. Mix yes/no voters with different stakes.
         // Risked stake is fixed at 20% per voter.
-        market = _deployMarket(3, 20, 2);
+        market = _deployMarket(3, 20, 3);
 
         V[] memory yes = _makeVoters(15, 60 ether, 1); // risked 12 each (15 * 12 = 180 total)
         // 5 NO voters via separate make so addresses don't clash
@@ -322,7 +322,7 @@ contract TruthMarketLifecycleTest is Test {
     function test_NonRevealingJurorAtValidOutcomeForfeitsFullStake() public {
         // Max jury size=3, minCommits=20. Find which addresses get drawn as jurors and pick
         // one of them to skip reveal — should forfeit full stake; rest of payouts work.
-        market = _deployMarket(3, 20, 2);
+        market = _deployMarket(3, 20, 1);
         V[] memory vs = _makeVoters(20, 50 ether, 1); // all YES, risked 20
         _commitAll(vs);
 
@@ -372,7 +372,7 @@ contract TruthMarketLifecycleTest is Test {
 
     function test_NonRevealingJurorPenaltyBypassesConvictionAtLowConv() public {
         // 10% conviction juror who skips reveal still loses full stake.
-        market = _deployMarket(3, 20, 2);
+        market = _deployMarket(3, 20, 1);
         V[] memory vs = _makeVoters(20, 100 ether, 1); // 10% conv → risked 10
         _commitAll(vs);
 
@@ -400,9 +400,9 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function test_InvalidWhenTooFewJurorsRevealRoutesPenaltyToCreator() public {
-        // Max jury size=3, minRevealedJurors=2. Only one juror reveals → Invalid; the other
+        // Max jury size=3, minRevealedJurors=3. Only one juror reveals → Invalid; the other
         // two jurors lose full stakes, accruing to the CREATOR (not treasury).
-        market = _deployMarket(3, 20, 2);
+        market = _deployMarket(3, 20, 3);
         V[] memory vs = _makeVoters(20, 80 ether, 1); // 100% conv → risked 80
         _commitAll(vs);
 
@@ -464,15 +464,19 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function test_RevertsConstructorWhenMinCommitsBelowMinRevealedJurors() public {
-        _expectNewMarketRevert(TruthMarket.BadParams.selector, _initParams(3, 1, 2));
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, _initParams(3, 1, 3));
     }
 
     function test_RevertsConstructorWhenMinRevealedJurorsZero() public {
         _expectNewMarketRevert(TruthMarket.BadParams.selector, _initParams(1, 7, 0));
     }
 
+    function test_RevertsConstructorWhenMinRevealedJurorsEven() public {
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, _initParams(3, 20, 2));
+    }
+
     function test_RevertsConstructorWhenMinRevealedJurorsExceedsTargetJurySize() public {
-        _expectNewMarketRevert(TruthMarket.BadParams.selector, _initParams(3, 20, 4));
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, _initParams(3, 20, 5));
     }
 
     function test_RevertsConstructorOnZeroCreator() public {
@@ -1064,7 +1068,7 @@ contract TruthMarketLifecycleTest is Test {
         }
     }
 
-    function test_JuryDrawUsesMinFloorThenPercentCapThenTargetMax() public {
+    function test_JuryDrawUsesOddMinFloorThenPercentCapThenTargetMax() public {
         market = _deployMarket(5, 3, 3);
         V[] memory minFloor = _makeVoters(3, 5 ether, 1);
         _commitAll(minFloor);
@@ -1081,7 +1085,7 @@ contract TruthMarketLifecycleTest is Test {
         vm.warp(block.timestamp + VOTING_PERIOD);
         vm.prank(juryCommitter);
         market.commitJury(0x2222, _randomnessMetadata(), AUDIT_HASH);
-        assertEq(market.getJury().length, 4);
+        assertEq(market.getJury().length, 3);
 
         market = _deployMarket(5, 3, 3);
         V[] memory maxTarget = _makeVoters(34, 5 ether, 1);
@@ -1096,7 +1100,7 @@ contract TruthMarketLifecycleTest is Test {
     function test_JuryDrawHandlesLargeCommitterPool() public {
         // Stress the virtual sampler with a wide pool. Memory is O(actual draw size) so this
         // shouldn't OOG even though `n` is large.
-        market = _deployMarket(7, 4, 4);
+        market = _deployMarket(7, 3, 3);
         uint256 n = 200;
         V[] memory vs = _makeVoters(n, 5 ether, 1);
         _commitAll(vs);
@@ -1134,7 +1138,7 @@ contract TruthMarketLifecycleTest is Test {
     function test_ForceSweepDustPreservesUnclaimedVoterRefunds() public {
         // Voters lose their right to claim only by inaction; force-sweep must not raid
         // an unclaimed payout.
-        market = _deployMarket(3, 20, 2);
+        market = _deployMarket(3, 20, 1);
         V[] memory vs = _makeVoters(20, 100 ether, 1); // all YES
         _commitAll(vs);
         vm.warp(block.timestamp + VOTING_PERIOD);
@@ -1229,7 +1233,7 @@ contract TruthMarketLifecycleTest is Test {
     }
 
     function test_ForceSweepDustPaginates() public {
-        market = _deployMarket(3, 20, 2);
+        market = _deployMarket(3, 20, 3);
         V[] memory vs = _makeVoters(20, 100 ether, 1); // all YES
         _commitAll(vs);
         vm.warp(block.timestamp + VOTING_PERIOD);

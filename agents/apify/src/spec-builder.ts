@@ -74,6 +74,9 @@ export function buildMarketSpec(
   if (minRevealedJurors < 1 || minRevealedJurors > jurySize) {
     throw new Error(`minRevealedJurors must be between 1 and jurySize (got ${minRevealedJurors})`);
   }
+  if (minRevealedJurors % 2 === 0) {
+    throw new Error(`minRevealedJurors must be odd (got ${minRevealedJurors})`);
+  }
   if (minCommits < minRevealedJurors) {
     throw new Error(`minCommits must be at least minRevealedJurors (got ${minCommits} < ${minRevealedJurors})`);
   }

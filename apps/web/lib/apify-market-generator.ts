@@ -133,8 +133,8 @@ export const TIMING_MODES: Record<GeneratorMode, TimingMode> = {
     marketDefaults: {
       minStake: "100000000000000000",
       jurySize: 3,
-      minCommits: 2,
-      minRevealedJurors: 2,
+      minCommits: 3,
+      minRevealedJurors: 3,
     },
   },
 };

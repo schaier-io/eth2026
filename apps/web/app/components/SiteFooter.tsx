@@ -13,7 +13,7 @@ export function SiteFooter() {
           <span>TruthMarket</span>
         </Link>
         <nav className="site-footer-nav">
-          <Link href="/">Claims</Link>
+          <Link href="/">Markets</Link>
           <Link href="/my-markets">Yours</Link>
           <Link href="/deploy">Launch</Link>
           <Link href="/demo">Demo</Link>

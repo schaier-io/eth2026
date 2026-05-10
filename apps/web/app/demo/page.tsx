@@ -97,7 +97,7 @@ const initialMarkets: Market[] = [
     stake: 18420,
     commits: 173,
     targetJurySize: 9,
-    minRevealedJurors: 6,
+    minRevealedJurors: 5,
     revealedJurors: 0,
     juryUpCount: 0,
     juryDownCount: 0,
@@ -890,6 +890,10 @@ export default function TruthMarketApp() {
       setCreateStatus({ message: "Minimum revealed jurors must be between 1 and max jury size.", kind: "error" });
       return;
     }
+    if (minRevealedJurors % 2 === 0) {
+      setCreateStatus({ message: "Minimum revealed jurors must be odd.", kind: "error" });
+      return;
+    }
 
     const market: Market = {
       id: `custom-${Date.now()}`,
@@ -1297,7 +1301,7 @@ export default function TruthMarketApp() {
                     </label>
                     <label className="field">
                       <span>Minimum revealed jurors</span>
-                      <input name="minRevealed" type="number" min={1} defaultValue={3} inputMode="numeric" />
+                      <input name="minRevealed" type="number" min={1} step={2} defaultValue={3} inputMode="numeric" />
                     </label>
                     <label className="field">
                       <span>Voting window</span>

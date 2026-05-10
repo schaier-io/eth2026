@@ -52,7 +52,7 @@ interface JuryPreset {
 }
 
 const JURY_PRESETS: JuryPreset[] = [
-  { label: "Small (max 3)", jurySize: 3, minCommits: 2, minRevealedJurors: 2, hint: "fast resolution, smaller pool" },
+  { label: "Small (max 3)", jurySize: 3, minCommits: 1, minRevealedJurors: 1, hint: "fast resolution, smaller pool" },
   { label: "Standard (max 5)", jurySize: 5, minCommits: 3, minRevealedJurors: 3, hint: "balanced" },
   { label: "Large (max 9)", jurySize: 9, minCommits: 5, minRevealedJurors: 5, hint: "more deliberation" },
 ];
@@ -92,8 +92,8 @@ function defaultForm(presets: TokenPreset[]): FormState {
     customMinutes: "60",
     juryPresetIdx: 0, // small
     customJurySize: "3",
-    customMinCommits: "20",
-    customMinRevealedJurors: "2",
+    customMinCommits: "1",
+    customMinRevealedJurors: "1",
     minStake: "1",
     creatorBond: "",
     selectedTokenKey: presets[0]?.address ?? "custom",
@@ -500,7 +500,7 @@ export default function DeployPage() {
               />
             </div>
             <p className="muted step-hint">
-              Draw size: min(max jury, max(min jurors, active votes × 15%)). Max jury size must be odd.
+              Draw size: largest odd ≤ min(max jury, max(min jurors, active votes × 15%)).
             </p>
           </div>
         </details>
@@ -675,6 +675,9 @@ function validate(form: FormState): { ok: boolean; errors: string[]; spec: Valid
 
   if (jurySize !== null && minRevealedJurors !== null && minRevealedJurors > jurySize) {
     errors.push("Min revealed jurors can't exceed jury size.");
+  }
+  if (minRevealedJurors !== null && minRevealedJurors % 2 === 0) {
+    errors.push("Min revealed jurors must be odd.");
   }
   if (minCommits !== null && minRevealedJurors !== null && minCommits < minRevealedJurors) {
     errors.push("Min commits must be at least min revealed jurors.");

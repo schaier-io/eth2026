@@ -105,12 +105,39 @@ export function VotePanel(props: Props) {
     );
   }
 
+  const bondAmount = BigInt(props.creatorBond);
+  const hasBond = bondAmount > 0n && bondPosted;
   return (
     <section className="card vote-panel">
       <h2>Your move</h2>
+      <div
+        className={`bond-hero bond-hero-lg${hasBond ? "" : " bond-hero-empty"}`}
+        title={hasBond ? "Creator bond joins the winner pool" : "No creator bond on this market"}
+      >
+        <span className="bond-hero-label">{hasBond ? "Bonus pot" : "Creator bond"}</span>
+        <span className="bond-hero-amount">
+          {hasBond ? (
+            <>
+              +{formatBondAmount(bondAmount, props.decimals)}{" "}
+              <span className="bond-hero-symbol">{props.symbol}</span>
+            </>
+          ) : (
+            "None"
+          )}
+        </span>
+      </div>
       {!isConnected ? <ConnectPrompt /> : <ChainGate {...props} />}
     </section>
   );
+}
+
+function formatBondAmount(amount: bigint, decimals: number): string {
+  const raw = formatUnits(amount, decimals);
+  const num = Number(raw);
+  if (!Number.isFinite(num)) return raw;
+  if (num >= 1000) return num.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  if (num >= 1) return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return num.toLocaleString(undefined, { maximumFractionDigits: 4 });
 }
 
 function BondBanner({

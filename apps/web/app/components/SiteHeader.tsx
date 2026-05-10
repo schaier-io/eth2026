@@ -15,7 +15,7 @@ export function SiteHeader() {
           <span className="site-brand-name">TruthMarket</span>
         </Link>
         <nav className="site-nav">
-          <NavLink href="/">Claims</NavLink>
+          <NavLink href="/">Markets</NavLink>
           <NavLink href="/my-markets">Yours</NavLink>
           <NavLink href="/deploy">Launch</NavLink>
           <NavLink href="/demo">Demo</NavLink>

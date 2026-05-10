@@ -8,7 +8,7 @@ import {
   type MarketIntegrity,
 } from "../src/chain/market-integrity.js";
 
-const IMPLEMENTATION = "0x714F31736098dF1e4aad659eDb93e0368c98eC8E" as Address;
+const IMPLEMENTATION = "0x8179d3B84abCa79bA6eDe48493C7816dEd9A8a7F" as Address;
 const MARKET = "0x923b61700F331687e4621C2f0B1C7060B06D62e3" as Address;
 
 describe("market integrity helpers", () => {
@@ -16,7 +16,7 @@ describe("market integrity helpers", () => {
     const runtime = expectedMinimalCloneRuntime(IMPLEMENTATION);
 
     expect(runtime).toBe(
-      "0x363d3d373d3d3d363d73714f31736098df1e4aad659edb93e0368c98ec8e5af43d82803e903d91602b57fd5bf3",
+      "0x363d3d373d3d3d363d738179d3b84abca79ba6ede48493c7816ded9a8a7f5af43d82803e903d91602b57fd5bf3",
     );
     expect(cloneRuntimeMatchesImplementation(runtime, IMPLEMENTATION)).toBe(true);
     expect(cloneRuntimeMatchesImplementation("0x1234", IMPLEMENTATION)).toBe(false);

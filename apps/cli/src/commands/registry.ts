@@ -32,6 +32,8 @@ const ClaimDocumentSchema = z.object({
   tags: z.array(z.string()).max(5).optional(),
 });
 
+const MAX_TARGET_JURY_SIZE = 100;
+
 const MarketSpecSchema = z.object({
   stakeToken: z.string().optional(),
   juryCommitter: z.string().optional(),
@@ -49,6 +51,56 @@ const MarketSpecSchema = z.object({
   maxCommits: z.number().int().min(0).optional(),
   minRevealedJurors: z.number().int().positive(),
   creatorBond: z.string().regex(/^\d+$/, "creatorBond must be a non-negative integer string").optional(),
+}).superRefine((spec, ctx) => {
+  if (/^\d+$/.test(spec.minStake) && BigInt(spec.minStake) === 0n) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "minStake must be greater than 0",
+      path: ["minStake"],
+    });
+  }
+  if (spec.jurySize > MAX_TARGET_JURY_SIZE) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `jurySize must be <= ${MAX_TARGET_JURY_SIZE}`,
+      path: ["jurySize"],
+    });
+  }
+  if (spec.jurySize % 2 === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "jurySize must be odd",
+      path: ["jurySize"],
+    });
+  }
+  if (spec.minRevealedJurors % 2 === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "minRevealedJurors must be odd",
+      path: ["minRevealedJurors"],
+    });
+  }
+  if (spec.minRevealedJurors > spec.jurySize) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "minRevealedJurors must be <= jurySize",
+      path: ["minRevealedJurors"],
+    });
+  }
+  if (spec.minCommits < spec.minRevealedJurors) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "minCommits must be at least minRevealedJurors",
+      path: ["minCommits"],
+    });
+  }
+  if (spec.maxCommits !== undefined && spec.maxCommits !== 0 && spec.maxCommits < spec.minCommits) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "maxCommits must be 0 or at least minCommits",
+      path: ["maxCommits"],
+    });
+  }
 }).refine((spec) => Boolean(spec.swarmReference || spec.claimDocument), {
   message: "provide either swarmReference or claimDocument",
   path: ["swarmReference"],

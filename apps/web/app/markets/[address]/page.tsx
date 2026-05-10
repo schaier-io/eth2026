@@ -8,6 +8,7 @@ import { erc20Abi, truthMarketAbi, TRUTH_MARKET_CONTRACT_ID } from "../../../lib
 import { explorerAddressUrl, getChainId, getPublicClient } from "../../../lib/server/viem";
 import { loadClaimDocument } from "../../../lib/server/swarm-claim";
 import { readRegistryImplementation, verifyMarketCloneContract } from "../../../lib/server/sourcify";
+import { getMarketDisplayPhase } from "../../../lib/market-phase";
 import type { ContractVerification } from "../../../lib/contract-verification";
 import { VotePanel } from "./VotePanel";
 import { LifecycleActions } from "./LifecycleActions";
@@ -15,9 +16,6 @@ import { LifecycleActions } from "./LifecycleActions";
 const TREASURY_HARDCODED: Address = "0x574F91bd4d8e83F84B62c3Ca75d24684813237Cc";
 
 export const revalidate = 10;
-
-const PHASE_LABEL = ["Voting", "Reveal", "Resolved"] as const;
-const OUTCOME_LABEL = ["Unresolved", "YES", "NO", "Invalid"] as const;
 
 type Params = Promise<{ address: string }>;
 
@@ -67,6 +65,7 @@ interface MarketView {
     juryAuditHash: `0x${string}`;
   };
   creator: Address;
+  juryCommitter: Address;
   stakeToken: Address;
   symbol: string;
   decimals: number;
@@ -102,6 +101,7 @@ async function loadMarket(address: Address): Promise<MarketView | null> {
       read<readonly Address[]>("getJury"),
       read<MarketView["randomness"]>("getRandomnessEvidence"),
       read<Address>("creator"),
+      read<Address>("juryCommitter"),
       read<Address>("stakeToken"),
       read<bigint>("creatorBond"),
       read<boolean>("bondPosted"),
@@ -112,7 +112,7 @@ async function loadMarket(address: Address): Promise<MarketView | null> {
 
   if (core[0] !== TRUTH_MARKET_CONTRACT_ID) return null;
 
-  const stakeToken = core[20];
+  const stakeToken = core[21];
   const [claim, implementation] = await Promise.all([
     loadClaimDocument(core[2]),
     readRegistryImplementation(client),
@@ -163,11 +163,12 @@ async function loadMarket(address: Address): Promise<MarketView | null> {
     jury: core[17],
     randomness: core[18],
     creator: core[19],
+    juryCommitter: core[20],
     stakeToken,
     symbol,
     decimals,
-    creatorBond: core[21],
-    bondPosted: core[22],
+    creatorBond: core[22],
+    bondPosted: core[23],
     contractVerification,
   };
 }
@@ -180,27 +181,26 @@ export default async function MarketDetailPage({ params }: { params: Params }) {
 
   const chainId = getChainId();
   const explorer = (a: Address) => explorerAddressUrl(a);
-  const phaseLabel = PHASE_LABEL[data.phase] ?? "Unknown";
-  const outcomeLabel = OUTCOME_LABEL[data.outcome] ?? "?";
-  const resolvedVariant =
-    data.outcome === 1 ? "phase-resolved-yes" : data.outcome === 2 ? "phase-resolved-no" : "phase-resolved-invalid";
-  const phaseClass =
-    data.phase === 0
-      ? "phase-pill phase-voting"
-      : data.phase === 1
-        ? "phase-pill phase-reveal"
-        : `phase-pill ${data.outcome > 0 ? resolvedVariant : "phase-resolved"}`;
+  const displayPhase = getMarketDisplayPhase({
+    phase: data.phase,
+    outcome: data.outcome,
+    votingDeadline: data.votingDeadline,
+    juryCommitDeadline: data.juryCommitDeadline,
+    revealDeadline: data.revealDeadline,
+  });
 
   return (
     <main className="page-shell market-detail">
-      <Link href="/" className="back-link">← All claims</Link>
+      <Link href="/" className="back-link">← All markets</Link>
 
       <header className="market-detail-head">
         <div>
           <p className="eyebrow">
-            <span className={phaseClass}>{phaseLabel}</span>
-            {data.phase === 2 && data.outcome > 0 ? (
-              <span className={`outcome-pill outcome-${outcomeLabel.toLowerCase()}`}>{outcomeLabel}</span>
+            <span className={displayPhase.className}>{displayPhase.label}</span>
+            {displayPhase.outcomeLabel ? (
+              <span className={`outcome-pill outcome-${displayPhase.outcomeLabel.toLowerCase()}`}>
+                {displayPhase.outcomeLabel}
+              </span>
             ) : null}
           </p>
           <div className="market-title-row">
@@ -287,12 +287,15 @@ export default async function MarketDetailPage({ params }: { params: Params }) {
         market={address as Address}
         phase={data.phase}
         outcome={data.outcome}
+        votingDeadline={data.votingDeadline.toString()}
         juryCommitDeadline={data.juryCommitDeadline.toString()}
         revealDeadline={data.revealDeadline.toString()}
         decimals={data.decimals}
         symbol={data.symbol}
         treasury={TREASURY_HARDCODED}
         creator={data.creator}
+        juryCommitter={data.juryCommitter}
+        randomnessCommitted={data.randomness.randomness !== 0n}
         chainId={chainId}
       />
 

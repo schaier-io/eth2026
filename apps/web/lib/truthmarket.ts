@@ -54,6 +54,7 @@ export const truthMarketAbi = parseAbi([
   "function creatorAccrued() view returns (uint256)",
   "function treasuryAccrued() view returns (uint256)",
   "function creator() view returns (address)",
+  "function juryCommitter() view returns (address)",
   "function votingDeadline() view returns (uint64)",
   "function juryCommitDeadline() view returns (uint64)",
   "function revealDeadline() view returns (uint64)",

@@ -55,7 +55,8 @@ export function WalletPill() {
           aria-expanded={open}
           aria-haspopup="dialog"
         >
-          Connect wallet
+          <span className="wallet-pill-cta-label-full">Connect wallet</span>
+          <span className="wallet-pill-cta-label-short">Connect</span>
         </button>
         {open ? (
           <div className="wallet-popover" role="dialog" aria-label="Connect a wallet">

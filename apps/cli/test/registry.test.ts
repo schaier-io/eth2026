@@ -45,4 +45,21 @@ describe("parseMarketSpec", () => {
   it("requires either claimDocument or swarmReference", () => {
     expect(() => parseMarketSpec(BASE_SPEC)).toThrow(/provide either swarmReference or claimDocument/);
   });
+
+  it("rejects specs the contract initializer would reject", () => {
+    const ref = `0x${"ab".repeat(32)}` as const;
+    const invalidSpecs = [
+      [{ jurySize: 2 }, /jurySize must be odd/],
+      [{ jurySize: 101 }, /jurySize must be <= 100/],
+      [{ minRevealedJurors: 2 }, /minRevealedJurors must be odd/],
+      [{ jurySize: 3, minRevealedJurors: 5 }, /minRevealedJurors must be <= jurySize/],
+      [{ minCommits: 1, minRevealedJurors: 3, jurySize: 3 }, /minCommits must be at least minRevealedJurors/],
+      [{ minCommits: 3, maxCommits: 2, minRevealedJurors: 3, jurySize: 3 }, /maxCommits must be 0 or at least minCommits/],
+      [{ minStake: "0" }, /minStake must be greater than 0/],
+    ] as const;
+
+    for (const [patch, error] of invalidSpecs) {
+      expect(() => parseMarketSpec({ ...BASE_SPEC, swarmReference: ref, ...patch })).toThrow(error);
+    }
+  });
 });

@@ -94,7 +94,7 @@ contract SimulateScript is Script {
     function invalidJurorPenalty() external {
         console2.log("=== Scenario: Invalid juror penalty -> creator ===");
         Voter[] memory voters = _makeVoters(20, 80 ether, 1, true);
-        (TruthMarket market, MockERC20 token) = _deployMarket(3, 20, 2);
+        (TruthMarket market, MockERC20 token) = _deployMarket(3, 20, 3);
 
         _commitAll(market, token, voters);
         _advanceTo(market.votingDeadline());

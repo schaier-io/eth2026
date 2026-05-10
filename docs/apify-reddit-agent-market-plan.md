@@ -53,9 +53,9 @@ Use one of these modes instead of deciding timing ad hoc during the demo:
 | --- | ---: | ---: | ---: | ---: | --- |
 | `demo-fast` | manual or every 15 min | 5 min | 2 min | 5 min | `jurySize=1`, `minCommits=1`, `minRevealedJurors=1` |
 | `live-mini` | every 60 min | 20 min | 5 min | 25 min | `jurySize=1`, `minCommits=1`, `minRevealedJurors=1` |
-| `public-hourly` | every 3 hours | 60 min | 10 min | 50 min | `jurySize=3`, `minCommits=2`, `minRevealedJurors=2` |
+| `public-hourly` | every 3 hours | 60 min | 10 min | 50 min | `jurySize=3`, `minCommits=3`, `minRevealedJurors=3` |
 
-The contract draws `min(maxJurors, max(minJurors, activeCommitters * 15 / 100))`. Small markets can start at the minimum juror floor; the 15% cap only grows the selected jury once enough active voters arrive.
+The contract draws the largest odd value no greater than `min(maxJurors, max(minJurors, activeCommitters * 15 / 100))`. Small markets can start at the minimum juror floor; the 15% cap only grows the selected jury once enough active voters arrive.
 
 ## Generator Policy
 

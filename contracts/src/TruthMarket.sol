@@ -53,12 +53,13 @@ import { ITruthMarketRegistry } from "./TruthMarketRegistry.sol";
 ///
 ///         Jury composition limit: `targetJurySize` is the maximum draw size. The
 ///         actual draw is:
+///         largest odd value no greater than
 ///         `min(targetJurySize, max(minRevealedJurors, activeCommitters × MAX_TARGET_JURY_SIZE_PERCENT / 100))`.
 ///         This keeps small markets at the minimum juror floor, then grows the
 ///         jury only after the 15% active-voter cap rises above that floor.
 ///
-///         Tie behavior: ties on juror count resolve to Invalid. The max draw is odd,
-///         but dynamic intermediate draws and partial reveals can still be even.
+///         Tie behavior: ties on juror count resolve to Invalid. Selected jury
+///         sizes are odd, but partial reveals can still be even.
 contract TruthMarket is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -457,6 +458,7 @@ contract TruthMarket is ReentrancyGuard {
         if (p.targetJurySize == 0 || p.targetJurySize > MAX_TARGET_JURY_SIZE) revert BadParams();
         if (p.targetJurySize % 2 == 0) revert BadParams(); // max jury size must be odd
         if (p.minRevealedJurors == 0) revert BadParams();
+        if (p.minRevealedJurors % 2 == 0) revert BadParams(); // min revealed jurors must be odd
         if (p.minRevealedJurors > p.targetJurySize) revert BadParams();
         if (p.minCommits < p.minRevealedJurors) revert BadParams();
         if (p.maxCommits != 0 && p.maxCommits < p.minCommits) revert BadParams();
@@ -1050,6 +1052,7 @@ contract TruthMarket is ReentrancyGuard {
         uint256 floorOrCap = percentCap < minRevealedJurors ? minRevealedJurors : percentCap;
         uint256 maxSize = targetJurySize;
         uint256 drawSize = floorOrCap > maxSize ? maxSize : floorOrCap;
+        if (drawSize % 2 == 0) drawSize -= 1;
         return drawSize > activeCount ? activeCount : drawSize;
     }
 
@@ -1090,8 +1093,8 @@ contract TruthMarket is ReentrancyGuard {
         }
     }
 
-    /// @dev Returns Invalid on count tie. Dynamic intermediate draw sizes and partial
-    ///      reveals can both produce even counts, so ties remain possible.
+    /// @dev Returns Invalid on count tie. Selected jury sizes are odd, but partial
+    ///      reveals can still produce even counts, so ties remain possible.
     function _juryOutcome() internal view returns (Outcome out, uint32 winningJuryCount) {
         if (juryYesCount > juryNoCount) {
             return (Outcome.Yes, juryYesCount);

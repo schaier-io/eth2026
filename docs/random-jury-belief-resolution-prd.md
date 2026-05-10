@@ -79,9 +79,9 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - Selected jurors who fail to reveal forfeit their full stake (~5× a typical normal slash); the extra above the normal 1× risked portion joins the distributable pool on a Yes/No outcome or accrues to the claim creator on Invalid.
 - Winning voters receive stake back plus a share of slashed stake, weighted by their own risked stake.
 - `targetJurySize` is the maximum draw size and is constrained to be odd (≤ 100).
-- Actual jury draw size is `min(maxJurors, max(minJurors, activeCommitters * 15 / 100))`, rounded down by integer math. This ignores the 15% cap until the minimum juror floor is reached, then grows with voter turnout up to the max jury size.
-- Dynamic intermediate draws and partial reveals can be even; ties resolve to Invalid.
-- Minimum revealed jurors is a deployment-time market parameter. The contract permits low quorums as an intentional liveness trade-off, and the chosen quorum should be disclosed in the immutable claim/rules document.
+- Actual jury draw size is the largest odd value no greater than `min(maxJurors, max(minJurors, activeCommitters * 15 / 100))`, rounded down by integer math. This ignores the 15% cap until the minimum juror floor is reached, then grows with voter turnout up to the max jury size.
+- Selected jury sizes are odd, but partial reveals can still be even; ties resolve to Invalid.
+- Minimum revealed jurors is an odd deployment-time market parameter. The contract permits low quorums as an intentional liveness trade-off, and the chosen quorum should be disclosed in the immutable claim/rules document.
 - The token story for the hackathon is limited to staking and protocol fee/revenue share.
 - Governance, claim-creation token requirements, and complex emissions are deferred.
 - ENS is optional and should be pursued only if it can be live and functional.

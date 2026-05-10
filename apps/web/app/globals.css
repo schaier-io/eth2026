@@ -1669,6 +1669,7 @@ code {
 }
 
 .page-header-cta {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1682,6 +1683,22 @@ code {
   letter-spacing: -0.01em;
   box-shadow: var(--shadow-md);
   transition: transform 0.12s ease, box-shadow 0.18s ease;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.page-header-cta::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.22) 50%, transparent 70%);
+  transform: translateX(-100%);
+  transition: transform 0.6s ease;
+  z-index: -1;
+}
+
+.page-header-cta:hover::before {
+  transform: translateX(100%);
 }
 
 .page-header-cta:hover {
@@ -1725,7 +1742,158 @@ code {
   align-items: center;
 }
 
+/* Creator-bond hero ribbon — eye-catching "Bonus pot" callout
+   used inside market cards (compact) and the VotePanel (large). */
+.bond-hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--coin-soft) 0%, #fff8d8 60%, #fffbe6 100%);
+  border: 1px solid rgba(201, 122, 9, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+}
+
+.bond-hero::before {
+  content: "";
+  position: absolute;
+  top: -36px;
+  right: -36px;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffe79a 0%, #f0c000 60%, #c97a09 100%);
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.bond-hero-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+  color: var(--amber);
+  line-height: 1;
+  position: relative;
+  z-index: 1;
+}
+
+.bond-hero-amount {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  font-family: var(--font-display), var(--font-sans), system-ui;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  position: relative;
+  z-index: 1;
+}
+
+.bond-hero-symbol {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted-strong);
+  margin-left: 2px;
+  letter-spacing: 0;
+}
+
+.bond-hero-lg {
+  padding: 18px 22px;
+}
+
+.bond-hero-lg .bond-hero-amount {
+  font-size: 32px;
+}
+
+.bond-hero-lg .bond-hero-symbol {
+  font-size: 16px;
+}
+
+.bond-hero-lg::before {
+  width: 140px;
+  height: 140px;
+  top: -48px;
+  right: -48px;
+}
+
+/* Empty/zero-bond variant — keep the layout but mute the visual prominence. */
+.bond-hero-empty {
+  background: var(--surface-soft);
+  border-color: var(--line);
+}
+
+.bond-hero-empty::before {
+  background: radial-gradient(circle at 35% 35%, #e0e3ee 0%, #c8cdda 60%, #a0a8bb 100%);
+  opacity: 0.18;
+}
+
+.bond-hero-empty .bond-hero-label {
+  color: var(--muted-strong);
+}
+
+.bond-hero-empty .bond-hero-amount {
+  color: var(--muted-strong);
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* Large variant inside VotePanel: keep "None" readable but still small. */
+.bond-hero-lg.bond-hero-empty .bond-hero-amount {
+  font-size: 14px;
+}
+
+/* Skeleton placeholder cards (loading state). */
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px;
+  pointer-events: none;
+}
+
+.skeleton-line {
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--surface-soft) 0%, #ecedf3 50%, var(--surface-soft) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-line-md {
+  width: 70%;
+  height: 18px;
+}
+
+.skeleton-line-sm {
+  width: 90%;
+}
+
+.skeleton-line-xs {
+  width: 45%;
+  height: 12px;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line {
+    animation: none;
+  }
+}
+
 .empty-state {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1733,16 +1901,37 @@ code {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 56px 32px;
+  padding: 64px 32px 56px;
   text-align: center;
   box-shadow: var(--shadow-sm);
-  gap: 8px;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.empty-state::before {
+  content: "";
+  position: absolute;
+  top: -120px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 320px;
+  height: 240px;
+  background:
+    radial-gradient(circle at 50% 60%, rgba(108, 76, 255, 0.16) 0%, transparent 60%),
+    radial-gradient(circle at 50% 70%, rgba(255, 216, 74, 0.18) 0%, transparent 55%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.empty-state > * {
+  position: relative;
+  z-index: 1;
 }
 
 .empty-state h1,
 .empty-state h2 {
-  margin: 0 0 4px;
-  font-size: 22px;
+  margin: 0 0 6px;
+  font-size: 24px;
 }
 
 .empty-state p {
@@ -1844,13 +2033,135 @@ code {
   border-top: 1px dashed var(--line);
 }
 
-.market-card-meta div {
+.market-card-meta > div {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
   font-size: 13px;
   color: var(--muted);
+}
+
+/* Progress row reflows: label/value on top line, full-width bar underneath. */
+.market-card-progress-row {
+  display: grid !important;
+  grid-template-columns: max-content 1fr;
+  align-items: baseline !important;
+  gap: 8px 12px !important;
+}
+
+.market-card-progress-row dt {
+  grid-column: 1;
+}
+
+.market-card-progress-row dd {
+  grid-column: 2;
+  text-align: right;
+  margin: 0;
+}
+
+.market-card-progress-num {
+  font-weight: 800;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.market-card-progress-target {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.market-card-progress {
+  grid-column: 1 / -1;
+  display: block;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  overflow: hidden;
+  position: relative;
+}
+
+.market-card-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 240ms ease;
+}
+
+.market-card-progress.is-low .market-card-progress-fill {
+  background: linear-gradient(90deg, var(--pop) 0%, #8a72ff 100%);
+}
+
+.market-card-progress.is-mid .market-card-progress-fill {
+  background: linear-gradient(90deg, var(--pop) 0%, var(--coin) 100%);
+}
+
+.market-card-progress.is-full .market-card-progress-fill {
+  background: linear-gradient(90deg, var(--up) 0%, var(--up-deep) 100%);
+}
+
+/* Footer: address on top, tiny "Verification" section under it. */
+.market-card-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+
+.market-card-footer-top {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.market-card-addr {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.market-card-verification {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.market-card-verification-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+
+.market-card-verification-badges {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Shrink badge size when used inside the footer verification slot. */
+.market-card-verification-badges .swarm-badge,
+.market-card-verification-badges .sourcify-badge {
+  font-size: 10px;
+  padding: 2px 7px;
+  min-height: 20px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.market-card-verification-badges .swarm-badge-icon {
+  width: 12px;
+  height: 12px;
 }
 
 .market-card-meta dt {
@@ -1898,9 +2209,17 @@ code {
   background: rgba(77, 109, 255, 0.12);
   color: #2a44c2;
 }
+.phase-jury {
+  background: rgba(111, 76, 255, 0.13);
+  color: #5635bd;
+}
 .phase-reveal {
   background: var(--amber-soft);
   color: var(--amber);
+}
+.phase-pending {
+  background: rgba(255, 122, 42, 0.13);
+  color: #9a4b12;
 }
 .phase-resolved {
   background: var(--up-soft);
@@ -3549,6 +3868,11 @@ button.primary:active:not(:disabled),
   font-size: 12px;
   color: var(--text);
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.wallet-connector-icon svg {
+  display: block;
 }
 
 .wallet-connector.is-compact .wallet-connector-icon {
@@ -3769,11 +4093,22 @@ button.primary:active:not(:disabled),
   }
 }
 
+/* Toggle short/full label on the connect-wallet CTA based on viewport. */
+.wallet-pill-cta-label-short {
+  display: none;
+}
+
 /* Mobile: shrink the connect-wallet CTA so it doesn't dominate the header. */
 @media (max-width: 720px) {
   .wallet-pill-cta {
     padding: 9px 14px;
     font-size: 12px;
+  }
+  .wallet-pill-cta-label-full {
+    display: none;
+  }
+  .wallet-pill-cta-label-short {
+    display: inline;
   }
 }
 
@@ -4035,6 +4370,11 @@ button.primary:active:not(:disabled),
 .lifecycle-resolve {
   border-left-color: var(--focus);
   background: linear-gradient(to right, rgba(19, 93, 255, 0.10), var(--surface) 30%);
+}
+
+.lifecycle-jury {
+  border-left-color: var(--pop);
+  background: linear-gradient(to right, rgba(108, 76, 255, 0.12), var(--surface) 30%);
 }
 
 .lifecycle-creator {

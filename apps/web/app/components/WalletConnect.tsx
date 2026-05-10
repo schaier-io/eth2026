@@ -1,6 +1,7 @@
 "use client";
 
 import { useConnect, type Connector } from "wagmi";
+import { WalletIcon, type WalletKind } from "./WalletIcon";
 
 interface Props {
   /** Optional headline. Defaults to "Connect a wallet". */
@@ -35,7 +36,7 @@ export function WalletConnect({ title, subtitle, variant = "card" }: Props) {
   return (
     <section className="wallet-connect-card">
       <header>
-        <h3>{title ?? "Get a wallet in"}</h3>
+        <h3>{title ?? "Pick a wallet"}</h3>
         {subtitle ? <p className="muted">{subtitle}</p> : null}
       </header>
       <div className="wallet-connect-list">
@@ -77,7 +78,9 @@ function ConnectorButton({
       <span className="wallet-connector-icon" aria-hidden="true" style={{ background: meta.color }}>
         {meta.iconUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={meta.iconUrl} alt="" width={24} height={24} />
+          <img src={meta.iconUrl} alt="" width={compact ? 20 : 24} height={compact ? 20 : 24} />
+        ) : meta.kind ? (
+          <WalletIcon kind={meta.kind} size={compact ? 22 : 28} />
         ) : (
           meta.initials
         )}
@@ -96,6 +99,8 @@ interface ConnectorMeta {
   color: string;
   hint: string;
   iconUrl?: string;
+  /** Inline-SVG icon kind. Takes precedence over `initials`; falls back to it. */
+  kind?: WalletKind;
 }
 
 function connectorMeta(c: Connector): ConnectorMeta {
@@ -103,43 +108,57 @@ function connectorMeta(c: Connector): ConnectorMeta {
   const name = c.name ?? "";
   const iconUrl = (c as Connector & { icon?: string }).icon;
 
-  if (id === "injected" || /metamask/i.test(name)) {
+  if (id === "metamasksdk" || id === "metamask" || /metamask/i.test(name)) {
     return {
-      initials: initialsOf(name || "Browser wallet"),
-      color: "#f6851b1a",
-      hint: "Browser extension wallet (MetaMask, Rabby, …)",
+      initials: "MM",
+      color: "transparent",
+      hint: "Extension on desktop · app deep-link on mobile",
       iconUrl,
+      kind: "metamask",
+    };
+  }
+  if (id === "coinbasewalletsdk" || id === "coinbasewallet" || /coinbase/i.test(name)) {
+    return {
+      initials: "CB",
+      color: "transparent",
+      hint: "Smart wallet, extension, or mobile app",
+      iconUrl,
+      kind: "coinbase",
     };
   }
   if (id === "walletconnect" || /walletconnect/i.test(name)) {
     return {
       initials: "WC",
-      color: "#3b99fc1a",
-      hint: "Scan a QR code from any mobile wallet",
+      color: "transparent",
+      hint: "Scan from any of 300+ mobile wallets",
       iconUrl,
-    };
-  }
-  if (id === "coinbasewallet" || /coinbase/i.test(name)) {
-    return {
-      initials: "CB",
-      color: "#0052ff1a",
-      hint: "Coinbase Wallet",
-      iconUrl,
+      kind: "walletconnect",
     };
   }
   if (id === "safe" || /safe/i.test(name)) {
     return {
       initials: "SF",
-      color: "#12ff801a",
-      hint: "Multisig",
+      color: "transparent",
+      hint: "Safe multisig",
       iconUrl,
+      kind: "safe",
+    };
+  }
+  if (id === "injected") {
+    return {
+      initials: initialsOf(name || "Browser wallet"),
+      color: "transparent",
+      hint: "Other browser extension (Rabby, Frame, …)",
+      iconUrl,
+      kind: "injected",
     };
   }
   return {
     initials: initialsOf(name || "?"),
-    color: "var(--surface-soft)",
+    color: "transparent",
     hint: "External wallet",
     iconUrl,
+    kind: "generic",
   };
 }
 

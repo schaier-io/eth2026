@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { formatUnits, type Address, type Hex } from "viem";
 import {
+  useAccount,
   useChainId,
   usePublicClient,
   useReadContract,
@@ -21,12 +22,15 @@ interface Props {
   phase: number;
   outcome: number;
   /** Stringified bigints — RSC → client safe. */
+  votingDeadline: string;
   juryCommitDeadline: string;
   revealDeadline: string;
   decimals: number;
   symbol: string;
   treasury: Address;
   creator: Address;
+  juryCommitter: Address;
+  randomnessCommitted: boolean;
   chainId: number;
 }
 
@@ -45,8 +49,16 @@ export function LifecycleActions(props: Props) {
   }, []);
 
   const isResolved = props.phase === PHASE_RESOLVED;
+  const votingDeadline = Number(props.votingDeadline);
   const juryDeadline = Number(props.juryCommitDeadline);
   const revealDeadline = Number(props.revealDeadline);
+
+  const canCommitJury =
+    props.phase === PHASE_VOTING &&
+    !props.randomnessCommitted &&
+    now !== null &&
+    now >= votingDeadline &&
+    now < juryDeadline;
 
   // Voting → Invalid: triggerable when juryCommitDeadline has passed (no jury was drawn).
   // Reveal → Yes/No/Invalid: triggerable when revealDeadline has passed.
@@ -58,10 +70,105 @@ export function LifecycleActions(props: Props) {
 
   return (
     <>
+      {canCommitJury ? <JuryCommitCard {...props} /> : null}
       {canResolve ? <ResolveCard {...props} /> : null}
       {isResolved ? <CreatorReturnCard {...props} /> : null}
       {isResolved ? <TreasuryReturnCard {...props} /> : null}
     </>
+  );
+}
+
+interface LatestBeaconResponse {
+  ok: boolean;
+  error?: string;
+  randomness: string;
+  randomnessHex: Hex;
+  auditHash: Hex;
+  ipfsAddressText: string;
+  metadata: {
+    ipfsAddress: Hex;
+    sequence: string;
+    timestamp: string;
+    valueIndex: number;
+  };
+}
+
+function JuryCommitCard(props: Props) {
+  const { address } = useAccount();
+  const publicClient = usePublicClient();
+  const { writeContractAsync } = useWriteContract();
+  const walletChainId = useChainId();
+  const { switchChain, isPending: isSwitching } = useSwitchChain();
+  const [pendingTx, setPendingTx] = useState<Hex | undefined>();
+  const [status, setStatus] = useState<Status>({ kind: "", message: "" });
+  const [busy, setBusy] = useState(false);
+
+  const { isLoading: txMining } = useWaitForTransactionReceipt({ hash: pendingTx });
+  const isJuryCommitter = address?.toLowerCase() === props.juryCommitter.toLowerCase();
+  const wrongChain = walletChainId !== props.chainId;
+
+  async function onCommitJury() {
+    if (!publicClient) return;
+    setBusy(true);
+    setStatus({ kind: "info", message: "Getting fresh randomness…" });
+    try {
+      const response = await fetch("/api/spacecomputer/latest-beacon", { cache: "no-store" });
+      const beacon = (await response.json()) as LatestBeaconResponse;
+      if (!response.ok || !beacon.ok) {
+        throw new Error(beacon.error ?? "Could not fetch SpaceComputer randomness.");
+      }
+
+      setStatus({ kind: "info", message: `Confirm in your wallet to form the jury.` });
+      const hash = await writeContractAsync({
+        address: props.market,
+        abi: truthMarketAbi,
+        functionName: "commitJury",
+        args: [
+          BigInt(beacon.randomness),
+          {
+            ipfsAddress: beacon.metadata.ipfsAddress,
+            sequence: BigInt(beacon.metadata.sequence),
+            timestamp: BigInt(beacon.metadata.timestamp),
+            valueIndex: beacon.metadata.valueIndex,
+          },
+          beacon.auditHash,
+        ],
+      });
+      setPendingTx(hash);
+      await publicClient.waitForTransactionReceipt({ hash });
+      setStatus({ kind: "success", message: "Jury formed. Refreshing…" });
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (err) {
+      setStatus({ kind: "error", message: errorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!isJuryCommitter) return null;
+
+  return (
+    <section className="card lifecycle-card lifecycle-jury">
+      <div className="lifecycle-card-text">
+        <h3>Form the jury</h3>
+        <p>
+          Voting is over. This fetches fresh randomness and selects the jurors.
+        </p>
+      </div>
+      <div className="lifecycle-card-actions">
+        {wrongChain ? (
+          <button type="button" onClick={() => switchChain({ chainId: props.chainId })} disabled={isSwitching}>
+            {isSwitching ? "Switching…" : `Switch to chain ${props.chainId}`}
+          </button>
+        ) : (
+          <button type="button" className="primary" onClick={onCommitJury} disabled={busy}>
+            {busy ? "Submitting…" : "Form jury"}
+          </button>
+        )}
+      </div>
+      {pendingTx && txMining ? <p className="vote-status vote-status-info">Mining {pendingTx.slice(0, 10)}…</p> : null}
+      <StatusBanner status={status} />
+    </section>
   );
 }
 
@@ -106,12 +213,12 @@ function ResolveCard(props: Props) {
   return (
     <section className="card lifecycle-card lifecycle-resolve">
       <div className="lifecycle-card-text">
-        <h3>Ready to resolve.</h3>
+        <h3>Resolve market</h3>
         <p>
           {props.phase === PHASE_VOTING
-            ? "Jury didn't form in time — resolving locks this in as Invalid."
-            : "Reveal window closed — resolve to lock the verdict."}{" "}
-          Permissionless: anyone pays gas to push the state. After this, voters claim, creators collect, and the treasury fee unlocks.
+            ? "Jury did not form in time. Resolve as Invalid so claims can open."
+            : "Reveal window closed. Resolve the verdict so claims can open."}{" "}
+          Anyone can do this transaction.
         </p>
       </div>
       <div className="lifecycle-card-actions">
@@ -121,7 +228,7 @@ function ResolveCard(props: Props) {
           </button>
         ) : (
           <button type="button" className="primary" onClick={onResolve} disabled={busy}>
-            {busy ? "Resolving…" : "Resolve it"}
+            {busy ? "Resolving…" : "Resolve"}
           </button>
         )}
       </div>
@@ -152,7 +259,7 @@ function CreatorReturnCard(props: Props) {
 
   async function onWithdraw() {
     setBusy(true);
-    setStatus({ kind: "info", message: "Pushing creator return…" });
+    setStatus({ kind: "info", message: "Sending creator payout…" });
     try {
       const hash = await writeContractAsync({
         address: props.market,
@@ -161,7 +268,7 @@ function CreatorReturnCard(props: Props) {
       });
       setPendingTx(hash);
       await publicClient!.waitForTransactionReceipt({ hash });
-      setStatus({ kind: "success", message: "Sent to creator." });
+      setStatus({ kind: "success", message: "Creator paid." });
       accrued.refetch();
     } catch (err) {
       setStatus({ kind: "error", message: errorMessage(err) });
@@ -178,12 +285,12 @@ function CreatorReturnCard(props: Props) {
   return (
     <section className="card lifecycle-card lifecycle-creator">
       <div className="lifecycle-card-text">
-        <h3>Creator return ready · {amountStr}</h3>
+        <h3>Creator payout ready · {amountStr}</h3>
         <p>
           {isInvalid
-            ? "Resolved Invalid — creator bond plus no-show juror penalties go back to the creator."
-            : "No-show juror penalties accrued to the creator. No protocol cut."}{" "}
-          Always lands at <code>{shortAddress(props.creator)}</code> — anyone can hit the button.
+            ? "This sends the creator bond and no-show juror penalties to the creator."
+            : "This sends no-show juror penalties to the creator."}{" "}
+          Anyone can do it. Funds go to <code>{shortAddress(props.creator)}</code>.
         </p>
       </div>
       <div className="lifecycle-card-actions">
@@ -193,7 +300,7 @@ function CreatorReturnCard(props: Props) {
           </button>
         ) : (
           <button type="button" className="primary" onClick={onWithdraw} disabled={busy}>
-            {busy ? "Sending…" : `Send to creator (${amountStr})`}
+            {busy ? "Sending…" : "Send payout"}
           </button>
         )}
       </div>
@@ -223,7 +330,7 @@ function TreasuryReturnCard(props: Props) {
 
   async function onWithdraw() {
     setBusy(true);
-    setStatus({ kind: "info", message: "Pushing treasury fee…" });
+    setStatus({ kind: "info", message: "Sending treasury fee…" });
     try {
       const hash = await writeContractAsync({
         address: props.market,
@@ -232,7 +339,7 @@ function TreasuryReturnCard(props: Props) {
       });
       setPendingTx(hash);
       await publicClient!.waitForTransactionReceipt({ hash });
-      setStatus({ kind: "success", message: "Sent to treasury." });
+      setStatus({ kind: "success", message: "Treasury paid." });
       accrued.refetch();
     } catch (err) {
       setStatus({ kind: "error", message: errorMessage(err) });
@@ -250,12 +357,12 @@ function TreasuryReturnCard(props: Props) {
       <div className="lifecycle-card-text">
         <h3>Treasury cut ready · {amountStr}</h3>
         <p>
-          1% of the slashed pool. Locked to <code>{shortAddress(props.treasury)}</code> — anyone can push it.
+          This sends the protocol fee to <code>{shortAddress(props.treasury)}</code>. Anyone can do it.
         </p>
       </div>
       <div className="lifecycle-card-actions">
         <button type="button" onClick={onWithdraw} disabled={busy || wrongChain}>
-          {busy ? "Sending…" : `Send to treasury (${amountStr})`}
+          {busy ? "Sending…" : "Send fee"}
         </button>
       </div>
       {pendingTx && txMining ? <p className="vote-status vote-status-info">Mining {pendingTx.slice(0, 10)}…</p> : null}
