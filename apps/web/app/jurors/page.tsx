@@ -114,7 +114,7 @@ export default function JurorsPage() {
     <main className="page-shell jurors-page">
       <section className="page-header juror-hero juror-hero-v2">
         <p className="eyebrow">Hackathon judge guide</p>
-        <h1>Pick a sponsor. Judge in five minutes.</h1>
+        <h1>Pick the track you judge. Get the overview in five minutes.</h1>
         <p className="page-header-sub">
           Every track has an evidence view for proof, rubric, code, and setup, plus a
           paced story deck for the actual judge conversation.
