@@ -26,20 +26,20 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TruthMarket — Bet on what's true",
+  title: "TruthMarket - Random-jury belief resolution",
   description:
-    "Stake on real-world claims. A random jury rules. Winners take the slashed pool — every step on-chain.",
+    "Stake on immutable claim/rules documents. Votes stay hidden until reveal, SpaceComputer randomness selects jurors, and the selected jury resolves the market.",
   openGraph: {
-    title: "TruthMarket — Bet on what's true",
+    title: "TruthMarket - Random-jury belief resolution",
     description:
-      "Stake on real-world claims. A random jury rules. Winners take the slashed pool.",
+      "Stake on immutable claim/rules documents. Votes stay hidden until reveal, then selected jurors resolve the market.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "TruthMarket — Bet on what's true",
+    title: "TruthMarket - Random-jury belief resolution",
     description:
-      "Stake on real-world claims. A random jury rules. Winners take the slashed pool.",
+      "Stake on immutable claim/rules documents, private commit-reveal, and random selected jurors.",
   },
 };
 
