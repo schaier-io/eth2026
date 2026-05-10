@@ -3,6 +3,7 @@ import { baseSepolia, foundry, sepolia } from "wagmi/chains";
 import { coinbaseWallet, injected, metaMask, walletConnect } from "wagmi/connectors";
 
 const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+const isBrowser = typeof window !== "undefined";
 
 const APP_NAME = "TruthMarket";
 const APP_DESCRIPTION = "Random-jury belief resolution with private commit-reveal.";
@@ -30,7 +31,7 @@ export const wagmiConfig = createConfig({
       // "all" lets the SDK pick smart-wallet on mobile and the extension on desktop.
       preference: { options: "all" },
     }),
-    ...(walletConnectProjectId
+    ...(isBrowser && walletConnectProjectId
       ? [
           walletConnect({
             projectId: walletConnectProjectId,

@@ -8,6 +8,7 @@ import { TimeAgo } from "../components/TimeAgo";
 import { WalletConnect } from "../components/WalletConnect";
 import { SourcifyBadge } from "../components/SourcifyBadge";
 import { SwarmBadge } from "../components/SwarmBadge";
+import { MarketCardTitle } from "../components/MarketCardTitle";
 import { registryAddress, truthMarketRegistryAbi } from "../../lib/registry";
 import { TRUTH_MARKET_CONTRACT_ID, truthMarketAbi } from "../../lib/truthmarket";
 import { getMarketDisplayPhase } from "../../lib/market-phase";
@@ -266,12 +267,13 @@ function MyMarketCard({
     juryCommitDeadline: row.juryCommitDeadline,
     revealDeadline: row.revealDeadline,
   });
+  const title = claim?.title ?? "Loading claim...";
 
   return (
     <li className={`market-card ${bondPending ? "market-card-pending" : ""}`}>
       <Link href={`/markets/${row.address}`} className="market-card-link">
         <header className="market-card-head">
-          <h2 className="market-card-name">{claim?.title ?? "Loading claim..."}</h2>
+          <MarketCardTitle title={title} />
           <div className="market-card-badges">
             {bondPending ? (
               <span className="phase-pill phase-bond-pending" title="Voters can't commit until you post the bond">

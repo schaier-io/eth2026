@@ -43,7 +43,12 @@ export type JurorDemo = {
   sponsor: string;
   status: string;
   summary: string;
+  /** One-line lede for the "why this fits" presentation slide. */
+  fitTagline: string;
+  /** Long-form fit narrative used in judging tab and as slide 1 lede. */
   fit: string;
+  /** Short, punchy bullets used as the presentation slide-1 takeaways. */
+  pitchHighlights: string[];
   implemented: string[];
   demoFlow: string[];
   criteria: JurorDemoCriterion[];
@@ -55,49 +60,61 @@ export type JurorDemo = {
 export const jurorDemos: JurorDemo[] = [
   {
     slug: "future-society",
-    title: "Future Society",
+    title: "Future Society — Markets for contested beliefs",
     shortTitle: "Future Society",
-    track: "Social impact track",
+    track: "Future Society — Social impact",
     sponsor: "Ethereum public goods",
-    status: "Core mechanism implemented",
+    status: "Random-jury belief resolution shipped",
     summary:
-      "TruthMarket gives communities a privacy-respecting way to resolve disputed, probabilistic, or value-laden claims without giving final authority to one moderator.",
+      "AI claims, DAO accountability, public promises — TruthMarket settles the messy outcomes a single moderator should not own. Locked rules, private commits, random jurors, real stake.",
+    fitTagline: "A market layer for contested beliefs.",
     fit:
-      "The protocol is useful for DAO accountability, AI claim review, public-interest promises, community funding checks, creator milestones, and research forecasts. The impact comes from fair process: immutable rules, private committed votes, random selected jurors, and risked stake.",
+      "Polymarket shows what people believe. TruthMarket gives communities a process for resolving disputed claims under posted rules. Models, agents, DAOs, and creators are making claims at a scale no single resolver can audit. TruthMarket turns those questions into markets where the crowd commits, a random jury reveals, and risked stake makes accountability real.",
+    pitchHighlights: [
+      "Stake shows conviction. Random jurors decide.",
+      "AI claims · DAO promises · creator milestones · public bets",
+      "Locked rules → private commit → random jury → reveal",
+      "Privacy-respecting, transparent, no central moderator",
+    ],
     implemented: [
-      "Immutable claim/rules documents are published before stake enters the market.",
-      "Classic commit-reveal keeps votes hidden during the voting phase.",
-      "SpaceComputer randomness selects the resolving jury after commits are locked.",
-      "Each selected juror contributes one count-based vote, independent of stake size.",
-      "The UI and CLI expose Swarm verification, jury status, reveal, settlement, and payout flows.",
+      "Immutable claim/rules document published to Swarm before any stake enters the market.",
+      "Classic commit-reveal keeps every vote hidden during the voting phase — operator cannot reveal for users.",
+      "SpaceComputer cTRNG draws the resolving jury only after commits are locked.",
+      "One juror = one count-based vote, independent of stake size.",
+      "UI and CLI cover Swarm verification, jury status, reveal, settlement, and pull-pattern payouts.",
     ],
     demoFlow: [
-      "Create a community-impact claim with locked YES/NO rules.",
-      "Voters stake and privately commit their belief.",
-      "Voting closes, then randomness selects selected jurors from committed voters.",
-      "Selected jurors reveal and resolve the market under the immutable rules.",
-      "Winning revealers withdraw returned stake plus their share of the slashed pool.",
+      "Lock claim & rules on Swarm",
+      "Voters stake and commit privately",
+      "Voting closes, cTRNG draws jury",
+      "Jurors reveal under locked rules",
+      "Winners pull stake plus slashed pool",
     ],
     criteria: [
       {
         label: "Fairness",
         detail:
-          "Selected jurors are drawn after commits close, so participants cannot know the resolving jury while votes are being committed.",
+          "Jurors are drawn after commits close, so participants cannot know the resolving jury while votes are being committed.",
       },
       {
-        label: "Privacy",
+        label: "Privacy-respecting",
         detail:
-          "Votes are committed as hashes and revealed later by the voter. The operator cannot reveal votes for users.",
+          "Votes are committed as hashes and revealed only by the voter. The operator cannot reveal votes for users.",
       },
       {
         label: "Transparent governance",
         detail:
-          "Claim rules, selected jurors, randomness evidence, reveal counts, slashing, and withdrawals are inspectable.",
+          "Claim rules, selected jurors, randomness evidence, reveal counts, slashing, and withdrawals are all on-chain and inspectable.",
       },
       {
         label: "Inclusive participation",
         detail:
-          "Stake controls exposure and reward weight, but selected juror voting power is one juror equals one vote.",
+          "Stake controls exposure and reward weight, but voting power on the jury is one juror equals one vote.",
+      },
+      {
+        label: "Ethical impact",
+        detail:
+          "TruthMarket reframes resolution as community process, not centralized authority — useful for AI accountability, DAO promises, and disputed public claims.",
       },
     ],
     code: [
@@ -117,7 +134,7 @@ export const jurorDemos: JurorDemo[] = [
 }`,
       },
       {
-        title: "Random selected jury",
+        title: "Random jury draw",
         source: "contracts/src/TruthMarket.sol",
         line: 1023,
         language: "solidity",
@@ -144,65 +161,72 @@ export const jurorDemos: JurorDemo[] = [
       },
     ],
     cta: {
-      headline: "Use TruthMarket where communities need a fair process, not one final authority.",
-      body:
-        "For this track, walk judges from a disputed social-impact claim to locked rules, private commitments, selected jurors, and settlement.",
-      primaryLabel: "Open the live demo",
-      primaryHref: "/demo",
-      secondaryLabel: "Review the protocol context",
+      headline: "Polymarket shows belief. TruthMarket resolves it with random juries.",
+      body: "Walk a juror from a disputed social claim to locked rules, private commits, jury draw, and settlement.",
+      primaryLabel: "Open a live market",
+      primaryHref: "/",
+      secondaryLabel: "Read the protocol context",
       secondaryHref: "https://github.com/schaier-io/eth2026/blob/main/CONTEXT.md",
     },
   },
   {
     slug: "swarm-verified-fetch",
-    title: "Bounty 1: Verified Fetch - Trust No Gateway",
+    title: "Bounty 1: Verified Fetch — Trust No Gateway",
     shortTitle: "Swarm Verified Fetch",
-    track: "Swarm bounty 1",
+    track: "Swarm Bounty 1",
     sponsor: "Swarm",
-    status: "Package implemented",
+    status: "Package shipped on npm + wired into TruthMarket",
     summary:
-      "The repo includes @truth-market/swarm-verified-fetch, a browser and Node.js package for fetching Swarm data through gateways while verifying immutable chunks and signed feed updates locally.",
+      "@truth-market/swarm-verified-fetch — pull Swarm data through any gateway and prove it locally. The same trust check Bee does internally, packaged for any TS/JS app.",
+    fitTagline: "Download from anywhere. Verify locally. Trust the hash.",
     fit:
-      "TruthMarket uses this for claim/rules documents. A gateway can deliver the bytes, but the client recomputes and verifies the Swarm content path before showing users the rules they are about to stake on.",
+      "Running a full Bee node is not realistic for browsers, mobile apps, or lightweight agents — and trusting random gateways is not good enough when bytes control real markets. TruthMarket stores claim/rules on Swarm, and Verified Fetch proves the rules a user sees are the rules the contract referenced — before the stake button enables.",
+    pitchHighlights: [
+      "Download from anywhere, verify locally, trust the hash",
+      "CAC + BMT, multi-chunk trees, manifests, SOC/feed updates",
+      "Browser + Node, fetch-shaped API, no wallets to read",
+      "TruthMarket: gateway can't quietly change the rules",
+    ],
     implemented: [
-      "Fetches immutable Swarm data through gateway lists with retries, timeouts, and failover.",
-      "Verifies CAC chunks and reconstructs multi-chunk byte trees before exposing payloads.",
-      "Resolves verified Mantaray manifest paths from verified manifest bytes.",
-      "Verifies SOC/feed updates, including owner, topic, sequence index, and target reference.",
-      "Exposes manual verification helpers and typed verification metadata.",
-      "Includes fake gateway, corrupted chunk, manifest, feed, and MITM-style tests.",
+      "Fetches immutable Swarm data through gateway lists with retries, timeouts, racing, and failover.",
+      "Verifies CAC chunks and reconstructs multi-chunk byte trees the same way Bee would.",
+      "Resolves verified Mantaray manifest paths from already-verified manifest bytes.",
+      "Verifies SOC/feed updates: owner, topic, sequence index, and target reference.",
+      "Stream mode for large files, progress callbacks, abort signals, and typed verification proofs.",
+      "Manual verification helpers for app-side checks beyond the high-level API.",
+      "Tests cover corrupted chunks, bad manifests, feed tampering, and MITM-style gateway attacks.",
     ],
     demoFlow: [
-      "Open a market whose rules are stored as a Swarm reference.",
-      "Fetch the claim/rules bytes from a configured gateway.",
-      "Recompute the Swarm chunk tree and verify the reference.",
-      "Display the rules and enable participation only when verification succeeds.",
+      "Open a market with Swarm-stored rules",
+      "Fetch claim bytes via gateway",
+      "Recompute Swarm hash client-side",
+      "Reveal rules · enable stake on match",
     ],
     criteria: [
       {
         label: "Correctness",
         detail:
-          "CAC/BMT chunk verification, multi-chunk tree reconstruction, manifests, and SOC/feed updates are implemented.",
+          "CAC/BMT chunk verification, multi-chunk tree reconstruction, manifests, and SOC/feed updates are all implemented and unit-tested.",
       },
       {
         label: "API design",
         detail:
-          "The main API is a familiar verifiedFetch(input, options) call with response modes and metadata.",
+          "verifiedFetch(input, options) mirrors the standard Fetch API. Response modes, typed metadata, and verification proofs are first-class returns.",
       },
       {
         label: "Browser support",
         detail:
-          "The package is TypeScript, fetch-based, and avoids Node-only assumptions in the core fetch path.",
+          "TypeScript, fetch-based, no Node-only assumptions in the core path. Works in dApp frontends without polyfills.",
       },
       {
         label: "Resilience",
         detail:
-          "Gateway racing/failover, abort signals, timeout handling, and verification errors are first-class outcomes.",
+          "Gateway racing/failover, abort signals, timeouts, and verification errors are explicit outcomes — not silent fallbacks.",
       },
       {
         label: "Tests",
         detail:
-          "The package has unit and e2e-style tests for corrupt bytes, gateway failures, manifests, feeds, and tampering.",
+          "Unit and e2e-style tests cover corrupt bytes, gateway failures, manifest paths, feed verification, and tampering attempts.",
       },
     ],
     code: [
@@ -223,7 +247,7 @@ export const jurorDemos: JurorDemo[] = [
 }`,
       },
       {
-        title: "SOC/feed update verification",
+        title: "SOC / feed update verification",
         source: "packages/swarm-verified-fetch/src/soc.ts",
         line: 177,
         language: "ts",
@@ -249,60 +273,73 @@ export const jurorDemos: JurorDemo[] = [
       },
     ],
     cta: {
-      headline: "Install verified fetch and make public gateways untrusted delivery.",
-      body:
-        "For this track, show the package install, then demo a claim/rules document fetched through a gateway and verified locally before staking.",
+      headline: "Prove the rules users see are the rules they stake on.",
+      body: "Install the package, point it at a market's claim reference, watch it fail loud on tampered bytes.",
       primaryLabel: "Open npm package",
       primaryHref: "https://www.npmjs.com/package/@truth-market/swarm-verified-fetch",
       secondaryLabel: "Read package docs",
-      secondaryHref: "https://github.com/schaier-io/eth2026/tree/main/packages/swarm-verified-fetch#readme",
+      secondaryHref:
+        "https://github.com/schaier-io/eth2026/tree/main/packages/swarm-verified-fetch#readme",
     },
   },
   {
     slug: "swarm-kv",
     title: "Bounty 2: A Simple Key-Value Store on Swarm",
     shortTitle: "Swarm KV",
-    track: "Swarm bounty 2",
+    track: "Swarm Bounty 2",
     sponsor: "Swarm",
-    status: "Package implemented",
+    status: "Package shipped on npm + wired into TruthMarket",
     summary:
-      "The repo includes @truth-market/swarm-kv, a developer-friendly key-value store over Swarm for mutable app data, indexes, user preferences, and agent state.",
+      "@truth-market/swarm-kv — a familiar get / put / list / delete on Swarm. No feeds, topics, SOCs, or manifests in the developer's face.",
+    fitTagline: "Decentralized storage that feels like localStorage.",
     fit:
-      "TruthMarket keeps canonical claim/rules documents immutable, then uses Swarm KV for discovery and read-model convenience. Mutable indexes help users find markets, but never define rules, outcomes, votes, selected jurors, or payouts.",
+      "Most developers do not want to think about feeds, topics, manifests, SOCs, and postage just to save app data. Swarm KV wraps those primitives into a familiar interface so dApps can store profiles, indexes, agent memory, and read models without falling back to a centralized DB. TruthMarket uses it for discovery indexes and read models around the protocol — never for rules, outcomes, votes, or payouts.",
+    pitchHighlights: [
+      "get / put / list / delete · like localStorage, persistent",
+      "Feeds, topics, SOCs hidden behind one promise-first API",
+      "Verified reads via @truth-market/swarm-verified-fetch",
+      "Strings, JSON, bytes, large values, optional encryption",
+    ],
     implemented: [
-      "Supports string, JSON, bytes, ArrayBuffer, and Blob-like values.",
-      "Provides put, get, getJson, getString, getBytes, list, delete, has, and async entries.",
-      "Verifies reads through @truth-market/swarm-verified-fetch before decoding values.",
+      "Supports strings, JSON, bytes, ArrayBuffer, and Blob-like values.",
+      "Provides put, get, getJson, getString, getBytes, list, delete, has, and async entries iteration.",
+      "Verifies every read through @truth-market/swarm-verified-fetch before decoding values.",
       "Maintains an immutable index document with revisions, tombstones, topics, and previous references.",
-      "Handles postage batches, large payload limits, optional encryption, feed pointers, and write locks.",
-      "Includes fake Bee, local Bee, deletion, concurrency, and large-value tests.",
+      "Postage batch reuse, large payload limits, optional encrypted private mode, and feed pointers.",
+      "Serialized writes with an ifIndexReference optimistic guard for safer concurrent updates.",
+      "Tests cover fake Bee, live Bee, public testnet, deletion, concurrency, and large multi-chunk values.",
     ],
     demoFlow: [
-      "Store a creator's market index or user preference with put.",
-      "Publish the updated immutable index reference.",
-      "Read values back with verified Swarm bytes.",
-      "List or iterate keys without exposing feed/SOC details to app developers.",
+      "put a creator's market index",
+      "Publish updated immutable index reference",
+      "get · async iterate via verified Swarm bytes",
+      "Delete with indexed tombstones",
     ],
     criteria: [
       {
         label: "Developer experience",
         detail:
-          "The app-facing surface is get, put, list, delete, and entries instead of feeds, topics, SOCs, and manifests.",
+          "App-facing surface is get, put, list, delete, entries — not feeds, topics, SOCs, or manifests. Usable in 5 minutes.",
+      },
+      {
+        label: "API design",
+        detail:
+          "Promise-first, typed value modes (string/json/bytes), and async iteration mirror the patterns devs already know.",
       },
       {
         label: "Completeness",
         detail:
-          "Listing, deletion, tombstones, iteration, JSON, strings, bytes, and optional private mode are included.",
+          "Listing, deletion, tombstones, iteration, JSON, strings, bytes, and an optional private/encrypted mode are all included.",
       },
       {
         label: "Edge cases",
         detail:
-          "Missing keys return null, payload sizes are checked, writes are serialized, and optimistic guards are available.",
+          "Missing keys return null. Payload sizes are checked. Writes are serialized with an ifIndexReference optimistic guard for concurrent updates.",
       },
       {
         label: "Examples",
         detail:
-          "The package README and tests show working local and fake Bee usage paths.",
+          "README and tests show working local Bee, fake Bee, and public-testnet usage paths end to end.",
       },
     ],
     code: [
@@ -343,9 +380,8 @@ return {
       },
     ],
     cta: {
-      headline: "Install Swarm KV and make decentralized app storage feel familiar.",
-      body:
-        "For this track, lead with get, put, list, delete, and verified reads. The point is developer experience on top of Swarm primitives.",
+      headline: "Decentralized storage that feels like localStorage.",
+      body: "Lead with get/put/list/delete, then show that every read is verified Swarm under the hood.",
       primaryLabel: "Open npm package",
       primaryHref: "https://www.npmjs.com/package/@truth-market/swarm-kv",
       secondaryLabel: "Read package docs",
@@ -358,45 +394,53 @@ return {
     shortTitle: "Space Security",
     track: "Space-Powered Security APIs",
     sponsor: "SpaceComputer",
-    status: "Core integration implemented",
+    status: "cTRNG in the critical path",
     summary:
-      "TruthMarket uses SpaceComputer cTRNG as the fairness engine for jury selection, the moment that decides which staked participants resolve the market.",
+      "SpaceComputer cTRNG selects the jurors who decide every market. Game theory only works if the draw cannot be predicted, bribed, copied, or front-run.",
+    fitTagline: "Randomness as the fairness engine.",
     fit:
-      "Randomness is not cosmetic here. It is in the critical path: no selected jury, no resolution. The protocol stores the cTRNG value, metadata, randomness hash, audit hash, and selected jurors so the draw can be inspected and replayed.",
+      "If jurors were known early, voters could bribe, copy, or coordinate. If the operator picked them, the protocol collapses into trusted moderation. cTRNG sits in the critical path — it arrives only after commits lock, the contract draws the jury deterministically, and the evidence (value, hash, beacon metadata, audit hash) is stored on-chain so the draw is replayable.",
+    pitchHighlights: [
+      "cTRNG decides the jury, on-chain, after commits lock",
+      "Critical path: no draw, no resolution",
+      "Stops bribery, copying, operator picks, front-runs",
+      "Replay evidence stored: value · hash · beacon · audit",
+    ],
     implemented: [
-      "The contract accepts SpaceComputer cTRNG randomness only after voting closes.",
-      "The posted randomness transitions the market into reveal and draws selected jurors on-chain.",
-      "Randomness evidence fields are stored and exposed through getters.",
-      "The CLI fetches the public SpaceComputer IPFS/IPNS beacon and submits commitJury.",
-      "The frontend displays selected jurors and randomness evidence as the resolution moment.",
+      "Contract accepts SpaceComputer cTRNG randomness only after voting closes.",
+      "Posted randomness transitions the market into Reveal and draws jurors on-chain in one tx.",
+      "Randomness evidence (value, hash, beacon metadata, audit hash) is stored and exposed via getters.",
+      "CLI fetches the public SpaceComputer IPFS/IPNS beacon and submits commitJury.",
+      "Frontend surfaces selected jurors and randomness evidence as the resolution moment.",
+      "Modulo-bias-resistant draw: rejection sampling under keccak256 keeps every committer equally likely.",
     ],
     demoFlow: [
-      "Voters commit hidden positions with stake.",
-      "Voting closes before jurors are known.",
-      "The jury committer fetches SpaceComputer cTRNG and posts the evidence.",
-      "The contract deterministically selects the jury.",
-      "Selected jurors reveal and determine the outcome.",
+      "Voters commit hidden positions with stake",
+      "Voting closes; jurors still unknown",
+      "CLI fetches cTRNG, posts the evidence",
+      "Contract deterministically picks the jury",
+      "Selected jurors reveal and resolve",
     ],
     criteria: [
       {
         label: "Working prototype",
         detail:
-          "The local and Sepolia demo flows include commit, jury formation, reveal, resolution, and withdrawal paths.",
+          "Local and Sepolia demos cover commit, jury formation, reveal, resolution, and pull-pattern withdrawal end to end.",
       },
       {
-        label: "Meaningful stack use",
+        label: "Meaningful use of the stack",
         detail:
-          "cTRNG decides selected jurors, selected jurors decide the outcome, and the outcome controls settlement.",
+          "cTRNG decides selected jurors, jurors decide the outcome, and the outcome controls settlement. It is structural, not a cosmetic API call.",
       },
       {
-        label: "Impact and creativity",
+        label: "Impact & creativity",
         detail:
-          "Randomness assigns temporary judgment power for disputed claims rather than powering a lottery or cosmetic trait.",
+          "Randomness assigns temporary judgment power for disputed claims rather than powering a lottery, drop, or NFT trait.",
       },
       {
-        label: "Code and clarity",
+        label: "Code & clarity",
         detail:
-          "The contract exposes replay evidence, and the docs record the trusted-committer hackathon limitation.",
+          "Contract exposes replay evidence, modulo-bias-resistant draw, and the docs record the trusted-committer hackathon limitation explicitly.",
       },
     ],
     code: [
@@ -451,63 +495,66 @@ return {
       },
     ],
     cta: {
-      headline: "Run the jury draw and show randomness as the fairness engine.",
-      body:
-        "For this track, make SpaceComputer the turning point: hidden commitments are locked, cTRNG arrives, selected jurors appear, and reveal begins.",
-      primaryLabel: "Open the live demo",
-      primaryHref: "/demo",
+      headline: "Randomness is the fairness engine of TruthMarket.",
+      body: "Walk a juror from locked commits to cTRNG arrival to a deterministic, replayable draw.",
+      primaryLabel: "Open a live market",
+      primaryHref: "/",
       secondaryLabel: "Open SpaceComputer ADR",
-      secondaryHref: "https://github.com/schaier-io/eth2026/blob/main/docs/adr/0005-spacecomputer-first-sponsor-strategy.md",
+      secondaryHref:
+        "https://github.com/schaier-io/eth2026/blob/main/docs/adr/0005-spacecomputer-first-sponsor-strategy.md",
     },
     limits: [
-      "Hackathon scope trusts the jury committer to post the fetched SpaceComputer beacon value. The draw is replayable, but the cTRNG proof is not verified on-chain yet.",
+      "Hackathon scope trusts the jury committer to post the fetched cTRNG value. The draw is replayable on-chain, but the cTRNG proof itself is not yet verified on-chain — that's the next step as SpaceComputer rolls out space-signed verifiable randomness.",
     ],
   },
   {
     slug: "apify-x402",
-    title: "Apify x X402",
+    title: "Apify x X402 — Attention into markets",
     shortTitle: "Apify x X402",
-    track: "Apify bounty",
+    track: "Apify x X402 bounty",
     sponsor: "Apify",
-    status: "Apify loop implemented, X402 adapter pending",
+    status: "Apify discovery loop shipped · X402 adapter pending",
     summary:
-      "TruthMarket uses Apify as a discovery engine: agents scan public web context, score ambiguous questions, draft claim/rules documents, and create random-jury belief-resolution markets.",
+      "Agents pay Apify via X402 to find viral, unresolved questions on the web, then create TruthMarket markets around them. The internet argues; the protocol settles.",
+    fitTagline: "Attention → data → markets → credibility.",
     fit:
-      "Apify does not decide outcomes. It finds what people are arguing about. X402 is the natural payment rail for agent-paid data access, sitting before the Apify candidate fetch in the agent workflow.",
+      "Most prediction markets depend on humans manually finding good questions — that does not scale. Our agent watches Reddit and other public sources for posts that are viral, ambiguous, prediction-worthy, and safe to settle. It pays Apify through X402, scores candidates, drafts a YES/NO claim, and creates a market. Apify is the discovery engine, X402 is the payment rail, TruthMarket is the resolution layer.",
+    pitchHighlights: [
+      "Apify finds what the internet argues about",
+      "X402 = small, automated, agent-native payments",
+      "Score: virality · ambiguity · resolvability · safety",
+      "Agent drafts claim. Random jury resolves outcome.",
+    ],
     implemented: [
-      "A Next.js API route can call Apify, fetch Reddit dataset items, and draft market candidates.",
-      "A reusable agent package runs ticks, dedupes seen Reddit permalinks, and creates markets through a host adapter.",
-      "The generator scores virality, ambiguity, public resolvability, and safety before drafting rules.",
-      "The generated claim/rules copy explicitly says Apify collected context but does not decide the outcome.",
+      "Next.js API route calls Apify, fetches Reddit dataset items, and drafts market candidates.",
+      "Reusable agent package runs ticks, dedupes seen Reddit permalinks, and creates markets through a host adapter.",
+      "Generator scores virality, ambiguity, public resolvability, and safety before drafting rules.",
+      "Generated claim/rules copy is explicit: Apify collected context but does not decide outcome.",
       "Offline dry-run mode accepts supplied Reddit items for judge demos without live Apify credentials.",
+      "JSON event emission throughout the tick (candidates_fetched, market_created) for agent observability.",
     ],
     demoFlow: [
-      "Agent pays for or otherwise accesses an Apify-powered scrape.",
-      "Apify returns posts, comments, score, source URL, and public context.",
-      "TruthMarket scores candidates and drafts an immutable claim/rules document.",
-      "The agent publishes rules to Swarm and creates the market through MarketRegistry.",
-      "Humans and agents stake, reveal, and resolve through selected jurors.",
+      "Agent pays Apify via X402",
+      "Score & dedupe candidates",
+      "Draft YES/NO claim, publish to Swarm",
+      "Create market via MarketRegistry",
+      "Humans + agents stake, jury resolves",
     ],
     criteria: [
       {
         label: "Relevant use case",
         detail:
-          "The agent turns real-time public disputes into markets for humans and agents to price and resolve.",
+          "The agent turns real-time public disputes into markets humans and agents can price and resolve. That is exactly the Web3 + Apify thesis.",
       },
       {
-        label: "Payment capability",
+        label: "Functionality & payment demo",
         detail:
-          "The Apify discovery loop is implemented. The X402 payment wrapper is the remaining bounty-specific adapter before the candidate fetch.",
-      },
-      {
-        label: "Functionality",
-        detail:
-          "The route and agent tick can generate candidates, build specs, create markets, record state, and emit JSON events.",
+          "The Apify discovery loop is fully implemented and demoable. The X402 wrapper is the remaining bounty-specific adapter before the candidate fetch.",
       },
       {
         label: "Creativity",
         detail:
-          "Apify becomes the front door for an agentic market economy, not an outcome authority.",
+          "Apify becomes the front door for an agentic market economy — not a backend scrape, but the source of new markets at scale.",
       },
     ],
     code: [
@@ -557,63 +604,71 @@ const created = await deps.createMarket(spec, { candidate });`,
       },
     ],
     cta: {
-      headline: "Turn internet disputes into markets with an agent loop.",
-      body:
-        "For this track, show Apify as discovery, X402 as the payment rail to add next, and TruthMarket as the resolution layer.",
+      headline: "Apify finds. X402 pays. TruthMarket settles.",
+      body: "Agents scan, score, and create markets — humans and agents resolve them through random juries.",
       primaryLabel: "Open Apify agent plan",
-      primaryHref: "https://github.com/schaier-io/eth2026/blob/main/docs/apify-reddit-agent-market-plan.md",
+      primaryHref:
+        "https://github.com/schaier-io/eth2026/blob/main/docs/apify-reddit-agent-market-plan.md",
       secondaryLabel: "Open agent code",
       secondaryHref: "https://github.com/schaier-io/eth2026/tree/main/agents/apify",
     },
     limits: [
-      "The repo currently implements Apify discovery and agent market creation. A live X402 payment adapter is still needed before claiming the payment portion as complete.",
+      "Apify discovery + agent market creation are implemented end-to-end. A live X402 payment adapter sits in front of the candidate fetch and is the remaining piece for a full payment demo.",
     ],
   },
   {
     slug: "agentic-venture",
-    title: "Best Agentic Venture",
+    title: "Best Agentic Venture — TruthMarket x Umia",
     shortTitle: "Agentic Venture",
-    track: "Umia venture bounty",
+    track: "Best Agentic Venture",
     sponsor: "Umia",
-    status: "Venture story and agent loop implemented",
+    status: "Venture story + agent loop shipped",
     summary:
-      "TruthMarket can become a credibility layer for the agent economy: agents discover claims and operate under local policy, while humans and agents stake, reveal, and build reputation through resolved markets.",
+      "Polymarket for the AI age: agents find the questions, humans and agents price belief, random juries resolve uncertainty, Umia turns the whole thing into a community-owned venture.",
+    fitTagline: "Polymarket for the AI age — community-owned via Umia.",
     fit:
-      "The venture path is protocol fees on markets, agent market tools, creator and DAO dashboards, reputation analytics, and staking infrastructure. The product is naturally community-owned because the mechanism itself is shared-rule, private-vote, random-jury resolution.",
+      "Agents are about to flood the internet with claims. The real question is no longer just who posted, but who deserves to be believed under a shared process. TruthMarket is the credibility layer: agents find and scale the questions, humans and agents stake on the answers, random juries resolve disputed beliefs. Umia's CCA + token structure carries that same democratic mechanism into the venture itself, instead of behind a company wall.",
+    pitchHighlights: [
+      "Credibility layer for the agent economy",
+      "Revenue: fees · agent tools · reputation · settlement",
+      "Token: stake · fees · reveals · reputation · governance",
+      "Umia CCA = community-owned from day one",
+    ],
     implemented: [
       "MarketRegistry creates many isolated markets from one verified implementation.",
-      "Agents can create markets from Apify candidates through a reusable tick loop.",
-      "Agent policy, local reveal vaults, heartbeat monitoring, auto-reveal, and auto-withdraw are documented and partly implemented.",
-      "The contract supports protocol fees, creator accrual, treasury withdrawals, and stake-based upside.",
-      "The docs include a token path focused on staking, fees, reputation, and community ownership.",
+      "Agents create markets from Apify candidates through a reusable tick loop with dedupe and JSON events.",
+      "Agent policy, local reveal vaults, heartbeat monitoring, auto-reveal, and auto-withdraw documented and partly implemented.",
+      "Contract supports protocol fees, creator accrual, treasury withdrawals, and stake-based upside.",
+      "Docs include a token path focused on staking, fees, reputation, and community ownership.",
+      "Web app for humans, CLI + agent package for machines — same on-chain mechanism for both.",
     ],
     demoFlow: [
-      "Agent discovers an unresolved claim.",
-      "Agent drafts rules and creates a market.",
-      "Humans and agents stake under the same immutable rules.",
-      "Selected jurors resolve the market.",
-      "Resolved history becomes a reputation and analytics surface for future products.",
+      "Agent finds an unresolved claim",
+      "Agent drafts rules, creates market",
+      "Humans + agents stake under same rules",
+      "Random jurors resolve outcome",
+      "Resolved history → reputation surface",
     ],
     criteria: [
       {
         label: "Long-term viability",
         detail:
-          "TruthMarket can monetize through fees, market tooling, agent discovery, dashboards, and settlement infrastructure.",
+          "Revenue paths are concrete: market fees, agent tooling, reputation analytics, premium discovery, and settlement infrastructure for credibility markets.",
       },
       {
         label: "Token consideration",
         detail:
-          "The token story is tied to stake, protocol fees, reveal incentives, and reputation rather than decorative governance.",
+          "The token is tied to stake, fees, reveal incentives, and reputation — not decorative governance. Aligns with Umia's CCA crowdfunding model.",
       },
       {
-        label: "Agentic execution",
+        label: "Agentic execution scaling",
         detail:
-          "Agents are creators, voters, selected jurors, and monitors, but must still use classic commit-reveal and local policy.",
+          "Agents are creators, voters, jurors, and monitors — using the same commit-reveal protocol as humans. The CLI and agent package expose machine-friendly JSON workflows.",
       },
       {
         label: "UX audience",
         detail:
-          "The web app serves humans, while the CLI and agent package expose machine-friendly JSON workflows.",
+          "The web app serves humans; the CLI and agent package serve machines. Both share the same on-chain mechanism — no branch in trust.",
       },
     ],
     code: [
@@ -653,9 +708,8 @@ await saveAgentState(cfg, recordSeen(state, { marketAddress: created.marketAddre
       },
     ],
     cta: {
-      headline: "Pitch TruthMarket as venture infrastructure for human and agent credibility.",
-      body:
-        "For this track, move from working agent flows to the business path: market fees, agent tools, reputation analytics, and community ownership.",
+      headline: "Polymarket for the AI age — owned by the community.",
+      body: "Working agent loops today; protocol fees, agent tools, reputation analytics as the venture path.",
       primaryLabel: "Open the CLI bootstrap",
       primaryHref: "https://github.com/schaier-io/eth2026/blob/main/apps/cli/skills.sh#L1",
       secondaryLabel: "Open task board",
@@ -664,49 +718,57 @@ await saveAgentState(cfg, recordSeen(state, { marketAddress: created.marketAddre
   },
   {
     slug: "sourcify",
-    title: "Sourcify Bounty",
+    title: "Sourcify — Verified contract infrastructure for market factories",
     shortTitle: "Sourcify",
-    track: "Verified contract data",
+    track: "Sourcify Bounty",
     sponsor: "Sourcify",
-    status: "Verification layer implemented",
+    status: "Verification layer shipped",
     summary:
-      "TruthMarket uses Sourcify as a safety layer for a multi-contract architecture: one MarketRegistry creates many lightweight market clones, and the app verifies that each market matches the registry implementation.",
+      "One MarketRegistry creates many lightweight market clones. Sourcify proves every clone runs the canonical TruthMarket code — same checks in the web app and the CLI.",
+    fitTagline: "Swarm verifies the rules. Sourcify verifies the code.",
     fit:
-      "Swarm verifies the rules users read. Sourcify verifies the code that enforces those rules. Together, users do not have to trust a random market link or the frontend blindly.",
+      "TruthMarket splits the architecture: one MarketRegistry as the entry point, many EIP-1167 clones, one per market. That gives isolation, smaller per-market storage, and clean scaling — but users need to know which clones are real. Sourcify lookup + runtime bytecode comparison answers that before anyone stakes: canonical, verified fork, unverified, or unknown.",
+    pitchHighlights: [
+      "Registry + EIP-1167 clones — proven canonical",
+      "Sourcify match + runtime bytecode compare",
+      "States: verified · clone-checked · unknown · mismatch",
+      "Same checks in the web app and the CLI",
+    ],
     implemented: [
-      "The frontend looks up Sourcify matches for the registry implementation.",
-      "The app checks each market's EIP-1167 runtime bytecode against the registry implementation.",
+      "Frontend looks up Sourcify matches for the registry implementation address.",
+      "App checks each market's EIP-1167 runtime bytecode against the registry implementation.",
       "Market cards and detail pages show Sourcify/clone verification badges.",
-      "The CLI has matching market-integrity checks and refuses mismatched markets.",
+      "CLI has matching market-integrity checks and refuses to operate on mismatched markets.",
       "Unknown, unavailable, clone-checked, verified, and mismatch states are modeled explicitly.",
+      "Combined with Swarm verified rules, the trust flow is end-to-end: code verified + rules verified before stake.",
     ],
     demoFlow: [
-      "Load markets from MarketRegistry.",
-      "Read the registry implementation address.",
-      "Fetch the implementation's Sourcify status.",
-      "Check each market clone bytecode against the expected runtime.",
-      "Show the user whether the market is verified, clone-checked, unknown, or mismatched.",
+      "Load markets from MarketRegistry",
+      "Read the implementation address",
+      "Lookup Sourcify match for the implementation",
+      "Match clone runtime bytecode to expected",
+      "Show verified · clone-checked · unknown · mismatch",
     ],
     criteria: [
       {
         label: "Use of Sourcify data",
         detail:
-          "Sourcify verified-source status is combined with runtime clone verification and registry discovery.",
+          "Sourcify verified-source status is combined with EIP-1167 runtime bytecode verification and registry discovery — not a surface API call.",
       },
       {
-        label: "Impact and usefulness",
+        label: "Impact & usefulness",
         detail:
-          "Users can distinguish canonical registry markets from verified forks, unknown contracts, or mismatches before staking.",
+          "Users distinguish canonical registry markets from verified forks, unknown contracts, or outright mismatches before staking real funds.",
       },
       {
         label: "Technical execution",
         detail:
-          "The same verification concept exists in the web app and CLI, with typed status results.",
+          "Same verification concept exists in both the web app and CLI, with typed status results that drive UI and CLI decisions.",
       },
       {
         label: "Novelty",
         detail:
-          "Sourcify is used as a trust layer for scalable market factories rather than as a passive contract explorer link.",
+          "Sourcify becomes a trust layer for scalable market factories rather than a passive contract-explorer link.",
       },
     ],
     code: [
@@ -752,13 +814,13 @@ if (cloneMatches === true && implementationSourcify?.match === "exact_match") {
       },
     ],
     cta: {
-      headline: "Verify the code before anyone stakes.",
-      body:
-        "For this track, show the full trust flow: Swarm verifies the immutable rules and Sourcify verifies the market implementation.",
+      headline: "One verified registry. Many markets, all checked.",
+      body: "Show the full trust flow: Swarm verifies the immutable rules, Sourcify verifies the market implementation.",
       primaryLabel: "Open live markets",
       primaryHref: "/",
       secondaryLabel: "Open Sourcify verifier",
-      secondaryHref: "https://github.com/schaier-io/eth2026/blob/main/apps/web/lib/server/sourcify.ts#L24",
+      secondaryHref:
+        "https://github.com/schaier-io/eth2026/blob/main/apps/web/lib/server/sourcify.ts#L24",
     },
   },
 ];

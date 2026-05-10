@@ -3,6 +3,7 @@ import { formatUnits, type Address, type Hex } from "viem";
 import { TimeAgo } from "./components/TimeAgo";
 import { SourcifyBadge } from "./components/SourcifyBadge";
 import { SwarmBadge } from "./components/SwarmBadge";
+import { MarketCardTitle } from "./components/MarketCardTitle";
 import { truthMarketRegistryAbi, registryAddress } from "../lib/registry";
 import { erc20Abi, truthMarketAbi, TRUTH_MARKET_CONTRACT_ID } from "../lib/truthmarket";
 import { getChainId, getPublicClient } from "../lib/server/viem";
@@ -307,11 +308,12 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
             const bondAmount = row.creatorBond ?? 0n;
             const hasBond = bondAmount > 0n && row.bondPosted !== false;
             const symbol = row.stakeSymbol ?? "tokens";
+            const title = row.title ?? "(claim unavailable)";
             return (
               <li key={row.address} className="market-card">
                 <Link href={`/markets/${row.address}`} className="market-card-link">
                   <header className="market-card-head">
-                    <h2 className="market-card-name">{row.title ?? "(claim unavailable)"}</h2>
+                    <MarketCardTitle title={title} />
                     <div className="market-card-badges">
                       <PhasePill display={display} />
                     </div>

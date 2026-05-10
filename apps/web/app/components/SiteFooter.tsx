@@ -16,8 +16,7 @@ export function SiteFooter() {
           <Link href="/">Markets</Link>
           <Link href="/my-markets">Yours</Link>
           <Link href="/deploy">Launch</Link>
-          <Link href="/demo">Demo</Link>
-          <Link href="/jurors">Jurors</Link>
+          <Link href="/jurors">For hackathon judges</Link>
         </nav>
         <p className="site-footer-meta">
           <span>Random-jury belief resolution.</span>
