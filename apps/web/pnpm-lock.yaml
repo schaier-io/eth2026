@@ -18,11 +18,11 @@ importers:
         specifier: ^5.100.9
         version: 5.100.9(react@19.2.6)
       '@truth-market/swarm-kv':
-        specifier: file:../../packages/swarm-kv
-        version: file:../../packages/swarm-kv
+        specifier: 0.1.0-alpha.0
+        version: 0.1.0-alpha.0
       '@truth-market/swarm-verified-fetch':
-        specifier: file:../../packages/swarm-verified-fetch
-        version: file:../../packages/swarm-verified-fetch
+        specifier: 0.1.0-alpha.0
+        version: 0.1.0-alpha.0
       '@walletconnect/ethereum-provider':
         specifier: ^2.23.9
         version: 2.23.9(@types/react@19.2.14)(immer@9.0.21)(react@19.2.6)(typescript@6.0.3)(use-sync-external-store@1.4.0(react@19.2.6))(zod@3.25.76)
@@ -951,16 +951,12 @@ packages:
     peerDependencies:
       react: ^18 || ^19
 
-  '@truth-market/swarm-kv@file:../../packages/swarm-kv':
-    resolution: {directory: ../../packages/swarm-kv, type: directory}
+  '@truth-market/swarm-kv@0.1.0-alpha.0':
+    resolution: {integrity: sha512-WCWFspsgClD+Kd2xTT19+j0TH4Uq4H4aOzRLJxuwbY7dqfEGfQFqPJ591hYhOuvk8vG06CTiu+Z7nH4c0AJyNQ==}
     engines: {node: '>=20'}
 
   '@truth-market/swarm-verified-fetch@0.1.0-alpha.0':
     resolution: {integrity: sha512-ugUeBKaIVi0ANZy6q17sl/J2nCRkWvX2icJL33pEHaUp1gwPWSMafNgIfwXTRAseky5D5afdADr9IwP7A3Svuw==}
-    engines: {node: '>=20'}
-
-  '@truth-market/swarm-verified-fetch@file:../../packages/swarm-verified-fetch':
-    resolution: {directory: ../../packages/swarm-verified-fetch, type: directory}
     engines: {node: '>=20'}
 
   '@types/bn.js@5.2.0':
@@ -3432,16 +3428,11 @@ snapshots:
       '@tanstack/query-core': 5.100.9
       react: 19.2.6
 
-  '@truth-market/swarm-kv@file:../../packages/swarm-kv':
+  '@truth-market/swarm-kv@0.1.0-alpha.0':
     dependencies:
       '@truth-market/swarm-verified-fetch': 0.1.0-alpha.0
 
   '@truth-market/swarm-verified-fetch@0.1.0-alpha.0':
-    dependencies:
-      '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0
-
-  '@truth-market/swarm-verified-fetch@file:../../packages/swarm-verified-fetch':
     dependencies:
       '@noble/curves': 2.2.0
       '@noble/hashes': 2.2.0

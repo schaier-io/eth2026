@@ -1790,6 +1790,41 @@ code {
   line-height: 1.65;
 }
 
+.juror-market-hook {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 22px;
+  align-items: center;
+  padding: 24px;
+  border: 1px solid rgba(108, 76, 255, 0.18);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(80% 140% at 100% 0%, rgba(255, 216, 74, 0.2), transparent 56%),
+    linear-gradient(135deg, rgba(237, 232, 255, 0.72), rgba(255, 255, 255, 0.84));
+  box-shadow: var(--shadow-sm);
+}
+
+.juror-market-hook h2 {
+  margin: 8px 0 10px;
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1.16;
+}
+
+.juror-market-hook p:not(.eyebrow) {
+  max-width: 760px;
+  margin: 0;
+  color: var(--muted-strong);
+  line-height: 1.6;
+}
+
+.juror-market-hook-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
 .juror-review-steps {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -4948,10 +4983,24 @@ button.primary:active:not(:disabled),
 
   .juror-intro-grid,
   .juror-fit-band,
+  .juror-market-hook,
   .juror-track-row,
   .juror-slide,
   .juror-two-col {
     grid-template-columns: 1fr;
+  }
+
+  .juror-market-hook {
+    padding: 20px;
+    border-radius: var(--radius);
+  }
+
+  .juror-market-hook h2 {
+    font-size: 22px;
+  }
+
+  .juror-market-hook-actions {
+    justify-content: flex-start;
   }
 
   .juror-track-row {

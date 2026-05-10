@@ -41,6 +41,26 @@ export default function JurorsPage() {
         </p>
       </section>
 
+      <section className="juror-market-hook" aria-label="Try TruthMarket yourself">
+        <div>
+          <p className="eyebrow">Or try it yourself</p>
+          <h2>Open a market and feel the mechanism before the pitch.</h2>
+          <p>
+            Start from the live market surface: inspect the claim, read the
+            locked rules, connect a wallet, and follow the commit, selected
+            juror, reveal, and settlement flow.
+          </p>
+        </div>
+        <div className="juror-market-hook-actions">
+          <Link href="/" className="page-header-cta">
+            Try a market yourself
+          </Link>
+          <Link href="/demo" className="page-header-cta page-header-cta-ghost">
+            Open guided demo
+          </Link>
+        </div>
+      </section>
+
       <section className="juror-review-steps" aria-label="Review steps">
         <article>
           <span>01</span>
