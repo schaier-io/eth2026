@@ -9,6 +9,10 @@ import {
   readRandomnessEvidence,
   readRevealStats,
 } from "../chain/contract.js";
+import {
+  assertMarketIntegrityAccepted,
+  verifyMarketIntegrity,
+} from "../chain/market-integrity.js";
 import { type ConfigOverrides, resolveConfig } from "../config.js";
 import { type OutputContext, emitNdjson, emitResult, promptSecret } from "../io.js";
 import { loadWallet } from "../wallet/loader.js";
@@ -19,6 +23,8 @@ export async function cmdMarketInfo(
 ): Promise<void> {
   const cfg = resolveConfig(opts);
   const client = makePublicClient(cfg);
+  const codeVerification = await verifyMarketIntegrity(client, cfg);
+  assertMarketIntegrityAccepted(codeVerification);
   const [config, phase, outcome, randomnessEvidence] = await Promise.all([
     readConfig(client, cfg),
     readPhase(client, cfg),
@@ -29,16 +35,13 @@ export async function cmdMarketInfo(
     address: cfg.contractAddress,
     chain: cfg.chainKey,
     chainId: cfg.chain.id,
-    name: config.name,
-    description: config.description,
-    tags: config.tags,
+    codeVerification,
     phase,
     phaseLabel: phaseLabel(phase),
     outcome,
     outcomeLabel: outcomeLabel(outcome),
     stakeToken: config.stakeToken,
     treasury: config.treasury,
-    admin: config.admin,
     juryCommitter: config.juryCommitter,
     creator: config.creator,
     minStake: config.minStake,
@@ -48,8 +51,7 @@ export async function cmdMarketInfo(
     minRevealedJurors: config.minRevealedJurors,
     riskPercent: config.riskPercent,
     protocolFeePercent: config.protocolFeePercent,
-    ipfsHashHex: config.ipfsHash,
-    claimRulesHash: config.claimRulesHash,
+    swarmReference: config.swarmReference,
     randomness: {
       value: randomnessEvidence.randomness,
       hash: randomnessEvidence.randomnessHash,
@@ -68,10 +70,10 @@ export async function cmdMarketInfo(
   };
   emitResult(ctx, data, () => {
     process.stdout.write(
-      `address:      ${cfg.contractAddress} (${cfg.chainKey})\n` +
-        `name:         ${config.name}\n` +
-        `description:  ${config.description}\n` +
-        `tags:         ${config.tags.join(", ") || "(none)"}\n` +
+        `address:      ${cfg.contractAddress} (${cfg.chainKey})\n` +
+        `code check:   ${codeVerification.label}\n` +
+        `implementation: ${codeVerification.implementation ?? "(unavailable)"}\n` +
+        `swarm ref:    ${config.swarmReference}\n` +
         `phase:        ${phaseLabel(phase)} (${phase})\n` +
         `outcome:      ${outcomeLabel(outcome)} (${outcome})\n` +
         `stake token:  ${config.stakeToken}\n` +
@@ -81,8 +83,6 @@ export async function cmdMarketInfo(
         `voting ends:  ${new Date(Number(config.votingDeadline) * 1000).toISOString()}\n` +
         `jury cutoff:  ${new Date(Number(config.juryCommitDeadline) * 1000).toISOString()}\n` +
         `reveal ends:  ${new Date(Number(config.revealDeadline) * 1000).toISOString()}\n` +
-        `ipfs hash:    ${config.ipfsHash}\n` +
-        `rules hash:   ${config.claimRulesHash}\n` +
         `randomness:   ${randomnessEvidence.randomness}\n` +
         `random hash:  ${randomnessEvidence.randomnessHash}\n` +
         `random ipfs:  ${bytesHexToText(randomnessEvidence.randomnessIpfsAddress)}\n` +
@@ -90,6 +90,26 @@ export async function cmdMarketInfo(
         `beacon time:  ${randomnessEvidence.randomnessTimestamp}\n` +
         `cTRNG index:  ${randomnessEvidence.randomnessIndex}\n` +
         `audit hash:   ${randomnessEvidence.juryAuditHash}\n`,
+    );
+  });
+}
+
+export async function cmdMarketVerifyCode(
+  ctx: OutputContext,
+  opts: ConfigOverrides,
+): Promise<void> {
+  const cfg = resolveConfig(opts);
+  const client = makePublicClient(cfg);
+  const verification = await verifyMarketIntegrity(client, cfg);
+  assertMarketIntegrityAccepted(verification);
+  emitResult(ctx, verification, () => {
+    process.stdout.write(
+      `market:         ${verification.market}\n` +
+        `status:         ${verification.label}\n` +
+        `implementation: ${verification.implementation ?? "(unavailable)"}\n` +
+        `clone match:    ${verification.cloneMatches}\n` +
+        `sourcify:       ${verification.sourcifyMatch ?? "not reported"}\n` +
+        (verification.sourcifyUrl ? `source:         ${verification.sourcifyUrl}\n` : ""),
     );
   });
 }

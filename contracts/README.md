@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../brand-mark.svg" alt="TruthMarket" width="96" />
+</p>
+
 # eth2026 / contracts
 
 TruthMarket smart contracts and Foundry tooling.
@@ -26,12 +30,18 @@ contracts/
 │   ├── deploy            # deploy market [network]
 │   └── sim-anvil         # full lifecycle against fresh anvil
 ├── src/
-│   └── TruthMarket.sol   # random-jury belief-resolution market
+│   ├── TruthMarket.sol         # random-jury belief-resolution market implementation
+│   ├── MarketRegistry.sol      # EIP-1167 clone factory + discovery index
+│   └── TruthMarketRegistry.sol # legacy standalone discovery registry
 ├── test/
+│   ├── MarketRegistry.t.sol
 │   ├── TruthMarketLifecycle.t.sol
 │   └── MockERC20.sol     # minimal stake-token used by tests + sims (open mint)
 ├── script/
-│   ├── TruthMarket.s.sol      # production deploy (real ERC20 via STAKE_TOKEN env)
+│   ├── TruthMarketReferenceDeployment.sol # CREATE2 address helper for clone reference
+│   ├── TruthMarketReference.s.sol # CREATE2-deploy clone reference implementation
+│   ├── MarketRegistry.s.sol   # deploy clone registry, optionally reusing a reference
+│   ├── TruthMarket.s.sol      # create a market clone through MarketRegistry
 │   ├── Simulate.s.sol         # in-process scenarios (no broadcast)
 │   └── SimulateAnvil.s.sol    # broadcast-based phases for bin/sim-anvil
 └── lib/
@@ -68,7 +78,7 @@ forge build
 
 ## Stake token assumption
 
-`TruthMarket` expects `STAKE_TOKEN` to be a plain, non-rebasing, no-fee ERC20. The contract records the
+Each `TruthMarket` clone expects its `stakeToken` to be a plain, non-rebasing, no-fee ERC20. The contract records the
 actual token amount received during `commitVote`, but payout math assumes recorded stake units remain transferable
 1:1 for the full market lifecycle. Do not deploy markets with rebasing tokens, fee-on-transfer tokens, or tokens
 with other balance-changing transfer mechanics.
@@ -87,7 +97,10 @@ Everything you need lives in `bin/`. They source `.env` automatically, resolve d
 
 ```sh
 bin/anvil-up                       # start anvil in background (writes .anvil.pid)
-bin/deploy market                  # deploy TruthMarket to anvil (provide STAKE_TOKEN in .env)
+bin/deploy reference predict       # print predictable TruthMarket reference implementation
+bin/deploy reference sepolia       # CREATE2-deploy TruthMarket reference implementation
+bin/deploy registry sepolia        # deploy MarketRegistry; reuses/deploys the deterministic reference unless overridden
+bin/deploy market                  # create a TruthMarket clone (provide REGISTRY_ADDRESS + STAKE_TOKEN in .env)
 bin/anvil-down                     # stop background anvil
 ```
 

@@ -1,23 +1,25 @@
-# Market Registry
+# Market Registry Minimal Clones
 
 Status: accepted
 
-Each `TruthMarket` is a self-contained contract instance: parameters are immutable, the constructor opens the market, and there is no separate setup transaction. Deployment so far has been driven by a forge script (`script/TruthMarket.s.sol`), which is fine for hand-crafted markets but does not fit an automated agent that needs to create new markets on a schedule from a single transaction.
+Each `TruthMarket` is still a self-contained market: it owns its own stake token, jury committer, creator, deadlines, Swarm claim/rules reference, commit set, jury state, and settlement accounting. The change is how markets are created. Instead of redeploying the full `TruthMarket` bytecode for every claim, the system deploys one implementation contract and creates each market as an EIP-1167 minimal clone through `MarketRegistry.createMarket(MarketSpec)`.
 
-A `MarketRegistry` contract addresses this. The registry is constructed once with the operational addresses every market created by the same organization should share — `stakeToken`, `companyTreasury`, discovery `TruthMarketRegistry`, `admin`, `juryCommitter` — and exposes `createMarket(MarketSpec)` which deploys a fresh `TruthMarket` and records its address. The caller of `createMarket` becomes the `creator` (and is therefore entitled to the Invalid-route juror penalty for that market). The registry keeps an append-only `markets` array and emits `MarketCreated(id, market, creator)` on each deploy. Market metadata comes from the deployed market getters and the discovery registry, keeping the factory event small enough to stay under the contract size limit.
+`MarketRegistry` is both the clone factory and the append-only discovery index. It stores the shared `implementation` address, the referenced `implementationVersion`, its own `CONTRACT_VERSION`, and the market list/indexes. It does not bake in `stakeToken` or `juryCommitter`: those are per-clone fields inside `MarketSpec`, so different markets can use different stake assets or randomness submitters while sharing the same implementation bytecode. The caller of `createMarket` becomes the market `creator`.
 
-The split between registry-wide and per-market fields follows what actually varies in practice. Per-market fields are the topic-specific text (`name`, `description`, `tags`, `ipfsHash`), the timing windows (`votingPeriod`, `adminTimeout`, `revealPeriod`), and the participation thresholds (`minStake`, `jurySize`, `minCommits`, `minRevealedJurors`). `protocolFeePercent` is also passed per-market: although in practice the agent will use a single value, leaving it per-spec means future markets created via the registry can run experiments without redeploying it. Everything operationally fixed for the deploying organization is read from the registry, so an agent's market spec is purely about the topic.
+Clone creation and registration are atomic. The registry clones the implementation, calls `TruthMarket.initialize(...)`, and the clone registers back into the same registry during initialization. Consumers can index `MarketCreated(id, market, creator)` and `MarketRegistered(market, creator, index, registeredAt)`, then read the clone getters for the actual market configuration.
 
 **Considered Options**
 
-- Have the agent broadcast a forge script per market: rejected because it is slow, requires the foundry toolchain at runtime, and offers no on-chain index of agent-created markets.
-- Make the registry deploy via `CREATE2` clones of a `TruthMarket` template: rejected for now because `TruthMarket`'s constructor performs significant validation and emits the `MarketStarted` event from the constructor; converting it to an initializer would require reworking the existing contract for an unproven gas saving.
-- Allow the caller to override `treasury`, `admin`, and `juryCommitter` per market: rejected because the registry is intended to enforce the company-wide treasury route, and per-market overrides would let an agent or third party bypass that intent. A separate registry can be deployed if a different operational set is needed.
-- Permission `createMarket` to an allowlist: rejected for now because the `creator` field is already `msg.sender`, so permissionless creation does not let anyone else claim the creator-only invalid-route reward, and gating creation can be added later without breaking the spec shape.
+- Deploy full `TruthMarket` bytecode per market: rejected because it makes every market pay the full contract deployment cost even though most logic is identical.
+- Store every claim inside one giant contract: rejected because the global contract becomes a growing state and accounting bottleneck. Per-market clones keep each market isolated while still making creation cheap.
+- Bake `stakeToken` and `juryCommitter` into the registry: rejected because markets may need different assets or jury/rand-commit operators. These values now live in the clone's initialized storage.
+- Keep a separate discovery `TruthMarketRegistry`: rejected for the primary path because factory + discovery in one registry is simpler for apps and agents. The legacy registry can still exist for compatibility, but new markets use `MarketRegistry`.
+- Use upgradeable proxies: rejected. These markets are intentionally immutable once initialized; minimal clones give the gas saving without upgrade authority.
 
 **Consequences**
 
-- Agents and humans share a single creation path; the agent calls `createMarket(spec)` and any other caller may do the same.
-- Protocol fees and dust from every market deployed through a given registry route to the same `companyTreasury`. Multiple treasuries require multiple registries.
-- Rotating `admin` or `juryCommitter` requires deploying a new registry; the current set is immutable per registry by design.
-- The registry is a thin factory/index: it does not gate participation, set timing, or know about claim-rules content. Off-chain agents remain responsible for generating spec values and uploading the rules document to Swarm before calling `createMarket`.
+- Agents and humans share one creation path: `createMarket(spec)`.
+- Deployment cost per market drops sharply because only a tiny proxy is deployed; each clone still has isolated market storage.
+- `stakeToken`, `juryCommitter`, and all claim/rules parameters are per market.
+- The implementation constructor locks the implementation against direct initialization; only fresh clones can initialize once.
+- Apps should treat the registry as discovery and each clone as the source of market configuration.

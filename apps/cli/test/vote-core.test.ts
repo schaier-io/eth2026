@@ -4,14 +4,13 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   type Hex,
-  bytesToHex,
-  keccak256,
   stringToHex,
 } from "viem";
 import { makeContentAddressedChunk } from "@truth-market/swarm-verified-fetch";
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
 import { commitVoteCore } from "../src/commands/vote-core.js";
+import { expectedMinimalCloneRuntime } from "../src/chain/market-integrity.js";
 import type { ResolvedConfig } from "../src/config.js";
 import { DEFAULT_POLICY, type Policy } from "../src/policy/policy.js";
 import { listVaultEntries, loadVaultEntry } from "../src/vault/vault.js";
@@ -19,6 +18,8 @@ import { listVaultEntries, loadVaultEntry } from "../src/vault/vault.js";
 const ZERO_BYTES32 =
   "0x0000000000000000000000000000000000000000000000000000000000000000" as const;
 const STAKE_TOKEN = "0x5FbDB2315678afecb367f032d93F642f64180aa3" as const;
+const REGISTRY = "0xa50B3e0Ca53f28Fb8BD0a3e0DdbFbE7fE36047E5" as const;
+const IMPLEMENTATION = "0x09Dc04e5596e5Da506e4a6722e42523fBa4dBE16" as const;
 const TX_HASH =
   "0xc0ffee0000000000000000000000000000000000000000000000000000000000" as const;
 
@@ -30,6 +31,7 @@ function tempCfg(): ResolvedConfig {
   const home = mkdtempSync(path.join(tmpdir(), "tm-cli-votecore-"));
   return {
     contractAddress: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+    registryAddress: REGISTRY,
     chain: foundry,
     chainKey: "foundry",
     rpcUrl: "http://127.0.0.1:8545",
@@ -37,14 +39,18 @@ function tempCfg(): ResolvedConfig {
     keystorePath: path.join(home, "keystore.json"),
     vaultDir: path.join(home, "vault"),
     policyPath: path.join(home, "policy.json"),
+    agentStatePath: path.join(home, "agent-state.json"),
+    operational: {
+      stakeToken: STAKE_TOKEN,
+      juryCommitter: undefined,
+    },
   };
 }
 
 interface ReadOverrides {
   allowance?: bigint;
   commitHash?: Hex; // existing commit hash; defaults to zero (no commit)
-  ipfsHash?: Hex;
-  claimRulesHash?: Hex;
+  swarmReference?: Hex;
 }
 
 function makePublicClient(overrides: ReadOverrides = {}) {
@@ -53,6 +59,8 @@ function makePublicClient(overrides: ReadOverrides = {}) {
       switch (args.functionName) {
         case "stakeToken":
           return STAKE_TOKEN;
+        case "implementation":
+          return IMPLEMENTATION;
         case "allowance":
           return overrides.allowance ?? (10n ** 30n); // huge by default
         case "commits":
@@ -66,14 +74,13 @@ function makePublicClient(overrides: ReadOverrides = {}) {
             false,
             false,
           ];
-        case "claimRulesHash":
-          return overrides.claimRulesHash ?? "0x";
-        case "ipfsHash":
-          return overrides.ipfsHash ?? "0x";
+        case "swarmReference":
+          return overrides.swarmReference ?? "0x";
         default:
           throw new Error(`unmocked readContract: ${args.functionName}`);
       }
     }),
+    getCode: vi.fn(async () => expectedMinimalCloneRuntime(IMPLEMENTATION)),
     simulateContract: vi.fn(async (args: unknown) => ({ request: args })),
     waitForTransactionReceipt: vi.fn(async () => ({ blockNumber: 42n })),
   } as never;
@@ -167,12 +174,13 @@ describe("commitVoteCore", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "tm-cli-doc-"));
     const docPath = path.join(dir, "doc");
     writeFileSync(docPath, "wrong content");
+    const rightBytes = new TextEncoder().encode("right content");
+    const chunk = makeContentAddressedChunk(rightBytes);
     try {
       await commitVoteCore({
         cfg: tempCfg(),
         publicClient: makePublicClient({
-          ipfsHash: `0x${"a".repeat(64)}`,
-          claimRulesHash: keccak256(bytesToHex(new TextEncoder().encode("right content"))),
+          swarmReference: stringToHex(`bzz://${chunk.reference}`),
         }),
         walletClient: makeWalletClient(),
         account: ACCOUNT,
@@ -181,6 +189,23 @@ describe("commitVoteCore", () => {
         stake: 100n,
         vaultPassphrase: "p",
         documentPath: docPath,
+        swarmVerification: {
+          gatewayUrl: "https://gateway.test",
+          fetch: async () => ({
+            ok: true,
+            status: 200,
+            statusText: "OK",
+            async arrayBuffer() {
+              return chunk.bytes.buffer.slice(
+                chunk.bytes.byteOffset,
+                chunk.bytes.byteOffset + chunk.bytes.byteLength,
+              );
+            },
+            async text() {
+              return "";
+            },
+          }),
+        },
       });
       throw new Error("expected throw");
     } catch (e) {
@@ -270,7 +295,6 @@ describe("commitVoteCore", () => {
     const cfg = tempCfg();
     const docContent = "the canonical rules document";
     const docBytes = new TextEncoder().encode(docContent);
-    const expected = keccak256(bytesToHex(docBytes));
     const chunk = makeContentAddressedChunk(docBytes);
     const dir = mkdtempSync(path.join(tmpdir(), "tm-cli-doc-"));
     const docPath = path.join(dir, "doc");
@@ -279,8 +303,7 @@ describe("commitVoteCore", () => {
     const r = await commitVoteCore({
       cfg,
       publicClient: makePublicClient({
-        ipfsHash: stringToHex(`bzz://${chunk.reference}`),
-        claimRulesHash: expected,
+        swarmReference: stringToHex(`bzz://${chunk.reference}`),
       }),
       walletClient: makeWalletClient(),
       account: ACCOUNT,
@@ -329,7 +352,7 @@ describe("commitVoteCore", () => {
     expect(r.txHash).toBe(TX_HASH);
   });
 
-  it("vault is saved BEFORE broadcast (placeholder hash exists if broadcast throws)", async () => {
+  it("vault is saved BEFORE broadcast (placeholder tx hash exists if broadcast throws)", async () => {
     const cfg = tempCfg();
     const wal = {
       account: ACCOUNT,

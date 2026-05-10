@@ -35,10 +35,14 @@ import { loadWallet } from "../wallet/loader.js";
 const ANVIL_RPC = "http://127.0.0.1:8545";
 const DETERMINISTIC_DEPLOYER_PK =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-const DETERMINISTIC_TOKEN = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-const DETERMINISTIC_DISCOVERY_REGISTRY = "0x68E90CfF0829C0d443949413de5076282B6f5220";
-const DETERMINISTIC_MARKET = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
-const DETERMINISTIC_REGISTRY = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
+const SIM_ADDR_FILE = ".sim-anvil.json";
+
+interface SimAddresses {
+  token: Address;
+  market: Address;
+  registry: Address;
+  implementation: Address;
+}
 
 function pidPath(homeDir: string): string {
   return path.join(homeDir, "dev-anvil.pid");
@@ -156,6 +160,29 @@ function mergeEnvFile(target: string, updates: Record<string, string>): void {
   return void atomicWriteFile(target, out.join("\n") + "\n", 0o600);
 }
 
+function readSimAddresses(contractsDir: string): SimAddresses {
+  const file = path.join(contractsDir, SIM_ADDR_FILE);
+  if (!existsSync(file)) {
+    throw new CliError(
+      "DEV_DEPLOY_ADDRESSES_MISSING",
+      `${file} not found; run dev up without --skip-deploy first`,
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(file, "utf8"));
+  } catch (e) {
+    throw new CliError("DEV_DEPLOY_ADDRESSES_INVALID", `${file} is not valid JSON: ${(e as Error).message}`);
+  }
+  const obj = parsed as Partial<Record<keyof SimAddresses, string>>;
+  for (const key of ["token", "market", "registry", "implementation"] as const) {
+    if (!obj[key] || !isAddress(obj[key])) {
+      throw new CliError("DEV_DEPLOY_ADDRESSES_INVALID", `${file}: ${key} is missing or not an address`);
+    }
+  }
+  return obj as SimAddresses;
+}
+
 export interface DevUpOpts {
   contractsDir?: string;
   envOut?: string;
@@ -231,11 +258,8 @@ export async function cmdDevUp(
     await waitForRpc(rpc, 10_000);
   }
 
-  const market = DETERMINISTIC_MARKET;
-  const token = DETERMINISTIC_TOKEN;
-  const registry = DETERMINISTIC_REGISTRY;
+  const contractsDir = findContractsDir(process.cwd(), opts.contractsDir);
   if (!opts.skipDeploy) {
-    const contractsDir = findContractsDir(process.cwd(), opts.contractsDir);
     const r = spawnSync(
       "forge",
       [
@@ -256,15 +280,18 @@ export async function cmdDevUp(
       );
     }
   }
+  const sim = readSimAddresses(contractsDir);
 
   mergeEnvFile(envOut, {
     TM_CHAIN: "foundry",
     TM_RPC_URL: rpc,
-    TM_CONTRACT_ADDRESS: market,
-    TM_REGISTRY_ADDRESS: registry,
-    TM_DISCOVERY_REGISTRY_ADDRESS: DETERMINISTIC_DISCOVERY_REGISTRY,
-    NEXT_PUBLIC_TRUTHMARKET_ADDRESS: market,
-    NEXT_PUBLIC_REGISTRY_ADDRESS: registry,
+    TM_CONTRACT_ADDRESS: sim.market,
+    TM_REGISTRY_ADDRESS: sim.registry,
+    TM_STAKE_TOKEN: sim.token,
+    TM_DISCOVERY_REGISTRY_ADDRESS: sim.registry,
+    NEXT_PUBLIC_TRUTHMARKET_ADDRESS: sim.market,
+    NEXT_PUBLIC_REGISTRY_ADDRESS: sim.registry,
+    NEXT_PUBLIC_STAKE_TOKEN: sim.token,
     NEXT_PUBLIC_RPC_URL: rpc,
     PRIVATE_KEY: DETERMINISTIC_DEPLOYER_PK,
   });
@@ -274,19 +301,20 @@ export async function cmdDevUp(
     {
       anvilPid: readPid(pidFile),
       rpc,
-      contractAddress: market,
-      registryAddress: registry,
-      stakeToken: token,
+      contractAddress: sim.market,
+      registryAddress: sim.registry,
+      implementationAddress: sim.implementation,
+      stakeToken: sim.token,
       privateKey: DETERMINISTIC_DEPLOYER_PK,
       envFile: envOut,
     },
     () => {
       process.stdout.write(
         `anvil up at ${rpc} (pid ${readPid(pidFile)})\n` +
-          `seed market: ${market}\n` +
-          `registry:    ${registry}\n` +
-          `discovery:   ${DETERMINISTIC_DISCOVERY_REGISTRY}\n` +
-          `stake token: ${token}\n` +
+          `seed market:    ${sim.market}\n` +
+          `registry:       ${sim.registry}\n` +
+          `implementation: ${sim.implementation}\n` +
+          `stake token:    ${sim.token}\n` +
           `wrote env:   ${envOut}\n` +
           `next: truthmarket registry info\n`,
       );

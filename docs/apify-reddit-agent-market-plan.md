@@ -78,7 +78,6 @@ Use a policy file so the generator can run unattended without creating bad marke
   "minAmbiguityScore": 0.65,
   "stake": "100000000000000000",
   "marketDefaults": {
-    "protocolFeePercent": 5,
     "minStake": "100000000000000000",
     "jurySize": 1,
     "minCommits": 7,
@@ -220,7 +219,7 @@ truthmarket vote reveal --market <address> --json
 truthmarket withdraw --market <address> --json
 ```
 
-The CLI should return stable JSON with `ok`, `action`, `market`, `txHash`, `swarmReference`, `claimRulesHash`, and `error` fields where applicable. It must not require private keys, nonces, or unrevealed votes in command-line arguments.
+The CLI should return stable JSON with `ok`, `action`, `market`, `txHash`, `swarmReference`, and `error` fields where applicable. It must not require private keys, nonces, or unrevealed votes in command-line arguments.
 
 Generator commands should also return `apifyRunId`, `datasetId`, `candidateId`, `skippedReason`, and `createdMarketCount`.
 

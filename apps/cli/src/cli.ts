@@ -30,6 +30,7 @@ import {
   cmdMarketJury,
   cmdMarketPhase,
   cmdMarketStats,
+  cmdMarketVerifyCode,
   cmdMarketWatch,
 } from "./commands/market.js";
 import {
@@ -84,7 +85,9 @@ function shared(cmd: Command): Command {
     .option("--chain <key>", "chain key: foundry | baseSepolia | sepolia")
     .option("--rpc <url>", "RPC URL override")
     .option("--address <addr>", "TruthMarket contract address override")
-    .option("--registry <addr>", "MarketRegistry contract address override")
+    .option("--registry <addr>", "TruthMarketRegistry contract address override")
+    .option("--stake-token <addr>", "ERC20 stake token (else TM_STAKE_TOKEN)")
+    .option("--jury-committer <addr>", "jury committer address (else TM_JURY_COMMITTER, defaults to deployer)")
     .option("--json", "machine-readable JSON output (single envelope; NDJSON for streaming commands)", false)
     .option("--yes", "skip confirmation prompts (use with --json for unattended runs)", false);
 }
@@ -135,21 +138,24 @@ shared(market.command("stats").description("reveal-phase aggregates"))
 shared(market.command("jury").description("jury list + active wallet's selection status"))
   .action(async (opts) => run(() => cmdMarketJury(ctx(opts), opts), ctx(opts)));
 
+shared(market.command("verify-code").description("verify registry clone bytecode + Sourcify implementation match"))
+  .action(async (opts) => run(() => cmdMarketVerifyCode(ctx(opts), opts), ctx(opts)));
+
 shared(market.command("watch").description("long-running phase/outcome tail (NDJSON when --json)"))
   .option("--interval-seconds <n>", "poll interval", (v) => Number(v), 10)
   .action(async (opts) => run(() => cmdMarketWatch(ctx(opts), opts), ctx(opts)));
 
 // -------- registry --------
-const registry = program.command("registry").description("MarketRegistry: read config, list markets, deploy new ones");
-shared(registry.command("info").description("registry config + market count"))
+const registry = program.command("registry").description("MarketRegistry: discover markets and create minimal-clone TruthMarkets");
+shared(registry.command("info").description("registry address + total market count + operational defaults"))
   .action(async (opts) => run(() => cmdRegistryInfo(ctx(opts), opts), ctx(opts)));
 
-shared(registry.command("list").description("paginated list of deployed market addresses"))
+shared(registry.command("list").description("paginated list of registered TruthMarket addresses"))
   .option("--offset <n>", "starting index", (v) => Number(v), 0)
   .option("--limit <n>", "page size", (v) => Number(v), 50)
   .action(async (opts) => run(() => cmdRegistryList(ctx(opts), opts), ctx(opts)));
 
-shared(registry.command("create-market").description("deploy a new TruthMarket via the registry from a JSON spec"))
+shared(registry.command("create-market").description("create a new TruthMarket minimal clone through the registry"))
   .requiredOption("--spec <path>", "path to a market spec JSON file")
   .option("--ignore-policy", "skip the policy.allowCreateMarkets gate", false)
   .action(async (opts) => run(() => cmdRegistryCreateMarket(ctx(opts), opts), ctx(opts)));
@@ -161,12 +167,12 @@ const agentSharedOpts = (cmd: Command): Command =>
     .option("--endpoint <url>", "apify generator endpoint (default: TM_APIFY_ENDPOINT or http://localhost:3000/api/apify/generated-markets)")
     .option("--interval-seconds <n>", "seconds between iterations (run only)", (v) => Number(v), 3600)
     .option("--duration-seconds <n>", "total market lifetime in seconds (split 40/20/40 across phases)", (v) => Number(v), 3600)
-    .option("--fee-percent <n>", "protocol fee percent (0–10)", (v) => Number(v), 5)
     .option("--jury-size <n>", "jury draw size (odd)", (v) => Number(v))
     .option("--min-commits <n>", "minimum committed voters", (v) => Number(v))
     .option("--min-revealed-jurors <n>", "minimum jurors revealing for a decisive resolution", (v) => Number(v))
     .option("--min-stake <amount>", "override candidate stake hint (token base units)")
     .option("--items-file <path>", "JSON file with Reddit-items array; bypasses Apify (useful offline / for demos)")
+    .option("--no-swarm-publish", "skip Swarm KV upload and use deterministic placeholder swarmReference")
     .option("--ignore-policy", "skip the policy.allowCreateMarkets gate", false);
 
 shared(agentSharedOpts(agent.command("run").description("loop forever: fetch candidates, create one market per interval (NDJSON when --json)")))
@@ -237,10 +243,10 @@ shared(jury.command("commit").description("fetch latest SpaceComputer beacon and
 
 // -------- swarm --------
 const swarm = program.command("swarm").description("swarm document verification");
-shared(swarm.command("show-hash").description("print on-chain claim/rules reference fields"))
+shared(swarm.command("show-hash").description("print on-chain Swarm reference bytes"))
   .action(async (opts) => run(() => cmdSwarmShowHash(ctx(opts), opts), ctx(opts)));
 
-shared(swarm.command("verify").description("verify a local document against the on-chain Swarm reference and claimRulesHash"))
+shared(swarm.command("verify").description("verify a local document against the on-chain Swarm reference"))
   .requiredOption("--document <path>", "path to local document")
   .option("--gateway <url>", "Swarm gateway for verification (else TM_SWARM_GATEWAY_URL or package default)")
   .action(async (opts) => run(() => cmdSwarmVerify(ctx(opts), opts), ctx(opts)));

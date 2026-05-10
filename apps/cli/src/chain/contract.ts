@@ -11,33 +11,35 @@ import type { ResolvedConfig } from "../config.js";
 
 export interface MarketConfig {
   stakeToken: Address;
+  /** Hardcoded protocol treasury — same value for every TruthMarket. */
   treasury: Address;
-  admin: Address;
   juryCommitter: Address;
   creator: Address;
-  name: string;
-  description: string;
-  tags: readonly string[];
-  ipfsHash: Hex;
-  claimRulesHash: Hex;
+  swarmReference: Hex;
   votingDeadline: bigint;
   juryCommitDeadline: bigint;
   revealDeadline: bigint;
+  /** Hardcoded — every TruthMarket uses 1%. */
   protocolFeePercent: number;
   minStake: bigint;
+  /** Creator-funded subsidy declared at deploy. 0 disables. */
+  creatorBond: bigint;
+  /** True once the creator has posted the bond (or trivially when creatorBond = 0). */
+  bondPosted: boolean;
   targetJurySize: number;
   minCommits: number;
   maxCommits: number;
   minRevealedJurors: number;
   maxTargetJurySize: number;
   maxTargetJurySizePercent: bigint;
-  maxTags: bigint;
-  maxNameBytes: bigint;
-  maxDescriptionBytes: bigint;
-  maxTagBytes: bigint;
-  maxIpfsHashBytes: bigint;
+  maxSwarmReferenceBytes: bigint;
   riskPercent: number;
-  maxProtocolFeePercent: number;
+}
+
+/** Off-chain CreatorBond view shape — for cli/web display. */
+export interface BondStatus {
+  required: bigint;
+  posted: boolean;
 }
 
 export interface RevealStats {

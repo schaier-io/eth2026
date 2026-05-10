@@ -11,6 +11,10 @@ const publicRootEnvKeys = new Set([
   "NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL",
   "NEXT_PUBLIC_SEPOLIA_RPC_URL",
   "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID",
+  "NEXT_PUBLIC_CHAIN_ID",
+  "NEXT_PUBLIC_STAKE_TOKEN",
+  "NEXT_PUBLIC_JURY_COMMITTER",
+  "NEXT_PUBLIC_SWARM_GATEWAY_URL",
 ]);
 
 function unquoteEnvValue(value) {
@@ -38,10 +42,38 @@ function loadRepoRootPublicEnv() {
 
 loadRepoRootPublicEnv();
 
+function remotePatternFromUrl(raw) {
+  try {
+    const url = new URL(raw);
+    return {
+      protocol: url.protocol.replace(":", ""),
+      hostname: url.hostname,
+      port: url.port || undefined,
+      pathname: "/**",
+    };
+  } catch {
+    return null;
+  }
+}
+
+const swarmImageGateways = [
+  process.env.NEXT_PUBLIC_SWARM_GATEWAY_URL,
+  process.env.SWARM_GATEWAY_URL,
+  "https://download.gateway.ethswarm.org",
+  "https://api.gateway.ethswarm.org",
+  "https://api.gateway.testnet.ethswarm.org",
+]
+  .map(remotePatternFromUrl)
+  .filter(Boolean);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  transpilePackages: ["@truth-market/swarm-kv", "@truth-market/swarm-verified-fetch"],
+  images: {
+    remotePatterns: swarmImageGateways,
+  },
   turbopack: {
-    root: new URL(".", import.meta.url).pathname,
+    root: repoRoot,
   },
 };
 

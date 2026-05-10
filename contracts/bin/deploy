@@ -3,6 +3,9 @@
 #
 # Usage:
 #   bin/deploy market [network]       # default network: anvil
+#   bin/deploy reference [network]    # CREATE2-deploy predictable reference
+#   bin/deploy reference predict      # print predictable reference address
+#   bin/deploy registry [network]
 #
 # Requires PRIVATE_KEY in .env.
 
@@ -12,28 +15,45 @@ cd "$(dirname "$0")/.."
 target="${1:-}"
 network="${2:-anvil}"
 
+forge_bin="${FORGE:-forge}"
+if [ -z "${FORGE:-}" ] && [ -x "$HOME/.foundry/bin/forge" ]; then
+  forge_bin="$HOME/.foundry/bin/forge"
+fi
+
+if [ "$target" = "reference" ] && [ "${2:-}" = "predict" ]; then
+  "$forge_bin" script script/TruthMarketReference.s.sol:TruthMarketReferenceScript \
+    --sig 'predict()' 2>/dev/null \
+    | awk '/^0: address / { print $NF }' \
+    | tail -1
+  exit 0
+fi
+
 case "$target" in
+  reference) script="script/TruthMarketReference.s.sol:TruthMarketReferenceScript"; out="broadcast/TruthMarketReference.s.sol" ;;
+  registry) script="script/MarketRegistry.s.sol:MarketRegistryScript"; out="broadcast/MarketRegistry.s.sol" ;;
   market)  script="script/TruthMarket.s.sol:TruthMarketScript"; out="broadcast/TruthMarket.s.sol" ;;
   -h|--help|"") sed -n '2,8p' "$0"; exit 0 ;;
-  *) echo "unknown target: $target (only 'market' is supported)" >&2; exit 1 ;;
+  *) echo "unknown target: $target (expected reference, registry, or market)" >&2; exit 1 ;;
 esac
 
 [ -f .env ] || { echo ".env missing — run 'cp .env.example .env' and set PRIVATE_KEY"; exit 1; }
 set -a && source .env && set +a
 : "${PRIVATE_KEY:?PRIVATE_KEY must be set in .env}"
 
-forge_bin="${FORGE:-forge}"
-if [ -z "${FORGE:-}" ] && [ -x "$HOME/.foundry/bin/forge" ]; then
-  forge_bin="$HOME/.foundry/bin/forge"
-fi
-
 "$forge_bin" script "$script" --rpc-url "$network" --broadcast -vvv
 
-# Print the deployed address from the latest broadcast artifact
+# Print the relevant addresses from the latest broadcast artifact when possible.
 chain_dir=$(ls -td "$out"/*/ 2>/dev/null | head -n1 || true)
 if [ -n "$chain_dir" ] && [ -f "${chain_dir}run-latest.json" ]; then
-  addr=$(jq -r '.transactions[0].contractAddress' "${chain_dir}run-latest.json")
   echo
-  echo "deployed: $addr"
+  if [ "$target" = "reference" ]; then
+    jq -r '.transactions[] | select(.contractName == "TruthMarket") | "deployed TruthMarket reference: \(.contractAddress)"' "${chain_dir}run-latest.json"
+  elif [ "$target" = "registry" ]; then
+    jq -r '.transactions[] | select(.contractName == "TruthMarket" or .contractName == "MarketRegistry") | "deployed \(.contractName): \(.contractAddress)"' "${chain_dir}run-latest.json"
+  else
+    tx=$(jq -r '.transactions[-1].hash // .transactions[-1].transactionHash // empty' "${chain_dir}run-latest.json")
+    echo "market clone created via registry call"
+    [ -n "$tx" ] && echo "tx: $tx"
+  fi
   echo "  (saved in ${chain_dir}run-latest.json)"
 fi

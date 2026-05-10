@@ -41,7 +41,7 @@ export function Dashboard({ cfg, wallet }: { cfg: ResolvedConfig; wallet: Loaded
   return (
     <Box flexDirection="column">
       <Text>
-        <Text bold>{config.name}</Text>{" "}
+        <Text bold>{config.swarmReference}</Text>{" "}
         <Text color="gray">phase=</Text>
         <Text color={stats.phase === 0 ? "yellow" : stats.phase === 1 ? "cyan" : "green"}>
           {PHASE_LABELS[stats.phase] ?? stats.phase}
@@ -49,7 +49,7 @@ export function Dashboard({ cfg, wallet }: { cfg: ResolvedConfig; wallet: Loaded
         <Text color="gray">outcome=</Text>
         <Text>{OUTCOME_LABELS[stats.outcome] ?? stats.outcome}</Text>
       </Text>
-      <Text color="gray">{config.description}</Text>
+      <Text color="gray">claim document lives in verified Swarm storage</Text>
       <Box marginTop={1} flexDirection="column">
         <Text>commits: {stats.commitCount} (revoked {stats.revokedCount}, withdrawn {stats.withdrawnCount})</Text>
         <Text>revealed: yes={stats.revealedYesCount} no={stats.revealedNoCount} total={stats.revealedTotalCount}</Text>

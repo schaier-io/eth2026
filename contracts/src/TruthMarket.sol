@@ -8,16 +8,16 @@ import { ITruthMarketRegistry } from "./TruthMarketRegistry.sol";
 
 /// @title TruthMarket
 /// @notice Single-market random-jury belief-resolution contract. Market parameters are
-///         locked at deployment (no separate setup tx). Voters privately commit YES/NO
+///         locked during `initialize` so the contract can be deployed as an EIP-1167
+///         minimal clone. Voters privately commit YES/NO
 ///         beliefs with stake. After the voting deadline, the jury committer posts
 ///         SpaceComputer cTRNG randomness plus the IPFS/IPNS beacon reference and an
 ///         audit hash; the contract draws the resolving jury on-chain via
 ///         Fisher-Yates from the set of committed voters.
 ///
-///         Claim metadata: in addition to the immutable initial claim/rules document
-///         reference and `claimRulesHash`, the contract stores an on-chain `name`,
-///         `description`, and up to MAX_TAGS short `tags` so the claim is
-///         self-describing without a fetch.
+///         Claim metadata stays offchain in a Swarm/Bee document. The contract stores
+///         only the immutable Swarm reference so market creation remains cheap while
+///         clients can fetch and verify the claim/rules document independently.
 ///
 ///         Stake token assumption: `stakeToken` must be a plain, non-rebasing,
 ///         no-fee ERC20. The contract measures the actual inbound amount received
@@ -69,24 +69,33 @@ contract TruthMarket is ReentrancyGuard {
     ///         jurors who fail to reveal forfeit their full stake (RISK_PERCENT is
     ///         ignored for that case).
     uint8 public constant RISK_PERCENT = 20;
-    /// @notice Protocol fee on the slashed pool, expressed as a whole percent (0–10).
-    uint8 public constant MAX_PROTOCOL_FEE_PERCENT = 10;
+    /// @notice Hardcoded protocol fee on the slashed pool, taken at resolve when the
+    ///         outcome is Yes/No. 1% of the total slashed risked stake routes to
+    ///         `TREASURY`; the remainder goes to the distributable pool for winners.
+    ///         Invalid outcomes pay no protocol fee.
+    uint8 public constant PROTOCOL_FEE_PERCENT = 1;
+    /// @notice Hardcoded treasury that receives the protocol fee plus any post-grace
+    ///         dust swept by `forceSweepDust`. Pinned at compile time so neither the
+    ///         deployer nor any later caller can redirect protocol revenue.
+    address public constant TREASURY = 0x574F91bd4d8e83F84B62c3Ca75d24684813237Cc;
+    /// @notice Contract-family identifier. The registry is permissionless — any
+    ///         contract can call `register()` — so consumers should call
+    ///         `CONTRACT_ID()` on each registered address before decoding it as a
+    ///         TruthMarket. A non-matching value (or a revert) means the address is
+    ///         not a TruthMarket of any version and should be skipped.
+    bytes32 public constant CONTRACT_ID = keccak256("TruthMarket");
+    /// @notice Monotonic ABI/storage version of this contract. Bump on any breaking
+    ///         change (storage layout, public function selector set, event topic[0]).
+    ///         Consumers compare `CONTRACT_VERSION()` before decoding state.
+    uint16 public constant CONTRACT_VERSION = 2;
     uint32 public constant MAX_TARGET_JURY_SIZE = 100;
     /// @notice Upper bound on the target jury size as a percentage of committed voters. Enforced at
     ///         construction via `minCommits × MAX_TARGET_JURY_SIZE_PERCENT ≥ targetJurySize × 100`, so
     ///         once `commitCount ≥ minCommits` the rule holds for the actual draw too.
     uint256 public constant MAX_TARGET_JURY_SIZE_PERCENT = 15;
-    /// @notice Maximum number of claim tags storable on-chain.
-    uint256 public constant MAX_TAGS = 5;
-    /// @notice Maximum bytes for the short on-chain claim name.
-    uint256 public constant MAX_NAME_BYTES = 120;
-    /// @notice Maximum bytes for the short on-chain claim description.
-    uint256 public constant MAX_DESCRIPTION_BYTES = 1000;
-    /// @notice Maximum bytes for each short on-chain claim tag.
-    uint256 public constant MAX_TAG_BYTES = 32;
-    /// @notice Maximum bytes for the on-chain Swarm/IPFS rules-document reference.
+    /// @notice Maximum bytes for the on-chain Swarm/Bee claim document reference.
     ///         Sized to fit any common CID/Swarm hash plus a short scheme prefix.
-    uint256 public constant MAX_IPFS_HASH_BYTES = 96;
+    uint256 public constant MAX_SWARM_REFERENCE_BYTES = 96;
     /// @notice SpaceComputer's public IPFS/IPNS randomness beacon path. Orbitport
     ///         publishes a new beacon block here every 60 seconds.
     string public constant SPACE_COMPUTER_IPNS_BEACON =
@@ -143,37 +152,29 @@ contract TruthMarket is ReentrancyGuard {
         bool revoked;
     }
 
-    /// @dev Aggregated read-only view of the deployed configuration. Useful for UIs
-    ///      and indexers — every constructor field plus the on-chain caps in one call.
+    /// @dev Aggregated read-only view of the initialized configuration. Useful for UIs
+    ///      and indexers — every initializer field plus the on-chain caps in one call.
     struct Config {
         address stakeToken;
         address treasury;
-        address admin;
         address juryCommitter;
         address creator;
-        string name;
-        string description;
-        string[] tags;
-        bytes ipfsHash;
-        bytes32 claimRulesHash;
+        bytes swarmReference;
         uint64 votingDeadline;
         uint64 juryCommitDeadline;
         uint64 revealDeadline;
         uint8 protocolFeePercent;
         uint96 minStake;
+        uint96 creatorBond;
+        bool bondPosted;
         uint32 targetJurySize;
         uint32 minCommits;
         uint32 maxCommits;
         uint32 minRevealedJurors;
         uint32 maxTargetJurySize;
         uint256 maxTargetJurySizePercent;
-        uint256 maxTags;
-        uint256 maxNameBytes;
-        uint256 maxDescriptionBytes;
-        uint256 maxTagBytes;
-        uint256 maxIpfsHashBytes;
+        uint256 maxSwarmReferenceBytes;
         uint8 riskPercent;
-        uint8 maxProtocolFeePercent;
     }
 
     /// @dev Snapshot of reveal-phase state. Combines counts, stake totals, and
@@ -240,23 +241,21 @@ contract TruthMarket is ReentrancyGuard {
         bytes32 juryAuditHash;
     }
 
-    /// @dev Constructor params bundled to avoid stack-too-deep with the deployment config.
+    /// @dev Initializer params bundled to avoid stack-too-deep with the deployment config.
+    ///      Treasury and protocol fee % are hardcoded (`TREASURY`, `PROTOCOL_FEE_PERCENT`)
+    ///      and do not appear here.
     struct InitParams {
         IERC20 stakeToken;
-        address treasury;
         ITruthMarketRegistry registry;
-        address admin;
         address juryCommitter;
         address creator;
-        string name;
-        string description;
-        string[] tags;
-        bytes ipfsHash;
-        bytes32 claimRulesHash;
+        bytes swarmReference;
         uint64 votingPeriod;
+        /// @dev Window after `votingDeadline` during which `juryCommitter` may submit
+        ///      randomness via `commitJury`. Misnamed historically — it relates to the
+        ///      jury commit, not an admin role.
         uint64 adminTimeout;
         uint64 revealPeriod;
-        uint8 protocolFeePercent;
         uint96 minStake;
         uint32 targetJurySize;
         uint32 minCommits;
@@ -265,39 +264,40 @@ contract TruthMarket is ReentrancyGuard {
         ///      does not free a slot, since the slot was already burned at commit time.
         uint32 maxCommits;
         uint32 minRevealedJurors;
+        /// @dev Optional creator-funded subsidy. Set to 0 to disable. When > 0 the
+        ///      creator must call `postBond()` before any voter can `commitVote`; the
+        ///      bond joins `distributablePool` on Yes/No (winner subsidy) or routes
+        ///      back to the creator via `creatorAccrued` on Invalid (refund).
+        uint96 creatorBond;
     }
 
-    // ---------- Immutable deployment config ----------
+    // ---------- Initialized market config ----------
 
-    IERC20 public immutable stakeToken;
-    address public immutable treasury;
-    /// @dev TODO: replace `admin` and `juryCommitter` with hardcoded constants once the
-    ///      production addresses are finalized.
-    address public immutable admin;
-    address public immutable juryCommitter;
+    IERC20 public stakeToken;
+    /// @notice Address authorized to submit jury randomness via `commitJury`. Set
+    ///         per-market; gated by `onlyJuryCommitter`.
+    address public juryCommitter;
     /// @notice Claim creator. Receives the full juror non-reveal penalty when the market
     ///         resolves Invalid after the jury was drawn.
-    address public immutable creator;
-    uint64 public immutable votingDeadline;
-    uint64 public immutable juryCommitDeadline;
-    uint64 public immutable revealDeadline;
-    uint8 public immutable protocolFeePercent;
-    uint96 public immutable minStake;
-    uint32 public immutable targetJurySize;
-    uint32 public immutable minCommits;
+    address public creator;
+    uint64 public votingDeadline;
+    uint64 public juryCommitDeadline;
+    uint64 public revealDeadline;
+    uint96 public minStake;
+    uint32 public targetJurySize;
+    uint32 public minCommits;
     /// @notice Optional hard cap on total commit calls. 0 means uncapped.
-    uint32 public immutable maxCommits;
-    uint32 public immutable minRevealedJurors;
+    uint32 public maxCommits;
+    uint32 public minRevealedJurors;
+    /// @notice Creator-funded subsidy declared at deploy. Voters cannot commit until
+    ///         `postBond()` has moved this amount in. 0 disables the bond entirely.
+    uint96 public creatorBond;
 
     // ---------- Mutable state ----------
 
     Phase public phase;
     Outcome public outcome;
-    string public name;
-    string public description;
-    string[] public tags;
-    bytes public ipfsHash;
-    bytes32 public claimRulesHash;
+    bytes public swarmReference;
     uint32 public commitCount;
     uint32 public revealedJurorCount;
     uint32 public withdrawnCount;
@@ -333,9 +333,13 @@ contract TruthMarket is ReentrancyGuard {
     uint16 public randomnessIndex;
     uint256 public treasuryAccrued;
     /// @notice Pull-pattern accrual for the claim creator. Filled with the juror
-    ///         non-reveal penalty when the market resolves Invalid after the jury draw.
+    ///         non-reveal penalty when the market resolves Invalid after the jury draw,
+    ///         and refunded the `creatorBond` on Invalid (when posted).
     uint256 public creatorAccrued;
     bytes32 public juryAuditHash;
+    /// @notice Whether the creator has posted `creatorBond` via `postBond()`. Always
+    ///         true when `creatorBond == 0` (no bond required).
+    bool public bondPosted;
 
     mapping(address => Commit) public commits;
     /// @dev Active (non-revoked) committers. Jury draws from this list. Maintained as a
@@ -355,15 +359,13 @@ contract TruthMarket is ReentrancyGuard {
     /// @notice Running sum of unclaimed voter payouts collected during the current
     ///         in-progress dust sweep. Reset to 0 whenever a fresh sweep begins.
     uint256 public sweepUnclaimed;
+    /// @dev Locked in the implementation constructor, false in freshly deployed clones.
+    bool private _initialized;
 
     // ---------- Events ----------
 
     event MarketStarted(
-        string name,
-        string description,
-        string[] tags,
-        bytes ipfsHash,
-        bytes32 claimRulesHash,
+        bytes swarmReference,
         uint64 votingDeadline,
         uint64 juryCommitDeadline,
         uint64 revealDeadline,
@@ -398,6 +400,8 @@ contract TruthMarket is ReentrancyGuard {
     event StakeRevoked(
         address indexed voter, address indexed claimer, uint96 stake, uint96 claimerCut, uint96 pooledCut
     );
+    /// @notice Emitted when the creator pays in `creatorBond` via `postBond()`.
+    event BondPosted(address indexed creator, uint96 amount);
 
     // ---------- Errors ----------
 
@@ -416,6 +420,10 @@ contract TruthMarket is ReentrancyGuard {
     error StakeBelowMin();
     error CommitRevoked();
     error MarketFull();
+    error BondAlreadyPosted();
+    error BondNotPosted();
+    error NoBondConfigured();
+    error AlreadyInitialized();
 
     // ---------- Modifiers ----------
 
@@ -424,21 +432,26 @@ contract TruthMarket is ReentrancyGuard {
         _;
     }
 
-    // ---------- Constructor (also opens the market) ----------
+    // ---------- Initializer (also opens the market) ----------
 
-    constructor(InitParams memory p) {
-        if (address(p.stakeToken) == address(0) || p.treasury == address(0)) revert BadParams();
+    constructor() {
+        _initialized = true;
+    }
+
+    function initialize(InitParams memory p) external {
+        if (_initialized) revert AlreadyInitialized();
+        _initialized = true;
+
+        if (address(p.stakeToken) == address(0)) revert BadParams();
         if (address(p.registry) == address(0)) revert BadParams();
-        if (p.admin == address(0) || p.juryCommitter == address(0) || p.creator == address(0)) revert BadParams();
-        if (p.ipfsHash.length == 0 || p.ipfsHash.length > MAX_IPFS_HASH_BYTES) revert BadParams();
-        if (p.claimRulesHash == bytes32(0)) revert BadParams();
+        if (p.juryCommitter == address(0) || p.creator == address(0)) revert BadParams();
+        if (p.swarmReference.length == 0 || p.swarmReference.length > MAX_SWARM_REFERENCE_BYTES) revert BadParams();
         if (p.votingPeriod < MIN_PERIOD || p.adminTimeout < MIN_PERIOD || p.revealPeriod < MIN_PERIOD) {
             revert BadParams();
         }
         if (p.votingPeriod > MAX_PERIOD || p.adminTimeout > MAX_PERIOD || p.revealPeriod > MAX_PERIOD) {
             revert BadParams();
         }
-        if (p.protocolFeePercent > MAX_PROTOCOL_FEE_PERCENT) revert BadParams();
         if (p.minStake == 0) revert BadParams();
         if (p.targetJurySize == 0 || p.targetJurySize > MAX_TARGET_JURY_SIZE) revert BadParams();
         if (p.targetJurySize % 2 == 0) revert BadParams(); // target jury size must be odd
@@ -448,27 +461,10 @@ contract TruthMarket is ReentrancyGuard {
         if (p.minRevealedJurors == 0) revert BadParams();
         if (p.minRevealedJurors > p.targetJurySize) revert BadParams();
         if (p.maxCommits != 0 && p.maxCommits < p.minCommits) revert BadParams();
-        if (bytes(p.name).length == 0 || bytes(p.name).length > MAX_NAME_BYTES) revert BadParams();
-        if (bytes(p.description).length == 0 || bytes(p.description).length > MAX_DESCRIPTION_BYTES) {
-            revert BadParams();
-        }
-        if (p.tags.length > MAX_TAGS) revert BadParams();
-        for (uint256 i = 0; i < p.tags.length; i++) {
-            if (bytes(p.tags[i]).length == 0 || bytes(p.tags[i]).length > MAX_TAG_BYTES) revert BadParams();
-        }
-
         stakeToken = p.stakeToken;
-        treasury = p.treasury;
-        admin = p.admin;
         juryCommitter = p.juryCommitter;
         creator = p.creator;
-        name = p.name;
-        description = p.description;
-        for (uint256 i = 0; i < p.tags.length; i++) {
-            tags.push(p.tags[i]);
-        }
-        ipfsHash = p.ipfsHash;
-        claimRulesHash = p.claimRulesHash;
+        swarmReference = p.swarmReference;
 
         uint64 deployTime = uint64(block.timestamp);
         uint64 _votingDeadline = deployTime + p.votingPeriod;
@@ -478,20 +474,19 @@ contract TruthMarket is ReentrancyGuard {
         juryCommitDeadline = _juryCommitDeadline;
         revealDeadline = _revealDeadline;
 
-        protocolFeePercent = p.protocolFeePercent;
         minStake = p.minStake;
         targetJurySize = p.targetJurySize;
         minCommits = p.minCommits;
         maxCommits = p.maxCommits;
         minRevealedJurors = p.minRevealedJurors;
+        creatorBond = p.creatorBond;
+        // No bond → trivially "posted" so commitVote isn't gated. With a bond,
+        // the creator must call postBond() before voters can commit.
+        bondPosted = p.creatorBond == 0;
         phase = Phase.Voting;
 
         emit MarketStarted(
-            p.name,
-            p.description,
-            p.tags,
-            p.ipfsHash,
-            p.claimRulesHash,
+            p.swarmReference,
             _votingDeadline,
             _juryCommitDeadline,
             _revealDeadline,
@@ -501,7 +496,7 @@ contract TruthMarket is ReentrancyGuard {
             p.minStake
         );
 
-        p.registry.register(p.creator, p.tags);
+        p.registry.register(p.creator);
     }
 
     // ---------- Commit (hidden vote + stake) ----------
@@ -521,6 +516,10 @@ contract TruthMarket is ReentrancyGuard {
     function commitVote(bytes32 commitHash, uint96 stake) external nonReentrant {
         if (phase != Phase.Voting) revert WrongPhase();
         if (block.timestamp >= votingDeadline) revert DeadlinePassed();
+        // When a bond was declared at deploy, the creator must fund it via
+        // postBond() before voters can stake. Markets without a bond satisfy
+        // this trivially (bondPosted starts true when creatorBond == 0).
+        if (!bondPosted) revert BondNotPosted();
         // Cap counts every address that ever committed (active + revoked); revoking does
         // not free a slot, so a colluder cannot leak their nonce to refill capacity.
         if (maxCommits != 0 && commitCount + revokedCount >= maxCommits) revert MarketFull();
@@ -723,10 +722,11 @@ contract TruthMarket is ReentrancyGuard {
             if (block.timestamp < juryCommitDeadline) revert DeadlineNotPassed();
             uint256 revokedHalf = revokedSlashAccrued;
             revokedSlashAccrued = 0;
-            creatorAccrued += revokedHalf;
+            uint256 bondRefund = bondPosted ? uint256(creatorBond) : 0;
+            creatorAccrued += revokedHalf + bondRefund;
             outcome = Outcome.Invalid;
             phase = Phase.Resolved;
-            emit Resolved(Outcome.Invalid, 0, 0, 0, revokedHalf, 0);
+            emit Resolved(Outcome.Invalid, 0, 0, 0, revokedHalf + bondRefund, 0);
             return;
         }
 
@@ -748,18 +748,43 @@ contract TruthMarket is ReentrancyGuard {
         uint256 creatorAccruedAmount;
         if (out != Outcome.Invalid) {
             (slashedRiskedStake, protocolFee) = _settleSlashedPool(out);
+            // Creator-funded subsidy: on Yes/No it joins the distributable pool so
+            // winners take it. The protocol fee is already taken from the slashed
+            // pool only — the bond never pays a fee.
+            if (bondPosted && creatorBond > 0) {
+                distributablePool += uint256(creatorBond);
+            }
         } else {
             // Jury was drawn but outcome Invalid: slash each non-revealing juror's full
             // stake and route the revoked-slash half to the creator. Every other voter
             // is refunded. The event reports this separately from protocol fees.
+            // The creator bond also routes back to the creator on Invalid (refund).
             uint256 jurorPenalty = _accrueNonRevealingJurorPenaltyToCreator();
             uint256 revokedHalf = revokedSlashAccrued;
             revokedSlashAccrued = 0;
-            creatorAccrued += revokedHalf;
-            creatorAccruedAmount = jurorPenalty + revokedHalf;
+            uint256 bondRefund = bondPosted ? uint256(creatorBond) : 0;
+            creatorAccrued += revokedHalf + bondRefund;
+            creatorAccruedAmount = jurorPenalty + revokedHalf + bondRefund;
         }
 
         emit Resolved(out, winningJuryCount, slashedRiskedStake, protocolFee, creatorAccruedAmount, distributablePool);
+    }
+
+    // ---------- Bond ----------
+
+    /// @notice Pull the declared `creatorBond` from the creator into the contract.
+    ///         Required before any voter can `commitVote` when `creatorBond > 0`.
+    ///         Permissioned to the creator and idempotent-blocked: a single posting
+    ///         is final. Tokens received are tracked accounting-only — they're
+    ///         routed at `resolve` (winners on Yes/No, creator refund on Invalid).
+    function postBond() external nonReentrant {
+        if (msg.sender != creator) revert NotAuthorized();
+        if (creatorBond == 0) revert NoBondConfigured();
+        if (bondPosted) revert BondAlreadyPosted();
+        if (phase != Phase.Voting) revert WrongPhase();
+        bondPosted = true;
+        stakeToken.safeTransferFrom(msg.sender, address(this), uint256(creatorBond));
+        emit BondPosted(msg.sender, creatorBond);
     }
 
     // ---------- Withdraw ----------
@@ -788,8 +813,8 @@ contract TruthMarket is ReentrancyGuard {
         uint256 amount = treasuryAccrued;
         treasuryAccrued = 0;
         if (amount == 0) return;
-        stakeToken.safeTransfer(treasury, amount);
-        emit TreasuryWithdrawn(treasury, amount);
+        stakeToken.safeTransfer(TREASURY, amount);
+        emit TreasuryWithdrawn(TREASURY, amount);
     }
 
     /// @notice Sweep rounding-dust to the treasury after the dust-sweep grace window.
@@ -872,16 +897,6 @@ contract TruthMarket is ReentrancyGuard {
         return _commitHash(vote, nonce, voter);
     }
 
-    function getTags() external view returns (string[] memory) {
-        return tags;
-    }
-
-    /// @notice Alias for the immutable claim/rules content reference. The original
-    ///         storage name is `ipfsHash`; deployments may point it at Swarm.
-    function swarmReference() external view returns (bytes memory) {
-        return ipfsHash;
-    }
-
     /// @notice Amount `voter` can withdraw right now. Returns 0 before resolution,
     ///         after withdrawal, for revoked commits, or for unknown voters.
     function previewPayout(address voter) external view returns (uint256) {
@@ -892,37 +907,29 @@ contract TruthMarket is ReentrancyGuard {
     }
 
     /// @notice Aggregate read-only snapshot of the deployment configuration. Bundles
-    ///         every constructor input plus on-chain caps in one call.
+    ///         every initializer input plus on-chain caps in one call.
     function getConfig() external view returns (Config memory) {
         return Config({
             stakeToken: address(stakeToken),
-            treasury: treasury,
-            admin: admin,
+            treasury: TREASURY,
             juryCommitter: juryCommitter,
             creator: creator,
-            name: name,
-            description: description,
-            tags: tags,
-            ipfsHash: ipfsHash,
-            claimRulesHash: claimRulesHash,
+            swarmReference: swarmReference,
             votingDeadline: votingDeadline,
             juryCommitDeadline: juryCommitDeadline,
             revealDeadline: revealDeadline,
-            protocolFeePercent: protocolFeePercent,
+            protocolFeePercent: PROTOCOL_FEE_PERCENT,
             minStake: minStake,
+            creatorBond: creatorBond,
+            bondPosted: bondPosted,
             targetJurySize: targetJurySize,
             minCommits: minCommits,
             maxCommits: maxCommits,
             minRevealedJurors: minRevealedJurors,
             maxTargetJurySize: MAX_TARGET_JURY_SIZE,
             maxTargetJurySizePercent: MAX_TARGET_JURY_SIZE_PERCENT,
-            maxTags: MAX_TAGS,
-            maxNameBytes: MAX_NAME_BYTES,
-            maxDescriptionBytes: MAX_DESCRIPTION_BYTES,
-            maxTagBytes: MAX_TAG_BYTES,
-            maxIpfsHashBytes: MAX_IPFS_HASH_BYTES,
-            riskPercent: RISK_PERCENT,
-            maxProtocolFeePercent: MAX_PROTOCOL_FEE_PERCENT
+            maxSwarmReferenceBytes: MAX_SWARM_REFERENCE_BYTES,
+            riskPercent: RISK_PERCENT
         });
     }
 
@@ -991,6 +998,18 @@ contract TruthMarket is ReentrancyGuard {
             randomnessIndex: randomnessIndex,
             juryAuditHash: juryAuditHash
         });
+    }
+
+    /// @notice Aggregated bond view: amount declared at deploy, whether the creator
+    ///         has paid it in, the creator address (so consumers can check who must
+    ///         post), and the live bond balance held by this contract.
+    ///         When `amount == 0` the bond is disabled, `posted` is trivially `true`,
+    ///         and `held` is always `0`.
+    function bondInfo() external view returns (uint96 amount, bool posted, address bondCreator, uint256 held) {
+        amount = creatorBond;
+        posted = bondPosted;
+        bondCreator = creator;
+        held = (amount > 0 && posted) ? uint256(amount) : 0;
     }
 
     // ---------- Internals ----------
@@ -1086,7 +1105,7 @@ contract TruthMarket is ReentrancyGuard {
         slashedRiskedStake = losingRisked + missedRisked + jurorExtra + revokedHalf;
 
         if (slashedRiskedStake > 0) {
-            protocolFee = (slashedRiskedStake * protocolFeePercent) / 100;
+            protocolFee = (slashedRiskedStake * PROTOCOL_FEE_PERCENT) / 100;
             if (protocolFee > 0) treasuryAccrued += protocolFee;
             distributablePool = slashedRiskedStake - protocolFee;
         }

@@ -54,14 +54,14 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 ## Implementation Decisions
 
 - The product is a random-jury belief-resolution market, not a fact-checking oracle.
-- Claim metadata (name, description, up to 5 tags) is stored on-chain at deployment so the claim is self-describing without a separate fetch. The Swarm/IPFS rules document remains the authoritative long-form reference.
+- Claim metadata (title, detailed YES/NO context, and optional tags) lives in the immutable Swarm/Bee claim document. The contract stores only the Swarm reference, keeping clone creation cheap while preserving one canonical rules artifact.
 - Voters may have a leaked nonce penalised during the voting phase: anyone who can produce a valid (vote, nonce) for another voter's commit can call `revokeStake`. The voter's stake is split 50/50 — half to the claimer, half to the slashed-stake pool (which routes to the distributable pool on Yes/No or to the creator on Invalid). After the voting deadline this is no longer callable. See [ADR 0007](./adr/0007-nonce-leak-revocation.md).
 - Commitments are domain-separated by vote, nonce, voter address, chain id, and contract address so reveals cannot be replayed across chains or market contracts when a voter reuses a nonce.
 - Self-revocation is blocked so it cannot be used as an early-exit bypass of the slash mechanics.
 - The protocol does not decide external truth. It resolves outcomes from selected juror reveals.
 - Swarm stores immutable initial claim/rules documents and optional claim attachments.
-- The contract stores the Swarm reference and exact-byte claim/rules hash for each claim.
-- Voters, agents, and the UI verify the Swarm-fetched claim/rules document against the contract before committing.
+- The contract stores the Swarm reference for each claim.
+- Voters, agents, and the UI verify the Swarm-fetched claim/rules document from the contract-stored reference before committing.
 - Mutable Swarm feeds/KV may support market discovery, but must not define market rules, outcomes, votes, selected jurors, or payouts.
 - Votes use classic commit-reveal to preserve voter sovereignty.
 - Operator-encrypted votes are rejected for the hackathon design because they make the operator a privileged reveal service.
@@ -95,7 +95,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - **Risk accounting module:** owns fixed 20% risked stake, refundable stake, slashed-pool accounting (including the juror full-stake penalty extras), winner reward weights, and payout math.
 - **Jury voting module:** owns count-based outcome resolution from selected juror reveals (`juryYesCount`/`juryNoCount`), tie-to-Invalid behavior, and the minimum-revealed-jurors gate.
 - **Jury selection service:** fetches SpaceComputer randomness from the IPFS/IPNS beacon, reads committed voters, deterministically selects jurors, persists/references the randomness audit artifact outside Swarm, and submits the cTRNG value, beacon IPFS address, sequence, timestamp, cTRNG index, and audit hash on-chain.
-- **Swarm claim document service:** creates, validates, uploads, fetches, and verifies immutable claim/rules documents. It computes `claimRulesHash` from the exact JSON bytes and never treats mutable feeds as canonical rules.
+- **Swarm claim document service:** creates, validates, uploads, fetches, and verifies immutable claim/rules documents. It stores title, detailed YES/NO context, and optional tags in Swarm KV, then gives the contract only the immutable Swarm reference.
 - **Swarm discovery service:** maintains mutable market indexes and creator indexes for discovery only; opening a market still verifies the contract-stored immutable reference.
 - **Agent policy and heartbeat service:** enforces local participation policy, stores unrevealed votes/nonces in a private vault, monitors reveal deadlines and selected-juror status, auto-reveals when policy allows, and withdraws after resolution when policy allows.
 - **Demo frontend:** presents immutable rules, stake controls, fixed risk preview, commit/reveal states, selected jurors, randomness audit data, and settlement results.
@@ -115,7 +115,7 @@ The product uses Swarm for immutable claim/rules documents, SpaceComputer for ra
 - Juror full-stake penalty should be tested to confirm it ignores the normal 20% risk cap.
 - Invalid or under-revealed market behavior should be defined and tested once the fallback rule is finalized.
 - Swarm upload/fetch behavior should be tested at the service boundary with fixture claim documents.
-- Claim/rules verification should test exact-byte `claimRulesHash` matching and contract parameter matching before commit.
+- Claim/rules verification should test content-addressed Swarm reference verification and contract parameter matching before commit.
 - Mutable Swarm feed/index behavior should test discovery only; tests should not treat feed data as canonical market state.
 - Agent heartbeat behavior should test reveal reminders, selected-juror priority, policy-gated auto-reveal, and no storage of unrevealed votes/nonces on Swarm.
 - UI tests, if added, should verify the user can understand immutable rules, commit stake, see selected jurors, reveal, and inspect settlement.

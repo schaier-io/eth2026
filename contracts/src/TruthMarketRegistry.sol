@@ -1,21 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-/// @notice Minimal interface a TruthMarket calls during construction to record itself.
-///         The market passes its `creator` and `tags` so the registry can index them
-///         without calling back into the market (which is not yet code-deployed at the
-///         moment `register` runs).
+/// @notice Minimal interface a TruthMarket calls during initialization to record itself.
+///         The market passes its `creator` so the registry can index discovery
+///         without calling back into the market while setup is still in progress.
 interface ITruthMarketRegistry {
-    function register(address creator, string[] memory tags) external;
+    function register(address creator) external;
 }
 
 /// @title TruthMarketRegistry
-/// @notice Append-only directory of TruthMarket deployments with creator/tag indexes
-///         and pagination. Each market self-registers from its constructor; the
+/// @notice Append-only directory of TruthMarket deployments with creator indexes
+///         and pagination. Each market self-registers during initialization; the
 ///         registry records `msg.sender`, the creator address, the registration
-///         timestamp, and each tag hash. Off-chain consumers verify markets by
-///         reading their on-chain state — the registry is a discovery layer, not a
-///         source of truth.
+///         timestamp. Offchain consumers verify markets by reading their onchain
+///         state — the registry is a discovery layer, not a claim source.
 ///
 ///         All list-style views are paginated. Returning unbounded arrays would
 ///         either OOM the caller or run past the block gas limit once the registry
@@ -24,9 +22,12 @@ interface ITruthMarketRegistry {
 ///         every list read must come through a `*Paginated(offset, limit)` call.
 ///
 ///         Permission model: `register()` is permissionless and idempotent per
-///         address. Any caller may register itself once; spam claims arbitrary
-///         creator/tags but has no on-chain market behind it.
+///         address. Any caller may register itself once; spam claims an arbitrary
+///         creator but has no onchain market behind it.
 contract TruthMarketRegistry is ITruthMarketRegistry {
+    bytes32 public constant CONTRACT_ID = keccak256("TruthMarketRegistry");
+    uint16 public constant CONTRACT_VERSION = 2;
+
     error AlreadyRegistered();
     error ZeroCreator();
 
@@ -39,10 +40,6 @@ contract TruthMarketRegistry is ITruthMarketRegistry {
 
     event MarketRegistered(address indexed market, address indexed creator, uint256 indexed index, uint64 registeredAt);
 
-    /// @notice Emitted once per tag per market. Indexed `tagHash` lets consumers
-    ///         filter logs by tag without scanning every registration.
-    event MarketTagged(address indexed market, bytes32 indexed tagHash, string tag);
-
     /// @notice Cached count of registered markets. Equal to `markets.length` and
     ///         maintained in lockstep with it inside `register`. Cached so callers
     ///         have a stable, explicitly-named O(1) read for "how big is this
@@ -53,9 +50,8 @@ contract TruthMarketRegistry is ITruthMarketRegistry {
     mapping(address => bool) public isRegistered;
     mapping(address => MarketInfo) public marketInfo;
     mapping(address => address[]) public marketsByCreator;
-    mapping(bytes32 => address[]) public marketsByTagHash;
 
-    function register(address creator, string[] memory tags) external {
+    function register(address creator) external {
         if (isRegistered[msg.sender]) revert AlreadyRegistered();
         if (creator == address(0)) revert ZeroCreator();
 
@@ -69,12 +65,6 @@ contract TruthMarketRegistry is ITruthMarketRegistry {
 
         marketsByCreator[creator].push(msg.sender);
 
-        for (uint256 i = 0; i < tags.length; i++) {
-            bytes32 h = keccak256(bytes(tags[i]));
-            marketsByTagHash[h].push(msg.sender);
-            emit MarketTagged(msg.sender, h, tags[i]);
-        }
-
         // forge-lint: disable-next-line(unsafe-typecast)
         emit MarketRegistered(msg.sender, creator, index, uint64(block.timestamp));
     }
@@ -83,14 +73,6 @@ contract TruthMarketRegistry is ITruthMarketRegistry {
 
     function countByCreator(address creator) external view returns (uint256) {
         return marketsByCreator[creator].length;
-    }
-
-    function countByTag(string calldata tag) external view returns (uint256) {
-        return marketsByTagHash[keccak256(bytes(tag))].length;
-    }
-
-    function countByTagHash(bytes32 tagHash) external view returns (uint256) {
-        return marketsByTagHash[tagHash].length;
     }
 
     // ---------- Paginated lookups ----------
@@ -108,22 +90,6 @@ contract TruthMarketRegistry is ITruthMarketRegistry {
         returns (address[] memory page)
     {
         return _slice(marketsByCreator[creator], offset, limit);
-    }
-
-    function marketsByTagPaginated(string calldata tag, uint256 offset, uint256 limit)
-        external
-        view
-        returns (address[] memory page)
-    {
-        return _slice(marketsByTagHash[keccak256(bytes(tag))], offset, limit);
-    }
-
-    function marketsByTagHashPaginated(bytes32 tagHash, uint256 offset, uint256 limit)
-        external
-        view
-        returns (address[] memory page)
-    {
-        return _slice(marketsByTagHash[tagHash], offset, limit);
     }
 
     // ---------- Internal helpers ----------

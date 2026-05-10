@@ -20,7 +20,7 @@ export const PolicySchema = z.object({
     .string()
     .regex(/^\d+$/, "maxStake must be a non-negative integer string"),
   // Default: false so agents must opt into the extra network read. When true,
-  // commits verify the immutable Swarm reference and claimRulesHash before
+  // commits verify the immutable Swarm reference before
   // generating a local nonce.
   requireSwarmVerification: z.boolean().default(false),
   allowCreateMarkets: z.boolean().default(false),

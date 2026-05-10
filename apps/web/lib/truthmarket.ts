@@ -1,14 +1,19 @@
-import { isAddress, parseAbi, type Address } from "viem";
+import { isAddress, keccak256, parseAbi, toHex, type Address, type Hex } from "viem";
 
 const configuredAddress = process.env.NEXT_PUBLIC_TRUTHMARKET_ADDRESS;
 
 export const truthMarketAddress =
   configuredAddress && isAddress(configuredAddress) ? (configuredAddress as Address) : undefined;
 
+/** Expected `CONTRACT_ID()` value of any TruthMarket. Use to filter foreign
+ *  contracts that registered into the same registry: skip any market whose
+ *  `CONTRACT_ID()` returns something else (or reverts). Static, computed once. */
+export const TRUTH_MARKET_CONTRACT_ID: Hex = keccak256(toHex("TruthMarket"));
+
 export const truthMarketAbi = parseAbi([
+  "function CONTRACT_ID() view returns (bytes32)",
+  "function CONTRACT_VERSION() view returns (uint16)",
   "function RISK_PERCENT() view returns (uint8)",
-  "function name() view returns (string)",
-  "function description() view returns (string)",
   "function phase() view returns (uint8)",
   "function outcome() view returns (uint8)",
   "function commitCount() view returns (uint32)",
@@ -32,15 +37,28 @@ export const truthMarketAbi = parseAbi([
   "function minStake() view returns (uint96)",
   "function maxCommits() view returns (uint32)",
   "function stakeToken() view returns (address)",
-  "function ipfsHash() view returns (bytes)",
   "function swarmReference() view returns (bytes)",
-  "function claimRulesHash() view returns (bytes32)",
   "function previewPayout(address voter) view returns (uint256)",
   "function commitHashOf(uint8 vote, bytes32 nonce, address voter) view returns (bytes32)",
   "function commitVote(bytes32 commitHash, uint96 stake)",
+  "function postBond()",
+  "function creatorBond() view returns (uint96)",
+  "function bondPosted() view returns (bool)",
+  "function bondInfo() view returns (uint96 amount, bool posted, address bondCreator, uint256 held)",
   "function revealVote(uint8 vote, bytes32 nonce)",
   "function commitJury(uint256 randomness, (bytes ipfsAddress, uint64 sequence, uint64 timestamp, uint16 valueIndex) metadata, bytes32 auditHash)",
+  "function resolve()",
   "function withdraw()",
+  "function withdrawCreator()",
+  "function withdrawTreasury()",
+  "function creatorAccrued() view returns (uint256)",
+  "function treasuryAccrued() view returns (uint256)",
+  "function creator() view returns (address)",
+  "function votingDeadline() view returns (uint64)",
+  "function juryCommitDeadline() view returns (uint64)",
+  "function revealDeadline() view returns (uint64)",
+  "function PROTOCOL_FEE_PERCENT() view returns (uint8)",
+  "function TREASURY() view returns (address)",
 ]);
 
 export const erc20Abi = parseAbi([

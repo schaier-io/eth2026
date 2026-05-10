@@ -2,48 +2,41 @@
 pragma solidity 0.8.28;
 
 import { Script, console2 } from "forge-std/Script.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import { MarketRegistry } from "../src/MarketRegistry.sol";
-import { ITruthMarketRegistry } from "../src/TruthMarketRegistry.sol";
+import { TruthMarket } from "../src/TruthMarket.sol";
+import { TruthMarketReferenceDeployment } from "./TruthMarketReferenceDeployment.sol";
 
-/// @notice Deploy a MarketRegistry. Reads operational addresses from env so the
-///         same script targets anvil and live networks. Each deployed market
-///         created through the resulting registry inherits these.
-///
-///         Required env:
-///           PRIVATE_KEY        - deployer key
-///           STAKE_TOKEN        - ERC20 used by every market
-///           DISCOVERY_REGISTRY - TruthMarketRegistry used for market self-registration
-///         Optional env (default to deployer address):
-///           TREASURY           - company treasury for protocol fees + dust
-///           ADMIN              - market admin address
-///           JURY_COMMITTER     - cTRNG jury committer address
+/// @notice Deploy the TruthMarket implementation once, then deploy the clone
+///         factory/discovery registry that creates all user markets.
 contract MarketRegistryScript is Script {
-    function run() external returns (MarketRegistry registry) {
+    function run() external returns (TruthMarket implementation, MarketRegistry registry) {
         uint256 pk = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(pk);
+        address referenceAddress = vm.envOr("TRUTHMARKET_REFERENCE_ADDRESS", address(0));
 
-        address stakeToken = vm.envAddress("STAKE_TOKEN");
-        address discoveryRegistry = vm.envAddress("DISCOVERY_REGISTRY");
-        address treasury = vm.envOr("TREASURY", deployer);
-        address admin = vm.envOr("ADMIN", deployer);
-        address juryCommitter = vm.envOr("JURY_COMMITTER", deployer);
+        address predictedReference = TruthMarketReferenceDeployment.predict();
+        console2.log("Predicted TruthMarket reference:", predictedReference);
 
         vm.startBroadcast(pk);
-        registry = new MarketRegistry(
-            IERC20(stakeToken),
-            treasury,
-            ITruthMarketRegistry(discoveryRegistry),
-            admin,
-            juryCommitter
-        );
+        if (referenceAddress == address(0)) {
+            if (predictedReference.code.length > 0) {
+                implementation = TruthMarket(predictedReference);
+            } else {
+                implementation = new TruthMarket{ salt: TruthMarketReferenceDeployment.SALT }();
+                require(address(implementation) == predictedReference, "CREATE2 address drift");
+            }
+        } else {
+            require(referenceAddress.code.length > 0, "reference has no code");
+            implementation = TruthMarket(referenceAddress);
+        }
+        registry = new MarketRegistry(address(implementation));
         vm.stopBroadcast();
 
-        console2.log("MarketRegistry deployed at:", address(registry));
-        console2.log("Stake token:        ", stakeToken);
-        console2.log("Discovery registry: ", discoveryRegistry);
-        console2.log("Treasury:           ", treasury);
-        console2.log("Admin:              ", admin);
-        console2.log("Jury committer:     ", juryCommitter);
+        console2.log("TruthMarket implementation:", address(implementation));
+        console2.log("Implementation version:    ", implementation.CONTRACT_VERSION());
+        console2.log("MarketRegistry:            ", address(registry));
+        console2.log("Registry version:          ", registry.CONTRACT_VERSION());
+        console2.log("Stake token:                configured per clone");
+        console2.log("Jury committer:             configured per clone");
     }
 }

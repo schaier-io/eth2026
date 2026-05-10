@@ -47,16 +47,15 @@ The contract still encodes vote values as `1` and `2`; the app maps those values
 
 4. Create market
    - Keep as a secondary but first-class flow, not hidden in developer settings.
-   - Claim title, description, optional image/reference artifact, Up meaning, Down meaning, voting window, target jury size, and minimum revealed jurors.
-   - Upload claim/rules document to Swarm before deploying/recording the market.
-   - Compute and preserve `claimRulesHash` from the exact claim/rules JSON bytes before deployment.
+   - Claim title, detailed YES meaning, detailed NO meaning, edge cases/Invalid conditions, optional image/reference artifact, voting window, target jury size, and minimum revealed jurors.
+   - Upload claim/rules document to Swarm KV before deploying/recording the market.
+   - Store only the returned immutable Swarm reference on-chain.
    - After creation, send the creator directly to the focused staking step for the new market.
 
 5. Swarm verification gate
-   - Read the current rules pointer from the contract (`swarmReference()`; `ipfsHash()` remains the legacy storage-name getter).
-   - Read `claimRulesHash`.
+   - Read the current rules pointer from the contract (`swarmReference()`).
    - Fetch the claim/rules document from Swarm.
-   - Verify the fetched bytes against `claimRulesHash` when available.
+   - Verify the fetched bytes against the content-addressed Swarm reference.
    - Compare key JSON fields against contract parameters.
    - Keep commit disabled until verification succeeds.
 
@@ -151,7 +150,7 @@ Useful read model:
 
 - Market phase and deadlines: `phase`, `votingDeadline`, `juryCommitDeadline`, `revealDeadline`
 - Market parameters: `targetJurySize`, `minCommits`, `minRevealedJurors`, `minStake`, `protocolFeeBps`
-- Claim/rules document: `swarmReference`, legacy `ipfsHash`, and `claimRulesHash`
+- Claim/rules document: `swarmReference`
 - Commit aggregate: `commitCount`, `totalCommittedStake`, `totalRiskedStake`
 - Wallet position: `commits(wallet)`, `isJuror(wallet)`
 - Jury state: `getJury()`, `revealedJurorCount`, `juryYesCount`, `juryNoCount`

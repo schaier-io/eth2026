@@ -3,9 +3,8 @@ pragma solidity 0.8.28;
 
 import { Script, console2 } from "forge-std/Script.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { MarketRegistry } from "../src/MarketRegistry.sol";
 import { TruthMarket } from "../src/TruthMarket.sol";
-import { TruthMarketRegistry, ITruthMarketRegistry } from "../src/TruthMarketRegistry.sol";
-import { RegistryDeployment } from "./RegistryDeployment.sol";
 import { MockERC20 } from "../test/MockERC20.sol";
 
 /// @notice Anvil-driven full simulation with seeded-random voter votes.
@@ -64,8 +63,8 @@ contract SimulateAnvilRandomScript is Script {
     string internal constant ADDR_FILE = "./.sim-anvil-random.json";
 
     // ---------- Market config ----------
-    bytes internal constant IPFS_HASH = bytes("ipfs://QmAnvilSimRandom");
-    bytes32 internal constant CLAIM_RULES_HASH = keccak256("anvil-random-claim-rules");
+    bytes internal constant SWARM_REFERENCE =
+        bytes("bzz://8f2b1c3d4e5f67890123456789012345678901234567890123456789012345678");
     bytes internal constant RANDOMNESS_IPFS_ADDRESS =
         bytes("https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f");
     uint64 internal constant RANDOMNESS_SEQUENCE = 87_963;
@@ -95,60 +94,58 @@ contract SimulateAnvilRandomScript is Script {
         address juryCommitter = vm.addr(vm.deriveKey(MNEMONIC, JURY_COMMITTER_IDX));
         address creator = vm.addr(vm.deriveKey(MNEMONIC, CREATOR_IDX));
 
-        address predictedRegistry = RegistryDeployment.predict();
-        TruthMarketRegistry registry;
-
         vm.startBroadcast(deployerPk);
         // 500 voters * 100 ether starting balance + headroom for the deployer.
         MockERC20 token = new MockERC20("Truth Stake", "TRUTH", 1_000_000 ether, deployer);
-        if (predictedRegistry.code.length == 0) {
-            registry = new TruthMarketRegistry{ salt: RegistryDeployment.SALT }();
-            require(address(registry) == predictedRegistry, "CREATE2 drift");
-        } else {
-            registry = TruthMarketRegistry(predictedRegistry);
-        }
-        string[] memory tags = new string[](3);
-        tags[0] = "anvil";
-        tags[1] = "demo";
-        tags[2] = "random";
-        TruthMarket market = new TruthMarket(
-            TruthMarket.InitParams({
-                stakeToken: IERC20(address(token)),
-                treasury: treasury,
-                registry: ITruthMarketRegistry(address(registry)),
-                admin: admin,
-                juryCommitter: juryCommitter,
-                creator: creator,
-                name: "Anvil Random Demo",
-                description: "Lifecycle simulation with seeded-random voter votes.",
-                tags: tags,
-                ipfsHash: IPFS_HASH,
-                claimRulesHash: CLAIM_RULES_HASH,
-                votingPeriod: VOTING_PERIOD,
-                adminTimeout: ADMIN_TIMEOUT,
-                revealPeriod: REVEAL_PERIOD,
-                protocolFeePercent: FEE_PERCENT,
-                minStake: MIN_STAKE,
-                targetJurySize: TARGET_JURY_SIZE,
-                minCommits: MIN_COMMITS,
-                maxCommits: 0,
-                minRevealedJurors: MIN_REVEALED_JURORS
-            })
-        );
+        TruthMarket implementation = new TruthMarket();
+        MarketRegistry registry = new MarketRegistry(address(implementation));
         for (uint256 i = 0; i < VOTER_COUNT; i++) {
             token.transfer(_voterAddr(i), 100 ether);
         }
         vm.stopBroadcast();
 
+        vm.startBroadcast(vm.deriveKey(MNEMONIC, CREATOR_IDX));
+        TruthMarket market = TruthMarket(
+            registry.createMarket(
+                MarketRegistry.MarketSpec({
+                    stakeToken: IERC20(address(token)),
+                    juryCommitter: juryCommitter,
+                    swarmReference: SWARM_REFERENCE,
+                    votingPeriod: VOTING_PERIOD,
+                    adminTimeout: ADMIN_TIMEOUT,
+                    revealPeriod: REVEAL_PERIOD,
+                    minStake: MIN_STAKE,
+                    jurySize: TARGET_JURY_SIZE,
+                    minCommits: MIN_COMMITS,
+                    maxCommits: 0,
+                    minRevealedJurors: MIN_REVEALED_JURORS,
+                    creatorBond: 0
+                })
+            )
+        );
+        vm.stopBroadcast();
+
         // Persist deployed addresses for subsequent phases.
         vm.writeFile(
             ADDR_FILE,
-            string.concat('{"token":"', vm.toString(address(token)), '","market":"', vm.toString(address(market)), '"}')
+            string.concat(
+                '{"token":"',
+                vm.toString(address(token)),
+                '","market":"',
+                vm.toString(address(market)),
+                '","registry":"',
+                vm.toString(address(registry)),
+                '","implementation":"',
+                vm.toString(address(implementation)),
+                '"}'
+            )
         );
 
         console2.log("=== Phase: Deploy (random) ===");
         console2.log("Random seed:          ", _seed());
         console2.log("Token:                ", address(token));
+        console2.log("Registry:             ", address(registry));
+        console2.log("Implementation:       ", address(implementation));
         console2.log("Market:               ", address(market));
         console2.log("Voters:               ", VOTER_COUNT);
         console2.log("Target jury size:     ", TARGET_JURY_SIZE);

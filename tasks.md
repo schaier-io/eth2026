@@ -63,9 +63,9 @@ Core principle: there is no oracle and no external source of truth. The protocol
 
 **Contract relationship:**
 
-- Contract stores the Swarm reference and a hash of the exact claim/rules document bytes.
+- Contract stores only the Swarm reference for the claim/rules document.
 - UI fetches the claim document from Swarm.
-- UI verifies the fetched bytes against the contract-stored hash before enabling commit.
+- UI verifies the fetched document from the contract-stored reference before enabling commit.
 - Voters stake only after seeing the immutable rules.
 
 **Mutable Swarm discovery:**
@@ -78,7 +78,6 @@ Core principle: there is no oracle and no external source of truth. The protocol
 
 - A claim can be uploaded to Swarm.
 - The contract stores the returned Swarm reference.
-- The contract stores `claimRulesHash` for the exact JSON bytes.
 - The frontend can fetch and display the claim/rules document.
 - The frontend can verify the document before commit.
 - The UI communicates that rules cannot be changed after market creation.
@@ -283,7 +282,7 @@ TruthMarket can become a venture because it monetizes belief-resolution markets 
 
 **Current issues to fix:**
 
-- Agent market creation still feels like an operator toolkit. The agent needs prepared env vars, policy files, wallet setup, a `MarketSpec`, and sometimes placeholder `ipfsHash` behavior before it can create a market.
+- Agent market creation still feels like an operator toolkit. The agent needs prepared env vars, policy files, wallet setup, a `MarketSpec`, and sometimes placeholder `swarmReference` behavior before it can create a market.
 - Public artifact upload is not first-class. Agents should be able to upload their own claim/rules document, optional image, and public context artifact to Swarm/IPFS, then create a market from those references.
 - Manual market creation is too raw. A user or agent has to hand-build `MarketSpec` JSON instead of using a guided command that validates fields and shows what will be deployed.
 - Stake/vote flow still exposes base-unit complexity. Agents should get token-decimal helpers, allowance checks, dry-run previews, and clear risk summaries before signing.
@@ -296,11 +295,11 @@ TruthMarket can become a venture because it monetizes belief-resolution markets 
 - [ ] Add a single agent-native create command, for example `truthmarket market create --rules <claim-rules.json> --image <image> --context <artifact> --json`.
 - [ ] Upload claim/rules JSON to Swarm/IPFS and use the returned immutable reference in the market spec.
 - [ ] Support optional image/context artifact upload and include those references in the claim/rules document, not as canonical contract state.
-- [ ] Compute and display `claimRulesHash` before market creation; after deployment, read the contract and verify the uploaded bytes still match.
+- [ ] Display and verify the Swarm reference before market creation; after deployment, read the contract and verify the uploaded claim document still resolves from that reference.
 - [ ] Add a `--dry-run`/preview mode for market creation that prints the exact registry, creator, stake token, timings, jury size, min commits, uploaded references, and expected transaction target.
 - [ ] Add token-decimal helpers for stake input so agents can pass human amounts while the CLI safely converts to base units.
 - [ ] Add an approve-and-commit helper or guided sequence that checks allowance, shows normal 20% risk, previews the commitment action, then commits.
-- [ ] Return stable JSON for every agent action with `ok`, `action`, `marketAddress`, `txHash`, `artifactReferences`, `claimRulesHash`, `vaultPath`, and `error` where applicable.
+- [ ] Return stable JSON for every agent action with `ok`, `action`, `marketAddress`, `txHash`, `artifactReferences`, `swarmReference`, `vaultPath`, and `error` where applicable.
 - [ ] Make `policy.requireSwarmVerification` block generated placeholder markets by default unless a matching local document is supplied.
 - [ ] Add a single "safe agent mode" command or documented sequence that starts heartbeat monitoring after commit and handles reveal/withdraw according to local policy.
 - [ ] Add a dedicated README/demo for the first target agent persona: create a market from a public Reddit ambiguity, upload artifacts, create market, commit a vote, reveal, and withdraw.
@@ -308,7 +307,7 @@ TruthMarket can become a venture because it monetizes belief-resolution markets 
 **Acceptance:**
 
 - An agent can create a custom market from a local rules document plus optional image/context artifact without hand-writing a full `MarketSpec`.
-- The created market stores an immutable rules reference and a verifiable `claimRulesHash`.
+- The created market stores an immutable, verifiable Swarm rules reference.
 - Agents that require Swarm verification refuse to commit on placeholder-reference markets.
 - The CLI can preview create/approve/commit actions before signing.
 - Vote, nonce, and reveal data remain local/private and are never uploaded to Swarm/IPFS/Apify.

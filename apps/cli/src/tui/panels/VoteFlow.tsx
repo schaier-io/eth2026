@@ -4,6 +4,7 @@ import TextInput from "ink-text-input";
 import React, { useEffect, useMemo, useState } from "react";
 import { writeRevealVote } from "../../chain/contract.js";
 import { makePublicClient, makeWalletClient } from "../../chain/client.js";
+import { assertConfiguredMarketIntegrity } from "../../chain/market-integrity.js";
 import { commitVoteCore } from "../../commands/vote-core.js";
 import type { ResolvedConfig } from "../../config.js";
 import { type Policy, loadPolicy } from "../../policy/policy.js";
@@ -172,6 +173,7 @@ export function VoteFlow({
         });
         return;
       }
+      await assertConfiguredMarketIntegrity(publicClient, cfg);
       const tx = await writeRevealVote(walletClient, publicClient, cfg, {
         vote: entry.vote,
         nonce: entry.nonce,

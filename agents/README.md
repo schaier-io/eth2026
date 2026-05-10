@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../brand-mark.svg" alt="TruthMarket" width="96" />
+</p>
+
 # TruthMarket Agents
 
 Root-level agents live here so they can evolve independently from the CLI.

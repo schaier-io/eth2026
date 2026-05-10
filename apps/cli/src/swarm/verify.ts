@@ -1,8 +1,5 @@
 import { readFile } from "node:fs/promises";
-import {
-  type Hex,
-  type PublicClient,
-} from "viem";
+import { type Hex, type PublicClient } from "viem";
 import {
   bytesToHex,
   keccak256,
@@ -13,28 +10,22 @@ import {
 import { truthMarketAbi } from "../abi.js";
 import type { ResolvedConfig } from "../config.js";
 import { CliError } from "../errors.js";
+import {
+  type ClaimDocument,
+  decodeSwarmReference,
+  loadClaimDocument,
+} from "./claim-doc.js";
 
 const HEX_32_BYTES = /^[0-9a-f]{64}$/;
 
-export async function readIpfsHash(
+export async function readSwarmReference(
   client: PublicClient,
   cfg: ResolvedConfig,
 ): Promise<Hex> {
   return (await client.readContract({
     address: cfg.contractAddress,
     abi: truthMarketAbi,
-    functionName: "ipfsHash",
-  })) as Hex;
-}
-
-export async function readClaimRulesHash(
-  client: PublicClient,
-  cfg: ResolvedConfig,
-): Promise<Hex> {
-  return (await client.readContract({
-    address: cfg.contractAddress,
-    abi: truthMarketAbi,
-    functionName: "claimRulesHash",
+    functionName: "swarmReference",
   })) as Hex;
 }
 
@@ -47,20 +38,22 @@ export interface ClaimRulesVerificationResult {
   match: boolean;
   expected: Hex;
   computed: Hex;
-  ipfsHashHex: Hex;
+  swarmReferenceHex: Hex;
   swarmReference: string;
+  mode: "swarm-kv" | "raw-bytes";
+  document?: ClaimDocument;
   chunksVerified: number;
   remoteContentHash: Hex;
   remoteMatchesDocument: boolean;
 }
 
 export async function verifyLocalDocument(
-  expectedClaimRulesHash: Hex,
+  expectedContentHash: Hex,
   documentPath: string,
 ): Promise<{ match: boolean; expected: Hex; computed: Hex }> {
   const buf = await readFile(documentPath);
   const computed = hashBytes(new Uint8Array(buf));
-  const expected = normalizeHashHex(expectedClaimRulesHash);
+  const expected = normalizeHashHex(expectedContentHash);
   return {
     match: computed === expected,
     expected,
@@ -74,52 +67,61 @@ export async function verifyOnchainClaimRulesDocument(
   documentPath: string,
   options: ClaimRulesVerificationOptions = {},
 ): Promise<ClaimRulesVerificationResult> {
-  const [ipfsHashHex, claimRulesHash] = await Promise.all([
-    readIpfsHash(client, cfg),
-    readClaimRulesHash(client, cfg),
-  ]);
-  const expected = normalizeHashHex(claimRulesHash);
+  const swarmReferenceHex = await readSwarmReference(client, cfg);
   const documentBytes = new Uint8Array(await readFile(documentPath));
   const computed = hashBytes(documentBytes);
+  const swarmReference = swarmReferenceFromBytes(swarmReferenceHex);
+  const gatewayUrl = options.gatewayUrl ?? process.env.TM_SWARM_GATEWAY_URL;
 
-  if (computed !== expected) {
+  const kv = await loadClaimDocument(swarmReferenceHex, {
+    ...(gatewayUrl ? { gatewayUrl } : {}),
+    ...(options.fetch ? { fetch: options.fetch as typeof fetch } : {}),
+  });
+  if (kv.verified && kv.document) {
+    const remoteBytes = new TextEncoder().encode(JSON.stringify(kv.document));
+    const remoteContentHash = hashBytes(remoteBytes);
+    const remoteMatchesDocument =
+      bytesEqual(remoteBytes, documentBytes) ||
+      sameJson(documentBytes, kv.document);
+
     return {
-      match: false,
-      expected,
+      match: remoteMatchesDocument,
+      expected: remoteContentHash,
       computed,
-      ipfsHashHex,
-      swarmReference: "",
+      swarmReferenceHex,
+      swarmReference: decodeSwarmReference(swarmReferenceHex) ?? swarmReference,
+      mode: "swarm-kv",
+      document: kv.document,
       chunksVerified: 0,
-      remoteContentHash: "0x",
-      remoteMatchesDocument: false,
+      remoteContentHash,
+      remoteMatchesDocument,
     };
   }
 
-  const swarmReference = swarmReferenceFromIpfsHash(ipfsHashHex);
-  const gatewayUrl = options.gatewayUrl ?? process.env.TM_SWARM_GATEWAY_URL;
   const response = await verifiedFetch(swarmReference, {
-    expectedHash: expected,
     ...(gatewayUrl ? { gatewayUrl } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
+  const remoteContentHash = `0x${normalizeHex(response.contentHash)}` as Hex;
   const remoteMatchesDocument = bytesEqual(response.bytes, documentBytes);
 
   return {
     match: remoteMatchesDocument,
-    expected,
+    expected: remoteContentHash,
     computed,
-    ipfsHashHex,
+    swarmReferenceHex,
     swarmReference,
+    mode: "raw-bytes",
     chunksVerified: response.chunksVerified,
-    remoteContentHash: `0x${normalizeHex(response.contentHash)}` as Hex,
+    remoteContentHash,
     remoteMatchesDocument,
   };
 }
 
-export function swarmReferenceFromIpfsHash(ipfsHash: Hex): string {
-  const normalized = normalizeHex(stripHexPrefix(ipfsHash));
+export function swarmReferenceFromBytes(referenceBytes: Hex): string {
+  const normalized = normalizeHex(stripHexPrefix(referenceBytes));
   if (!normalized) {
-    throw new CliError("SWARM_REFERENCE_MISSING", "on-chain ipfsHash is empty");
+    throw new CliError("SWARM_REFERENCE_MISSING", "on-chain swarmReference is empty");
   }
 
   const bytes = hexToBytes(normalized);
@@ -140,7 +142,7 @@ export function swarmReferenceFromIpfsHash(ipfsHash: Hex): string {
 
   throw new CliError(
     "UNSUPPORTED_SWARM_REFERENCE",
-    "on-chain ipfsHash must be a raw 32-byte Swarm reference, 64-hex reference text, or bzz:// reference",
+    "on-chain swarmReference must be a raw 32-byte Swarm reference, 64-hex reference text, or bzz:// reference",
   );
 }
 
@@ -151,7 +153,7 @@ function hashBytes(bytes: Uint8Array): Hex {
 function normalizeHashHex(value: Hex): Hex {
   const normalized = normalizeHex(stripHexPrefix(value));
   if (normalized.length !== 64) {
-    throw new CliError("INVALID_CLAIM_RULES_HASH", "claimRulesHash must be a 32-byte hex value");
+    throw new CliError("INVALID_CONTENT_HASH", "content hash must be a 32-byte hex value");
   }
   return `0x${normalized}` as Hex;
 }
@@ -162,14 +164,14 @@ function stripHexPrefix(value: string): string {
 
 function hexToBytes(hex: string): Uint8Array {
   if (hex.length % 2 !== 0) {
-    throw new CliError("INVALID_SWARM_REFERENCE", "on-chain ipfsHash hex has odd length");
+    throw new CliError("INVALID_SWARM_REFERENCE", "on-chain swarmReference hex has odd length");
   }
 
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i += 1) {
     const byte = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
     if (Number.isNaN(byte)) {
-      throw new CliError("INVALID_SWARM_REFERENCE", "on-chain ipfsHash contains non-hex bytes");
+      throw new CliError("INVALID_SWARM_REFERENCE", "on-chain swarmReference contains non-hex bytes");
     }
     bytes[i] = byte;
   }
@@ -182,4 +184,23 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
     if (a[i] !== b[i]) return false;
   }
   return true;
+}
+
+function sameJson(bytes: Uint8Array, remote: ClaimDocument): boolean {
+  try {
+    const local = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    return stableJson(local) === stableJson(remote);
+  } catch {
+    return false;
+  }
+}
+
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+    .join(",")}}`;
 }

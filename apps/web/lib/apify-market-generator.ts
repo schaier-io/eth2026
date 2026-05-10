@@ -1,7 +1,6 @@
 export type GeneratorMode = "demo-fast" | "live-mini" | "public-hourly";
 
 export type MarketDefaults = {
-  protocolFeePercent: number;
   minStake: string;
   jurySize: number;
   minCommits: number;
@@ -108,7 +107,6 @@ export const TIMING_MODES: Record<GeneratorMode, TimingMode> = {
     juryCommitTimeoutSeconds: 2 * 60,
     revealPeriodSeconds: 5 * 60,
     marketDefaults: {
-      protocolFeePercent: 5,
       minStake: "100000000000000000",
       jurySize: 1,
       minCommits: 7,
@@ -121,7 +119,6 @@ export const TIMING_MODES: Record<GeneratorMode, TimingMode> = {
     juryCommitTimeoutSeconds: 5 * 60,
     revealPeriodSeconds: 25 * 60,
     marketDefaults: {
-      protocolFeePercent: 5,
       minStake: "100000000000000000",
       jurySize: 1,
       minCommits: 7,
@@ -134,7 +131,6 @@ export const TIMING_MODES: Record<GeneratorMode, TimingMode> = {
     juryCommitTimeoutSeconds: 10 * 60,
     revealPeriodSeconds: 50 * 60,
     marketDefaults: {
-      protocolFeePercent: 5,
       minStake: "100000000000000000",
       jurySize: 3,
       minCommits: 20,

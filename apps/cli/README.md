@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../../brand-mark.svg" alt="TruthMarket" width="96" />
+</p>
+
 # TruthMarket Agent CLI
 
 Standalone CLI + TUI for interacting with the [`TruthMarket`](../../contracts/src/TruthMarket.sol) contract. Built for autonomous agents and headless operators that need to commit, reveal, watch deadlines, and auto-resolve participation, mirroring the on-chain commit-reveal flow used by [`apps/web`](../web/).
@@ -19,8 +23,8 @@ What `bootstrap` actually does:
 
 1. `npm install && npm run build && npm link` — globally exposes the `truthmarket` binary.
 2. Spawns `anvil --accounts 12 --silent` detached and waits for the RPC.
-3. Runs `forge script script/SimulateAnvil.s.sol --sig "deploy()" --broadcast` — deploys MockERC20 + TruthMarket at deterministic addresses.
-4. Writes `apps/cli/.env` with `TM_CHAIN`, `TM_RPC_URL`, `TM_CONTRACT_ADDRESS`, and the anvil deterministic deployer key.
+3. Runs `forge script script/SimulateAnvil.s.sol --sig "deploy()" --broadcast` — deploys MockERC20, one TruthMarket implementation, a clone registry, and a seed market clone.
+4. Writes `apps/cli/.env` with `TM_CHAIN`, `TM_RPC_URL`, `TM_CONTRACT_ADDRESS`, `TM_REGISTRY_ADDRESS`, `TM_STAKE_TOKEN`, and the anvil deterministic deployer key.
 5. Installs a permissive default policy at `~/.truthmarket/policy.json` (allows commits up to 100 tokens; swarm verification off).
 
 After that you have a real local agent environment. Try:
@@ -158,7 +162,12 @@ Every command reads a small layer of configuration. Resolution order (top wins):
 | `TM_CHAIN` | `foundry` \| `baseSepolia` \| `sepolia` |
 | `TM_RPC_URL` | RPC endpoint to use; overrides chain default |
 | `TM_CONTRACT_ADDRESS` | TruthMarket contract address |
+| `TM_REGISTRY_ADDRESS` | MarketRegistry clone factory + discovery address |
+| `TM_STAKE_TOKEN` | default ERC-20 stake token for new market clones |
+| `TM_JURY_COMMITTER` | default jury committer for new market clones; defaults to the creator wallet when unset |
 | `TM_SWARM_GATEWAY_URL` | Swarm gateway used for verified claim/rules fetches |
+| `TM_SWARM_BEE_API_URL` | Bee API used to publish claim/rules documents; defaults to the public Swarm testnet gateway |
+| `TM_SWARM_POSTAGE_BATCH_ID` | postage batch used for writes; the public testnet gateway uses a dummy batch for small demo documents |
 | `PRIVATE_KEY` | hex private key (with or without `0x`) — wins over keystore |
 | `TM_KEYSTORE_PASSPHRASE` | non-interactive keystore unlock |
 | `TM_VAULT_PASSPHRASE` | non-interactive vault unlock |
@@ -221,7 +230,7 @@ The vault file format is v2: the public header (version, KDF params, market/chai
 
 Policy is enforced — not advisory. Without a configured policy file, `DEFAULT_POLICY` applies (`maxStake: "0"`, `requireSwarmVerification: false`, `allowJuryCommit: false`), which blocks all commits (zero stake) and jury commits. Run `policy set` first, or pass `--ignore-policy` to bypass per-command (intended for ad-hoc debugging). `--ignore-policy` still requires the policy file to be valid JSON; see Troubleshooting.
 
-`requireSwarmVerification` defaults to `false`. When enabled, the CLI fetches the claim/rules document from the on-chain content reference and verifies the exact bytes against `claimRulesHash()`.
+`requireSwarmVerification` defaults to `false`. When enabled, the CLI fetches the claim/rules document from the on-chain Swarm reference and verifies the content-addressed bytes before committing.
 
 Example `policy.json`:
 
@@ -242,9 +251,9 @@ Example `policy.json`:
 |-------|-------------|-----------|
 | `autoReveal`, `revealBufferMinutes`, `autoWithdraw`, `pollIntervalSeconds` | `heartbeat start` | controls the watcher loop |
 | `maxStake` | `vote commit` | `"0"` → refuse; `stake > maxStake` → refuse |
-| `requireSwarmVerification` | `vote commit` | when `true`, requires `--document <path>` and verifies it against `claimRulesHash()` and the Swarm reference |
+| `requireSwarmVerification` | `vote commit` | when `true`, requires `--document <path>` and verifies it against the Swarm reference |
 | `allowJuryCommit` | `jury commit` | `false` → refuse |
-| `allowCreateMarkets` | (n/a in this contract version) | reserved |
+| `allowCreateMarkets` | `registry create-market`, `agent tick`, `agent run` | `false` → refuse market creation |
 
 ```sh
 truthmarket policy show
@@ -270,11 +279,50 @@ truthmarket policy set --file ./policy.json
 
 | Command | What it does |
 |---------|--------------|
-| `market info` | Full config snapshot: name, description, tags, phase, outcome, deadlines, stake token, content reference, and claimRulesHash. |
+| `market info` | Full config snapshot: phase, outcome, deadlines, stake token, and Swarm claim/rules reference. |
 | `market phase` | Current phase enum + label. |
 | `market stats` | Reveal-phase aggregates (commit count, totals, jury Yes/No, etc.). |
 | `market jury` | List of selected jurors + active wallet's selection status. |
 | `market watch [--interval-seconds n]` | Long-running phase/outcome tail. NDJSON when `--json`. |
+
+### `registry`
+
+| Command | What it does |
+|---------|--------------|
+| `registry info` | Read registry version, implementation address/version, total market count, and clone defaults. |
+| `registry list [--offset n] [--limit n]` | List registered TruthMarket clone addresses; invalid clone bytecode is hidden and reported. |
+| `registry create-market --spec <path> [--ignore-policy]` | Publish a claim/rules document to Swarm when needed, then create a minimal clone through `MarketRegistry.createMarket`. |
+| `market verify-code` | Verify the target market is the registry implementation's minimal clone and report the Sourcify implementation match. |
+
+`create-market` accepts either a raw `swarmReference` hex value or a `claimDocument` object:
+
+```json
+{
+  "claimDocument": {
+    "title": "Was this the best ETHPrague so far?",
+    "context": "YES means selected jurors believe it was the best ETHPrague so far under the supplied public context. NO means selected jurors do not.",
+    "tags": ["ethprague"]
+  },
+  "votingPeriod": 1200,
+  "adminTimeout": 300,
+  "revealPeriod": 1200,
+  "minStake": "1000000000000000000",
+  "jurySize": 1,
+  "minCommits": 7,
+  "minRevealedJurors": 1
+}
+```
+
+When `claimDocument` is present, the CLI stores it through `@truth-market/swarm-kv`, puts the resulting `bzz://...` reference bytes on the clone, and prints the gateway URL.
+
+### `agent`
+
+| Command | What it does |
+|---------|--------------|
+| `agent tick [--json]` | Run one Apify-powered market creation attempt. Publishes the claim/rules document to Swarm by default. |
+| `agent run [--interval-seconds n] [--json]` | Run the same loop continuously with NDJSON events. |
+
+Use `--no-swarm-publish` only for offline demos. It falls back to a deterministic placeholder `swarmReference`, which is not a verifiable Swarm document and should not be used for commit policies that require claim/rules verification.
 
 ### `vote`
 
@@ -317,8 +365,8 @@ truthmarket policy set --file ./policy.json
 
 | Command | What it does |
 |---------|--------------|
-| `swarm show-hash` | Print the on-chain content reference and `claimRulesHash()`. |
-| `swarm verify --document <path> [--gateway <url>]` | Verify a local document against `claimRulesHash()` and the Swarm reference. Mismatches exit 0; `data.match` carries the boolean. |
+| `swarm show-hash` | Print the on-chain Swarm reference. |
+| `swarm verify --document <path> [--gateway <url>]` | Verify a local document against the Swarm reference. Mismatches exit 0; `data.match` carries the boolean. |
 
 ### `policy`
 
@@ -342,7 +390,7 @@ truthmarket policy set --file ./policy.json
 | `dev down` | SIGTERM the managed anvil process. |
 | `dev status` | Report whether managed anvil is running and reachable. |
 
-The contract address that `dev up` writes is the deterministic `MARKET_ADDR = 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512` — the second contract deployed by the deterministic anvil deployer. Pair with the deterministic deployer key (anvil account 0) and you have a self-contained mock chain you can tear down at any time.
+`dev up` reads the actual seed clone, registry, implementation, and token addresses from `contracts/.sim-anvil.json` after the forge script runs. Pair those values with the deterministic deployer key (anvil account 0) and you have a self-contained mock chain you can tear down at any time.
 
 ### `tui`
 
@@ -478,7 +526,7 @@ Both file formats are version 2. The plaintext header (`version`, `kdfparams`, `
 
 **`POLICY_INVALID` even with `--ignore-policy`** — `--ignore-policy` skips the *gates* (maxStake, allowJuryCommit, requireSwarmVerification) but the policy file is still loaded and zod-validated first. Fix the file (or move it aside) and rerun.
 
-**`SWARM_HASH_MISMATCH` for every document** — the local document hash does not match `claimRulesHash()` or the fetched Swarm bytes do not match the local file. Recompute the hash from the exact deployed JSON bytes and verify the on-chain content reference points at that document.
+**`SWARM_HASH_MISMATCH` for every document** — the fetched Swarm bytes do not match the local file, or the on-chain reference points at a different document. Verify you are using the exact deployed claim/rules bytes and the right market address.
 
 **Vault entry exists but `vote reveal` reverts with `CommitNotFound`** — happens when `vote commit` saved the nonce locally but the broadcast reverted. Recover with:
 

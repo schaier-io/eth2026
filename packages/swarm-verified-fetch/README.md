@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../../brand-mark.svg" alt="TruthMarket" width="96" />
+</p>
+
 # @truth-market/swarm-verified-fetch
 
 Fetch-shaped Swarm gateway reads with client-side verification.
@@ -64,13 +68,13 @@ const response = await verifiedFetch("bzz://<testnet-reference>", {
 
 The exported defaults are `SWARM_PUBLIC_GATEWAYS`, `DEFAULT_SWARM_GATEWAY_URL`, and `DEFAULT_SWARM_TESTNET_GATEWAY_URL`. Explicit `gatewayUrl` values stay explicit; pass `gateways` when you want custom failover/racing behavior.
 
-For TruthMarket claim/rules checks, pass the contract-stored exact-byte hash:
+For extra TruthMarket claim/rules checks, callers may pass an expected document hash in addition to the Swarm reference:
 
 ```ts
 import { verifiedFetch } from "@truth-market/swarm-verified-fetch";
 
 const rules = await verifiedFetch("bzz://<manifest-reference>/claim-rules.json", {
-  expectedHash: claimRulesHash,
+  expectedHash: expectedClaimDocumentHash,
   cancelToken,
   gatewayUrl: "https://download.gateway.ethswarm.org",
   signal: abortController.signal,
@@ -171,7 +175,7 @@ import { verifyBytesHash, verifySwarmBytes, verifySwarmChunk } from "@truth-mark
 
 const chunk = verifySwarmChunk(reference, rawChunkBytes);
 const payload = await verifySwarmBytes(rootReference, { chunks: chunkMap });
-const hashProof = verifyBytesHash(payload.bytes, claimRulesHash);
+const hashProof = verifyBytesHash(payload.bytes, expectedClaimDocumentHash);
 ```
 
 ## Fetch Compatibility

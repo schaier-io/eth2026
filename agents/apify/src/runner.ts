@@ -9,18 +9,16 @@ import {
   saveAgentState,
   type AgentStateConfig,
 } from "./state.js";
-import type { Address, CreateMarketResult, Hex, MarketSpec } from "./types.js";
+import type { Address, CreateMarketResult, Hex, MarketSpec, PublishedClaimDocument } from "./types.js";
 
 export const DEFAULT_INTERVAL_SECONDS = 3600;
 export const DEFAULT_DURATION_SECONDS = 3600;
-export const DEFAULT_FEE_PERCENT = 5;
 export const DEFAULT_ENDPOINT =
   process.env.TM_APIFY_ENDPOINT ?? "http://localhost:3000/api/apify/generated-markets";
 
 export interface ApifyAgentOptions {
   intervalSeconds?: number;
   durationSeconds?: number;
-  feePercent?: number;
   jurySize?: number;
   minCommits?: number;
   minRevealedJurors?: number;
@@ -43,6 +41,7 @@ export interface ApifyAgentDeps {
     spec: MarketSpec,
     context: { candidate: ApifyCandidate },
   ) => Promise<CreateMarketResult>;
+  publishClaimDocument?: (candidate: ApifyCandidate) => Promise<PublishedClaimDocument>;
 }
 
 export interface TickResult {
@@ -52,8 +51,9 @@ export interface TickResult {
   marketAddress?: Address;
   marketId?: string;
   txHash?: Hex;
-  ipfsHash?: Hex;
-  name?: string;
+  swarmReference?: Hex;
+  swarmReferenceIsPlaceholder?: boolean;
+  claimDocumentUrl?: string;
   reason?: string;
 }
 
@@ -104,22 +104,25 @@ export async function runApifyAgentTick(
   await deps.authorizeCreateMarket?.();
 
   const minStake = opts.minStake ? BigInt(opts.minStake) : BigInt(candidate.stake);
+  const publishedClaim = await deps.publishClaimDocument?.(candidate);
   const spec = buildMarketSpec(candidate, {
     durationSeconds: opts.durationSeconds ?? DEFAULT_DURATION_SECONDS,
     minStake,
-    protocolFeePercent: opts.feePercent ?? DEFAULT_FEE_PERCENT,
     jurySize: opts.jurySize,
     minCommits: opts.minCommits,
     minRevealedJurors: opts.minRevealedJurors,
+    swarmReference: publishedClaim?.swarmReference,
   });
+  const swarmReferenceIsPlaceholder = !publishedClaim;
 
   emitEvent({
     ts: new Date().toISOString(),
     event: "spec_built",
     candidateId: candidate.id,
-    name: spec.name,
-    ipfsHash: spec.ipfsHash,
-    ipfsHashIsPlaceholder: true,
+    title: candidate.claimRulesDraft.title,
+    swarmReference: spec.swarmReference,
+    swarmReferenceIsPlaceholder,
+    claimDocumentUrl: publishedClaim?.url,
   });
 
   const created = await deps.createMarket(spec, { candidate });
@@ -128,8 +131,9 @@ export async function runApifyAgentTick(
     candidateId: candidate.id,
     marketAddress: created.marketAddress,
     txHash: created.txHash,
-    ipfsHash: spec.ipfsHash,
-    name: spec.name,
+    swarmReference: spec.swarmReference,
+    swarmReferenceIsPlaceholder,
+    title: candidate.claimRulesDraft.title,
   });
   await saveAgentState(cfg, nextState);
 
@@ -141,6 +145,9 @@ export async function runApifyAgentTick(
     marketId: created.marketId.toString(),
     marketAddress: created.marketAddress,
     txHash: created.txHash,
+    swarmReference: spec.swarmReference,
+    swarmReferenceIsPlaceholder,
+    claimDocumentUrl: publishedClaim?.url,
   });
 
   return {
@@ -150,8 +157,9 @@ export async function runApifyAgentTick(
     marketAddress: created.marketAddress,
     marketId: created.marketId.toString(),
     txHash: created.txHash,
-    ipfsHash: spec.ipfsHash,
-    name: spec.name,
+    swarmReference: spec.swarmReference,
+    swarmReferenceIsPlaceholder,
+    claimDocumentUrl: publishedClaim?.url,
   };
 }
 

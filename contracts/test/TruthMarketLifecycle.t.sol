@@ -3,11 +3,13 @@ pragma solidity 0.8.28;
 
 import { Test } from "forge-std/Test.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 import { TruthMarket } from "../src/TruthMarket.sol";
 import { TruthMarketRegistry, ITruthMarketRegistry } from "../src/TruthMarketRegistry.sol";
 import { MockERC20 } from "./MockERC20.sol";
 
 contract TruthMarketLifecycleTest is Test {
+    TruthMarket internal implementation;
     TruthMarket internal market;
     MockERC20 internal token;
     TruthMarketRegistry internal registry;
@@ -21,32 +23,23 @@ contract TruthMarketLifecycleTest is Test {
         uint256 distributablePool
     );
 
-    address internal treasury = makeAddr("treasury");
-    address internal admin = makeAddr("admin");
     address internal juryCommitter = makeAddr("juryCommitter");
     address internal creator = makeAddr("creator");
 
-    bytes internal constant IPFS_HASH = bytes("ipfs://Qm-claim-doc");
-    bytes32 internal constant CLAIM_RULES_HASH = keccak256("claim-rules-json");
+    bytes internal constant SWARM_REFERENCE =
+        bytes("bzz://8f2b1c3d4e5f67890123456789012345678901234567890123456789012345678");
     bytes internal constant RANDOMNESS_IPFS_ADDRESS =
         bytes("https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f");
     uint64 internal constant RANDOMNESS_SEQUENCE = 87_963;
     uint64 internal constant RANDOMNESS_TIMESTAMP = 1_769_179_239;
     uint16 internal constant RANDOMNESS_INDEX = 0;
     bytes32 internal constant AUDIT_HASH = keccak256("swarm://ctrng-output");
-    string internal constant CLAIM_NAME = "Test Claim";
-    string internal constant CLAIM_DESCRIPTION = "Will the test pass by 2030?";
     uint64 internal constant VOTING_PERIOD = 1 days;
     uint64 internal constant ADMIN_TIMEOUT = 12 hours;
     uint64 internal constant REVEAL_PERIOD = 1 days;
-    uint8 internal constant FEE_PERCENT = 5;
     uint96 internal constant MIN_STAKE = 1 ether;
     uint96 internal constant DEFAULT_BALANCE = 1000 ether;
-    uint256 internal constant MAX_NAME_BYTES = 120;
-    uint256 internal constant MAX_DESCRIPTION_BYTES = 1000;
-    uint256 internal constant MAX_TAG_BYTES = 32;
-    uint256 internal constant MAX_IPFS_HASH_BYTES = 96;
-    uint8 internal constant MAX_PROTOCOL_FEE_PERCENT = 10;
+    uint256 internal constant MAX_SWARM_REFERENCE_BYTES = 96;
     uint64 internal constant MAX_PERIOD = 365 days;
 
     struct V {
@@ -59,6 +52,7 @@ contract TruthMarketLifecycleTest is Test {
     function setUp() public {
         token = new MockERC20("Truth Stake", "TRUTH", 10_000_000 ether, address(this));
         registry = new TruthMarketRegistry();
+        implementation = new TruthMarket();
     }
 
     // ---------- Deployment helpers ----------
@@ -67,7 +61,18 @@ contract TruthMarketLifecycleTest is Test {
         internal
         returns (TruthMarket m)
     {
-        m = new TruthMarket(_initParams(targetJurySize, minCommits, minRevealedJurors));
+        m = _newMarket(_initParams(targetJurySize, minCommits, minRevealedJurors));
+    }
+
+    function _newMarket(TruthMarket.InitParams memory p) internal returns (TruthMarket m) {
+        m = TruthMarket(Clones.clone(address(implementation)));
+        m.initialize(p);
+    }
+
+    function _expectNewMarketRevert(bytes4 selector, TruthMarket.InitParams memory p) internal {
+        TruthMarket m = TruthMarket(Clones.clone(address(implementation)));
+        vm.expectRevert(selector);
+        m.initialize(p);
     }
 
     function _initParams(uint32 targetJurySize, uint32 minCommits, uint32 minRevealedJurors)
@@ -75,30 +80,21 @@ contract TruthMarketLifecycleTest is Test {
         view
         returns (TruthMarket.InitParams memory)
     {
-        string[] memory tags = new string[](2);
-        tags[0] = "demo";
-        tags[1] = "test";
         return TruthMarket.InitParams({
             stakeToken: IERC20(address(token)),
-            treasury: treasury,
             registry: ITruthMarketRegistry(address(registry)),
-            admin: admin,
             juryCommitter: juryCommitter,
             creator: creator,
-            name: CLAIM_NAME,
-            description: CLAIM_DESCRIPTION,
-            tags: tags,
-            ipfsHash: IPFS_HASH,
-            claimRulesHash: CLAIM_RULES_HASH,
+            swarmReference: SWARM_REFERENCE,
             votingPeriod: VOTING_PERIOD,
             adminTimeout: ADMIN_TIMEOUT,
             revealPeriod: REVEAL_PERIOD,
-            protocolFeePercent: FEE_PERCENT,
             minStake: MIN_STAKE,
             targetJurySize: targetJurySize,
             minCommits: minCommits,
             maxCommits: 0,
-            minRevealedJurors: minRevealedJurors
+            minRevealedJurors: minRevealedJurors,
+            creatorBond: 0
         });
     }
 
@@ -280,15 +276,15 @@ contract TruthMarketLifecycleTest is Test {
         assertEq(market.creatorAccrued(), 0);
         assertTrue(outcome == TruthMarket.Outcome.Yes || outcome == TruthMarket.Outcome.No);
 
-        // slashed = losers' risked stake. fee = 5%. Risked = stake * 20 / 100.
+        // slashed = losers' risked stake. fee = 1% (PROTOCOL_FEE_PERCENT). Risked = stake * 20 / 100.
         if (outcome == TruthMarket.Outcome.Yes) {
-            // NO side lost: 5 * (80 * 20%) = 5 * 16 = 80 risked. fee = 4. distributable = 76.
-            assertEq(market.distributablePool(), 76 ether);
-            assertEq(market.treasuryAccrued(), 4 ether);
+            // NO side lost: 5 * (80 * 20%) = 5 * 16 = 80 risked. fee = 0.8. distributable = 79.2.
+            assertEq(market.distributablePool(), 79.2 ether);
+            assertEq(market.treasuryAccrued(), 0.8 ether);
         } else {
-            // YES side lost: 15 * (60 * 20%) = 15 * 12 = 180 risked. fee = 9. distributable = 171.
-            assertEq(market.distributablePool(), 171 ether);
-            assertEq(market.treasuryAccrued(), 9 ether);
+            // YES side lost: 15 * (60 * 20%) = 15 * 12 = 180 risked. fee = 1.8. distributable = 178.2.
+            assertEq(market.distributablePool(), 178.2 ether);
+            assertEq(market.treasuryAccrued(), 1.8 ether);
         }
 
         _withdrawAll(yes);
@@ -349,21 +345,27 @@ contract TruthMarketLifecycleTest is Test {
         // 2 yes jurors, 0 no jurors → outcome Yes.
         assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Yes));
         // Slashed pool: skipper missed risked (20) + extra (50 - 20 = 30) = 50.
-        // Fee 5% = 2.5, distributable = 47.5.
-        assertEq(market.treasuryAccrued(), 2.5 ether);
-        assertEq(market.distributablePool(), 47.5 ether);
+        // Fee 1% (PROTOCOL_FEE_PERCENT) = 0.5, distributable = 49.5.
+        assertEq(market.treasuryAccrued(), 0.5 ether);
+        assertEq(market.distributablePool(), 49.5 ether);
         assertEq(market.creatorAccrued(), 0); // only on Invalid path
 
         _withdrawAll(vs);
 
         assertEq(token.balanceOf(skipper), DEFAULT_BALANCE - 50 ether); // full stake gone
         // Each other yes-revealer: risked 20, totalYesRewardWeight = 19 * 20 = 380.
-        //   bonus = 47.5 * 20 / 380 = 2.5.
+        //   bonus = 49.5e18 * 20 / 380 = 49.5e18 / 19 ≈ 2.6053e18 (with rounding dust).
+        uint256 distrib = 49.5 ether;
+        uint256 expectedBonus = (distrib * 20) / 380;
         for (uint256 i = 0; i < vs.length; i++) {
             if (vs[i].addr == skipper) continue;
-            assertEq(token.balanceOf(vs[i].addr), DEFAULT_BALANCE + 2.5 ether);
+            assertEq(token.balanceOf(vs[i].addr), DEFAULT_BALANCE + expectedBonus);
         }
 
+        market.withdrawTreasury();
+        // Residual dust from integer division stays in the market until forceSweepDust.
+        vm.warp(block.timestamp + market.DUST_SWEEP_GRACE() + 1);
+        market.forceSweepDust(type(uint32).max);
         market.withdrawTreasury();
         assertEq(token.balanceOf(address(market)), 0);
     }
@@ -389,9 +391,9 @@ contract TruthMarketLifecycleTest is Test {
 
         assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Yes));
         // Slashed: skipper missed risked 10 + extra (100 - 10 = 90) = 100.
-        // Fee 5%=5, distributable=95.
-        assertEq(market.treasuryAccrued(), 5 ether);
-        assertEq(market.distributablePool(), 95 ether);
+        // Fee 1% (PROTOCOL_FEE_PERCENT) = 1, distributable = 99.
+        assertEq(market.treasuryAccrued(), 1 ether);
+        assertEq(market.distributablePool(), 99 ether);
 
         _withdrawAll(vs);
         assertEq(token.balanceOf(skipper), DEFAULT_BALANCE - 100 ether); // full stake gone
@@ -454,92 +456,60 @@ contract TruthMarketLifecycleTest is Test {
     // ---------- Constructor guard tests ----------
 
     function test_RevertsConstructorOnEvenTargetJurySize() public {
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(_initParams(2, 14, 1));
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, _initParams(2, 14, 1));
     }
 
     function test_RevertsConstructorWhenJuryExceedsMax() public {
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(_initParams(101, 700, 50));
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, _initParams(101, 700, 50));
     }
 
     function test_RevertsConstructorWhenJuryExceedsMaxTargetJurySizePercentOfMinCommits() public {
         // targetJurySize=3 needs minCommits >= 20. Below that should revert.
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(_initParams(3, 19, 2));
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, _initParams(3, 19, 2));
     }
 
     function test_RevertsConstructorWhenMinRevealedJurorsZero() public {
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(_initParams(1, 7, 0));
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, _initParams(1, 7, 0));
     }
 
     function test_RevertsConstructorWhenMinRevealedJurorsExceedsTargetJurySize() public {
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(_initParams(3, 20, 4));
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, _initParams(3, 20, 4));
     }
 
     function test_RevertsConstructorOnZeroCreator() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.creator = address(0);
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
-    }
-
-    function test_RevertsConstructorOnZeroAdmin() public {
-        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        p.admin = address(0);
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, p);
     }
 
     function test_RevertsConstructorOnZeroStakeToken() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.stakeToken = IERC20(address(0));
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
-    }
-
-    function test_RevertsConstructorOnZeroTreasury() public {
-        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        p.treasury = address(0);
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, p);
     }
 
     function test_RevertsConstructorOnEmptyRulesReference() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        p.ipfsHash = bytes("");
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
+        p.swarmReference = bytes("");
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, p);
     }
 
     function test_RevertsConstructorWhenRulesReferenceTooLong() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        p.ipfsHash = bytes(_stringOfLength(MAX_IPFS_HASH_BYTES + 1));
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
-    }
-
-    function test_RevertsConstructorWhenProtocolFeeTooHigh() public {
-        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        p.protocolFeePercent = MAX_PROTOCOL_FEE_PERCENT + 1;
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
+        p.swarmReference = bytes(_stringOfLength(MAX_SWARM_REFERENCE_BYTES + 1));
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, p);
     }
 
     function test_RevertsConstructorWhenMinStakeZero() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.minStake = 0;
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, p);
     }
 
     function test_RevertsConstructorOnTooLongPeriod() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.votingPeriod = MAX_PERIOD + 1;
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, p);
     }
 
     // ---------- Behavior guard tests ----------
@@ -559,7 +529,7 @@ contract TruthMarketLifecycleTest is Test {
     function test_RevertsCommitWhenRiskedStakeRoundsToZero() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.minStake = 1;
-        market = new TruthMarket(p);
+        market = _newMarket(p);
 
         address voter = makeAddr("roundsToZeroVoter");
         token.transfer(voter, 1);
@@ -892,94 +862,15 @@ contract TruthMarketLifecycleTest is Test {
         market.forceSweepDust(0);
     }
 
-    // ---------- Claim metadata tests ----------
+    // ---------- Claim reference tests ----------
 
-    function test_ClaimMetadataStoredOnChain() public {
+    function test_SwarmReferenceStoredOnChain() public {
         market = _deployMarket(1, 7, 1);
-        assertEq(market.name(), CLAIM_NAME);
-        assertEq(market.description(), CLAIM_DESCRIPTION);
-        string[] memory tags = market.getTags();
-        assertEq(tags.length, 2);
-        assertEq(tags[0], "demo");
-        assertEq(tags[1], "test");
-        assertEq(market.ipfsHash(), IPFS_HASH);
-        assertEq(market.swarmReference(), IPFS_HASH);
-        assertEq(market.claimRulesHash(), CLAIM_RULES_HASH);
+        assertEq(market.swarmReference(), SWARM_REFERENCE);
         TruthMarket.Config memory cfg = market.getConfig();
-        assertEq(cfg.ipfsHash, IPFS_HASH);
-        assertEq(cfg.claimRulesHash, CLAIM_RULES_HASH);
+        assertEq(cfg.swarmReference, SWARM_REFERENCE);
         assertEq(cfg.maxCommits, 0);
-        assertEq(market.MAX_NAME_BYTES(), MAX_NAME_BYTES);
-        assertEq(market.MAX_DESCRIPTION_BYTES(), MAX_DESCRIPTION_BYTES);
-        assertEq(market.MAX_TAG_BYTES(), MAX_TAG_BYTES);
-    }
-
-    function test_RevertsConstructorOnZeroClaimRulesHash() public {
-        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        p.claimRulesHash = bytes32(0);
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
-    }
-
-    function test_RevertsConstructorOnEmptyName() public {
-        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        p.name = "";
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
-    }
-
-    function test_RevertsConstructorOnEmptyDescription() public {
-        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        p.description = "";
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
-    }
-
-    function test_RevertsConstructorWhenNameTooLong() public {
-        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        p.name = _stringOfLength(MAX_NAME_BYTES + 1);
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
-    }
-
-    function test_RevertsConstructorWhenDescriptionTooLong() public {
-        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        p.description = _stringOfLength(MAX_DESCRIPTION_BYTES + 1);
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
-    }
-
-    function test_RevertsConstructorWhenTooManyTags() public {
-        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        string[] memory tags = new string[](6);
-        for (uint256 i = 0; i < 6; i++) {
-            tags[i] = "tag";
-        }
-        p.tags = tags;
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
-    }
-
-    function test_RevertsConstructorWhenTagTooLong() public {
-        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        string[] memory tags = new string[](1);
-        tags[0] = _stringOfLength(MAX_TAG_BYTES + 1);
-        p.tags = tags;
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
-    }
-
-    function test_AcceptsExactlyMaxTags() public {
-        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        string[] memory tags = new string[](5);
-        tags[0] = "a";
-        tags[1] = "b";
-        tags[2] = "c";
-        tags[3] = "d";
-        tags[4] = "e";
-        p.tags = tags;
-        TruthMarket m = new TruthMarket(p);
-        assertEq(m.getTags().length, 5);
+        assertEq(market.MAX_SWARM_REFERENCE_BYTES(), MAX_SWARM_REFERENCE_BYTES);
     }
 
     // ---------- Nonce-leak revocation tests ----------
@@ -1029,9 +920,9 @@ contract TruthMarketLifecycleTest is Test {
         // Outcome Yes (only yes votes revealed). Slashed pool comes entirely from the
         // revoked half (no losers, no missed reveals among remaining voters).
         assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Yes));
-        // slashed = revokedHalf 40, fee 5% = 2, distributable = 38.
-        assertEq(market.treasuryAccrued(), 2 ether);
-        assertEq(market.distributablePool(), 38 ether);
+        // slashed = revokedHalf 40, fee 1% (PROTOCOL_FEE_PERCENT) = 0.4, distributable = 39.6.
+        assertEq(market.treasuryAccrued(), 0.4 ether);
+        assertEq(market.distributablePool(), 39.6 ether);
         assertEq(market.revokedSlashAccrued(), 0);
     }
 
@@ -1235,16 +1126,13 @@ contract TruthMarketLifecycleTest is Test {
         vm.warp(block.timestamp + market.DUST_SWEEP_GRACE() + 1);
 
         uint256 balanceBefore = token.balanceOf(address(market));
-        uint256 treasuryBefore = market.treasuryAccrued();
         market.forceSweepDust(type(uint32).max);
 
-        // No voter has withdrawn yet — all payouts are still unclaimed, so the sweep
-        // should at most route the rounding remainder. Treasury accrual after sweep
-        // <= dust upper bound.
-        uint256 swept = market.treasuryAccrued() - treasuryBefore;
-        // Upper bound on dust is at most distributablePool minus floor( pool * 1 / totalWinnerWeight).
-        // Easier check: contract balance after sweep == balance before - swept.
-        assertEq(token.balanceOf(address(market)), balanceBefore - swept);
+        // forceSweepDust only updates accruals — it doesn't transfer tokens. The
+        // contract's stake-token balance is unchanged after the sweep; what moves
+        // are the bookkeeping numbers (treasuryAccrued may grow by up to the
+        // rounding-dust upper bound).
+        assertEq(token.balanceOf(address(market)), balanceBefore);
 
         // Now have everyone withdraw. They all succeed (their balances were preserved).
         _withdrawAll(vs);
@@ -1257,18 +1145,7 @@ contract TruthMarketLifecycleTest is Test {
     function test_RevertsConstructorOnTooShortPeriod() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.votingPeriod = 30; // 30 seconds, below MIN_PERIOD (60)
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
-    }
-
-    function test_RevertsConstructorOnEmptyTagString() public {
-        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        string[] memory tags = new string[](2);
-        tags[0] = "ok";
-        tags[1] = ""; // empty
-        p.tags = tags;
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, p);
     }
 
     function test_RevokeStakeSplitsTinyStakeRoundsToProtocolFavor() public {
@@ -1277,7 +1154,7 @@ contract TruthMarketLifecycleTest is Test {
         // to the pool, biasing rounding in the protocol's favour).
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.minStake = 5; // smallest stake whose 20% risked is non-zero
-        market = new TruthMarket(p);
+        market = _newMarket(p);
         V[] memory vs = _makeVoters(7, 5, 1); // stake = 5 wei each
         _commitAll(vs);
 
@@ -1364,13 +1241,11 @@ contract TruthMarketLifecycleTest is Test {
     // ---------- Registry tests ----------
 
     event MarketRegistered(address indexed market, address indexed creator, uint256 indexed index, uint64 registeredAt);
-    event MarketTagged(address indexed market, bytes32 indexed tagHash, string tag);
 
     function test_RevertsConstructorOnZeroRegistry() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.registry = ITruthMarketRegistry(address(0));
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, p);
     }
 
     function test_RegistersOnConstruction() public {
@@ -1378,7 +1253,7 @@ contract TruthMarketLifecycleTest is Test {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.registry = ITruthMarketRegistry(address(fresh));
 
-        TruthMarket m = new TruthMarket(p);
+        TruthMarket m = _newMarket(p);
 
         assertTrue(fresh.isRegistered(address(m)));
         assertEq(fresh.markets(0), address(m));
@@ -1390,8 +1265,8 @@ contract TruthMarketLifecycleTest is Test {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.registry = ITruthMarketRegistry(address(fresh));
 
-        TruthMarket m1 = new TruthMarket(p);
-        TruthMarket m2 = new TruthMarket(p);
+        TruthMarket m1 = _newMarket(p);
+        TruthMarket m2 = _newMarket(p);
 
         assertEq(fresh.totalMarkets(), 2);
         assertEq(fresh.markets(0), address(m1));
@@ -1411,7 +1286,7 @@ contract TruthMarketLifecycleTest is Test {
 
         vm.expectEmit(true, true, true, true, address(fresh));
         emit MarketRegistered(predicted, creator, 0, uint64(block.timestamp));
-        TruthMarket m = new TruthMarket(p);
+        TruthMarket m = _newMarket(p);
         assertEq(address(m), predicted);
     }
 
@@ -1421,7 +1296,7 @@ contract TruthMarketLifecycleTest is Test {
         p.registry = ITruthMarketRegistry(address(fresh));
 
         uint64 t = uint64(block.timestamp);
-        TruthMarket m = new TruthMarket(p);
+        TruthMarket m = _newMarket(p);
 
         (address infoCreator, uint64 registeredAt, uint32 index) = fresh.marketInfo(address(m));
         assertEq(infoCreator, creator);
@@ -1434,13 +1309,13 @@ contract TruthMarketLifecycleTest is Test {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.registry = ITruthMarketRegistry(address(fresh));
 
-        TruthMarket m1 = new TruthMarket(p);
-        TruthMarket m2 = new TruthMarket(p);
+        TruthMarket m1 = _newMarket(p);
+        TruthMarket m2 = _newMarket(p);
 
         // Different creator on a third deployment.
         address otherCreator = makeAddr("otherCreator");
         p.creator = otherCreator;
-        TruthMarket m3 = new TruthMarket(p);
+        TruthMarket m3 = _newMarket(p);
 
         address[] memory mine = fresh.marketsByCreatorPaginated(creator, 0, 100);
         assertEq(mine.length, 2);
@@ -1466,60 +1341,6 @@ contract TruthMarketLifecycleTest is Test {
         assertEq(fresh.marketsByCreator(creator, 1), address(m2));
     }
 
-    function test_LookupByTag() public {
-        TruthMarketRegistry fresh = new TruthMarketRegistry();
-        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        p.registry = ITruthMarketRegistry(address(fresh));
-        // _initParams gives tags = ["demo", "test"]
-
-        TruthMarket m1 = new TruthMarket(p);
-        TruthMarket m2 = new TruthMarket(p);
-
-        // Third deployment with disjoint tags.
-        string[] memory altTags = new string[](1);
-        altTags[0] = "sports";
-        p.tags = altTags;
-        TruthMarket m3 = new TruthMarket(p);
-
-        address[] memory demoHits = fresh.marketsByTagPaginated("demo", 0, 100);
-        assertEq(demoHits.length, 2);
-        assertEq(demoHits[0], address(m1));
-        assertEq(demoHits[1], address(m2));
-        assertEq(fresh.countByTag("demo"), 2);
-
-        address[] memory sportsHits = fresh.marketsByTagPaginated("sports", 0, 100);
-        assertEq(sportsHits.length, 1);
-        assertEq(sportsHits[0], address(m3));
-
-        // Lookup by precomputed hash matches the string view.
-        bytes32 demoHash = keccak256(bytes("demo"));
-        assertEq(fresh.marketsByTagHashPaginated(demoHash, 0, 100).length, 2);
-        assertEq(fresh.countByTagHash(demoHash), 2);
-
-        // Unknown tag returns empty.
-        assertEq(fresh.marketsByTagPaginated("doesnotexist", 0, 100).length, 0);
-
-        // Pagination on tag index: partial slice + auto-getter.
-        address[] memory demoTail = fresh.marketsByTagPaginated("demo", 1, 100);
-        assertEq(demoTail.length, 1);
-        assertEq(demoTail[0], address(m2));
-        assertEq(fresh.marketsByTagHash(demoHash, 0), address(m1));
-    }
-
-    function test_EmitsMarketTaggedPerTag() public {
-        TruthMarketRegistry fresh = new TruthMarketRegistry();
-        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
-        p.registry = ITruthMarketRegistry(address(fresh));
-
-        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
-        // _initParams tags are ["demo", "test"] — expect one MarketTagged per tag in order.
-        vm.expectEmit(true, true, false, true, address(fresh));
-        emit MarketTagged(predicted, keccak256(bytes("demo")), "demo");
-        vm.expectEmit(true, true, false, true, address(fresh));
-        emit MarketTagged(predicted, keccak256(bytes("test")), "test");
-        new TruthMarket(p);
-    }
-
     function test_MarketsPaginated() public {
         TruthMarketRegistry fresh = new TruthMarketRegistry();
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
@@ -1527,7 +1348,7 @@ contract TruthMarketLifecycleTest is Test {
 
         address[] memory deployed = new address[](5);
         for (uint256 i = 0; i < 5; i++) {
-            deployed[i] = address(new TruthMarket(p));
+            deployed[i] = address(_newMarket(p));
         }
 
         // Full range.
@@ -1562,14 +1383,14 @@ contract TruthMarketLifecycleTest is Test {
         // Direct call into the registry simulating a buggy market that passed creator=0.
         TruthMarketRegistry fresh = new TruthMarketRegistry();
         vm.expectRevert(TruthMarketRegistry.ZeroCreator.selector);
-        fresh.register(address(0), new string[](0));
+        fresh.register(address(0));
     }
 
     function test_RegisterRevertsOnDoubleRegister() public {
         TruthMarketRegistry fresh = new TruthMarketRegistry();
-        fresh.register(creator, new string[](0));
+        fresh.register(creator);
         vm.expectRevert(TruthMarketRegistry.AlreadyRegistered.selector);
-        fresh.register(creator, new string[](0));
+        fresh.register(creator);
     }
 
     function test_TotalMarketsCacheStaysInSyncWithArrayLength() public {
@@ -1579,7 +1400,7 @@ contract TruthMarketLifecycleTest is Test {
 
         assertEq(fresh.totalMarkets(), 0);
         for (uint256 i = 0; i < 4; i++) {
-            new TruthMarket(p);
+            _newMarket(p);
             assertEq(fresh.totalMarkets(), i + 1);
         }
         // Cached counter equals the array length and the per-creator count.
@@ -1592,14 +1413,13 @@ contract TruthMarketLifecycleTest is Test {
     function test_RevertsConstructorWhenMaxCommitsBelowMinCommits() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.maxCommits = 6; // below minCommits=7
-        vm.expectRevert(TruthMarket.BadParams.selector);
-        new TruthMarket(p);
+        _expectNewMarketRevert(TruthMarket.BadParams.selector, p);
     }
 
     function test_AcceptsMaxCommitsEqualToMinCommits() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.maxCommits = 7;
-        TruthMarket m = new TruthMarket(p);
+        TruthMarket m = _newMarket(p);
         assertEq(m.maxCommits(), 7);
         assertEq(m.getConfig().maxCommits, 7);
     }
@@ -1616,7 +1436,7 @@ contract TruthMarketLifecycleTest is Test {
     function test_RevertsCommitVoteWhenMarketFull() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.maxCommits = 7;
-        market = new TruthMarket(p);
+        market = _newMarket(p);
 
         V[] memory vs = _makeVoters(7, 10 ether, 1);
         _commitAll(vs);
@@ -1635,7 +1455,7 @@ contract TruthMarketLifecycleTest is Test {
     function test_RevokeStakeDoesNotFreeMaxCommitSlot() public {
         TruthMarket.InitParams memory p = _initParams(1, 7, 1);
         p.maxCommits = 7;
-        market = new TruthMarket(p);
+        market = _newMarket(p);
 
         V[] memory vs = _makeVoters(7, 10 ether, 1);
         _commitAll(vs);
@@ -1659,5 +1479,132 @@ contract TruthMarketLifecycleTest is Test {
         vm.expectRevert(TruthMarket.MarketFull.selector);
         market.commitVote(hash, extra[7].stake);
         vm.stopPrank();
+    }
+
+    // ---------- Creator bond ----------
+
+    function test_BondZeroSkipsGate() public {
+        market = _deployMarket(1, 7, 1);
+        assertEq(market.creatorBond(), 0);
+        assertTrue(market.bondPosted()); // trivially true when bond is 0
+        // Voters can commit immediately.
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+        assertEq(market.commitCount(), 7);
+    }
+
+    function test_BondPositiveBlocksCommitUntilPosted() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.creatorBond = 5 ether;
+        market = _newMarket(p);
+        assertFalse(market.bondPosted());
+
+        // Voter try to commit — reverts.
+        V[] memory vs = _makeVoters(1, 10 ether, 1);
+        bytes32 hash = market.commitHashOf(vs[0].vote, vs[0].nonce, vs[0].addr);
+        vm.startPrank(vs[0].addr);
+        token.approve(address(market), vs[0].stake);
+        vm.expectRevert(TruthMarket.BondNotPosted.selector);
+        market.commitVote(hash, vs[0].stake);
+        vm.stopPrank();
+    }
+
+    function test_PostBondGateUnlocksCommit() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.creatorBond = 5 ether;
+        market = _newMarket(p);
+
+        token.mint(creator, 5 ether);
+        vm.startPrank(creator);
+        token.approve(address(market), 5 ether);
+        market.postBond();
+        vm.stopPrank();
+
+        assertTrue(market.bondPosted());
+        assertEq(token.balanceOf(address(market)), 5 ether);
+
+        V[] memory vs = _makeVoters(7, 10 ether, 1);
+        _commitAll(vs);
+        assertEq(market.commitCount(), 7);
+    }
+
+    function test_PostBondRejectsNonCreator() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.creatorBond = 5 ether;
+        market = _newMarket(p);
+        vm.expectRevert(TruthMarket.NotAuthorized.selector);
+        market.postBond();
+    }
+
+    function test_PostBondRejectsDouble() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.creatorBond = 5 ether;
+        market = _newMarket(p);
+        token.mint(creator, 10 ether);
+        vm.startPrank(creator);
+        token.approve(address(market), 10 ether);
+        market.postBond();
+        vm.expectRevert(TruthMarket.BondAlreadyPosted.selector);
+        market.postBond();
+        vm.stopPrank();
+    }
+
+    function test_PostBondRejectsWhenNotConfigured() public {
+        market = _deployMarket(1, 7, 1);
+        vm.startPrank(creator);
+        vm.expectRevert(TruthMarket.NoBondConfigured.selector);
+        market.postBond();
+        vm.stopPrank();
+    }
+
+    function test_BondJoinsDistributablePoolOnYes() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.creatorBond = 10 ether;
+        market = _newMarket(p);
+
+        token.mint(creator, 10 ether);
+        vm.startPrank(creator);
+        token.approve(address(market), 10 ether);
+        market.postBond();
+        vm.stopPrank();
+
+        V[] memory vs = _makeVoters(7, 10 ether, 1); // all YES, risked 2 each
+        _commitAll(vs);
+        vm.warp(block.timestamp + VOTING_PERIOD);
+        vm.prank(juryCommitter);
+        market.commitJury(0xBEEF, _randomnessMetadata(), AUDIT_HASH);
+        for (uint256 i = 0; i < vs.length; i++) {
+            _reveal(vs[i]);
+        }
+        vm.warp(block.timestamp + ADMIN_TIMEOUT + REVEAL_PERIOD);
+        market.resolve();
+
+        // Outcome Yes — no losers among voters, so slashed pool would be 0 absent the bond.
+        // distributablePool gets the full bond.
+        assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Yes));
+        assertEq(market.distributablePool(), 10 ether);
+    }
+
+    function test_BondRefundsOnInvalidViaTimeout() public {
+        TruthMarket.InitParams memory p = _initParams(1, 7, 1);
+        p.creatorBond = 7 ether;
+        market = _newMarket(p);
+
+        token.mint(creator, 7 ether);
+        vm.startPrank(creator);
+        token.approve(address(market), 7 ether);
+        market.postBond();
+        vm.stopPrank();
+
+        // Skip everything — admin never commits jury, market times out to Invalid.
+        vm.warp(block.timestamp + VOTING_PERIOD + ADMIN_TIMEOUT);
+        market.resolve();
+
+        assertEq(uint256(market.outcome()), uint256(TruthMarket.Outcome.Invalid));
+        // Bond refunded to creator via accrual.
+        assertEq(market.creatorAccrued(), 7 ether);
+
+        market.withdrawCreator();
+        assertEq(token.balanceOf(creator), 7 ether);
     }
 }

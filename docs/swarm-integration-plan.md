@@ -30,29 +30,27 @@ Create one canonical JSON document per market:
 
 Do not duplicate contract-created parameters as canonical Swarm fields. Deadlines, target jury size, minimum commits, minimum revealed jurors, stake token, creator, and risk percentage come from the deployed contract. The UI may display those values beside the Swarm document, but contract getters remain canonical.
 
-Upload the JSON to Swarm before deploying the market. Store the returned Swarm reference and the hash of the exact JSON bytes in the contract:
+Upload the document to Swarm before deploying the market. Store only the returned Swarm reference in the contract:
 
 ```solidity
 bytes public swarmReference;
-bytes32 public claimRulesHash;
 ```
 
-The contract should not parse JSON. The UI, CLI, and agents verify the fetched document against `claimRulesHash` and compare decoded fields against contract getters.
+The contract should not parse JSON. The UI, CLI, and agents verify the fetched document through the content-addressed `swarmReference` and compare decoded fields against contract getters.
 
 ### 2. Verified Fetch Gate
 
 Before a wallet or agent can commit:
 
-1. Read `swarmReference` and `claimRulesHash` from the contract.
+1. Read `swarmReference` from the contract.
 2. Fetch the claim/rules document from Swarm.
-3. Verify the fetched bytes hash to `claimRulesHash`.
+3. Verify the fetched bytes against the content-addressed Swarm reference.
 4. Verify key JSON fields match contract parameters.
 5. Enable commit only after verification passes.
 
 User-facing proof should show:
 
 - Swarm reference.
-- Rules hash.
 - Verification status.
 - Contract parameter match.
 - Commit disabled until verification succeeds.
@@ -79,7 +77,6 @@ Example market index:
     {
       "market": "0x...",
       "swarmReference": "0x...",
-      "claimRulesHash": "0x...",
       "title": "Will agents close more support tickets than humans this week?",
       "phaseHint": "Voting"
     }
@@ -120,14 +117,13 @@ Provide a CLI first, then let the web app reuse the same library:
 truthmarket create-claim claim-rules.json
   -> validate schema
   -> upload to Swarm
-  -> compute claimRulesHash
-  -> deploy market with swarmReference + claimRulesHash
+  -> deploy market with swarmReference
   -> update Swarm market index
 
 truthmarket verify-claim --market 0x...
-  -> read contract reference and hash
+  -> read contract reference
   -> fetch Swarm document
-  -> verify hash and contract params
+  -> verify Swarm reference and contract params
 
 truthmarket watch --market 0x... --wallet 0x...
   -> monitor phase, jury selection, reveal deadline, and withdrawal

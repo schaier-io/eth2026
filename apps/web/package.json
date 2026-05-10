@@ -9,9 +9,12 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.9",
+    "@truth-market/swarm-kv": "file:../../packages/swarm-kv",
+    "@truth-market/swarm-verified-fetch": "file:../../packages/swarm-verified-fetch",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest",
+    "server-only": "^0.0.1",
     "viem": "^2.48.11",
     "wagmi": "^3.6.11"
   },
@@ -19,6 +22,7 @@
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "sharp": "^0.34.5",
     "typescript": "latest"
   }
 }

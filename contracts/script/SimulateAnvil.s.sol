@@ -5,8 +5,6 @@ import { Script, console2 } from "forge-std/Script.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { MarketRegistry } from "../src/MarketRegistry.sol";
 import { TruthMarket } from "../src/TruthMarket.sol";
-import { TruthMarketRegistry, ITruthMarketRegistry } from "../src/TruthMarketRegistry.sol";
-import { RegistryDeployment } from "./RegistryDeployment.sol";
 import { MockERC20 } from "../test/MockERC20.sol";
 
 /// @notice Anvil-driven full simulation. Each phase is a separate sig so the shell
@@ -21,17 +19,15 @@ import { MockERC20 } from "../test/MockERC20.sol";
 ///   resolve()        — anyone resolves; voters and treasury withdraw
 ///   printBalances()  — show final stake-token balances
 ///
-/// All phases assume a fresh anvil run because the deterministic MockERC20 /
-/// TruthMarket addresses (deployer's nonce 0/1) are hardcoded. The mock token has
-/// an open mint and is for local simulation only.
+/// `deploy()` writes the actual clone-factory addresses to `./.sim-anvil.json`;
+/// later phases read that file. The mock token has an open mint and is for
+/// local simulation only.
 ///
 /// Anvil must be started with at least 12 accounts (deployer + 4 roles + 7 voters):
 ///   anvil --accounts 12   (or higher)
 contract SimulateAnvilScript is Script {
     // ---------- Anvil deterministic accounts (mnemonic: "test test ... junk") ----------
     uint256 internal constant DEPLOYER_PK = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
-    uint256 internal constant TREASURY_PK = 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d;
-    uint256 internal constant ADMIN_PK = 0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a;
     uint256 internal constant JURY_COMMITTER_PK = 0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6;
     uint256 internal constant CREATOR_PK = 0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a;
 
@@ -44,19 +40,11 @@ contract SimulateAnvilScript is Script {
     uint256 internal constant V5_PK = 0xf214f2b2cd398c806f84e317254e0f0b801d0643303237d97a22a48e01628897;
     uint256 internal constant V6_PK = 0x701b615bbdfb9de65240bc28bd21bbc0d996645a3dd57e7b12bc2bdf6f192c82;
 
-    // ---------- Deterministic deploy addresses ----------
-    // TOKEN at deployer-EOA nonce 0 (CREATE). Registry is deployed via CREATE2
-    // through the canonical deterministic deployer, so its address is bytecode-
-    // and salt-derived and identical on every network — see RegistryDeployment.
-    // MARKET at deployer-EOA nonce 2 and MARKET_FACTORY at nonce 3: nonce 1 is
-    // consumed by the EOA call into the CREATE2 deployer.
-    address internal constant TOKEN_ADDR = 0x5FbDB2315678afecb367f032d93F642f64180aa3;
-    address internal constant MARKET_ADDR = 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0;
-    address internal constant MARKET_FACTORY_ADDR = 0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9;
+    string internal constant ADDR_FILE = "./.sim-anvil.json";
 
     // ---------- Market config ----------
-    bytes internal constant IPFS_HASH = bytes("ipfs://QmAnvilSimDemo");
-    bytes32 internal constant CLAIM_RULES_HASH = keccak256("anvil-demo-claim-rules");
+    bytes internal constant SWARM_REFERENCE =
+        bytes("bzz://8f2b1c3d4e5f67890123456789012345678901234567890123456789012345678");
     bytes internal constant RANDOMNESS_IPFS_ADDRESS =
         bytes("https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f");
     uint64 internal constant RANDOMNESS_SEQUENCE = 87_963;
@@ -78,78 +66,60 @@ contract SimulateAnvilScript is Script {
 
     function deploy() external {
         address deployer = vm.addr(DEPLOYER_PK);
-        address treasury = vm.addr(TREASURY_PK);
-        address admin = vm.addr(ADMIN_PK);
         address juryCommitter = vm.addr(JURY_COMMITTER_PK);
         address creator = vm.addr(CREATOR_PK);
 
-        // Deploy registry via CREATE2 if it isn't already at the predicted
-        // address. Idempotent across reruns / chains.
-        address predictedRegistry = RegistryDeployment.predict();
-        TruthMarketRegistry discoveryRegistry;
-
         vm.startBroadcast(DEPLOYER_PK);
         MockERC20 token = new MockERC20("Truth Stake", "TRUTH", 100_000 ether, deployer);
-        if (predictedRegistry.code.length == 0) {
-            discoveryRegistry = new TruthMarketRegistry{ salt: RegistryDeployment.SALT }();
-            require(address(discoveryRegistry) == predictedRegistry, "CREATE2 drift");
-        } else {
-            discoveryRegistry = TruthMarketRegistry(predictedRegistry);
-        }
-        string[] memory tags = new string[](3);
-        tags[0] = "anvil";
-        tags[1] = "demo";
-        tags[2] = "lifecycle";
-        TruthMarket market = new TruthMarket(
-            TruthMarket.InitParams({
-                stakeToken: IERC20(address(token)),
-                treasury: treasury,
-                registry: ITruthMarketRegistry(address(discoveryRegistry)),
-                admin: admin,
-                juryCommitter: juryCommitter,
-                creator: creator,
-                name: "Anvil Demo Claim",
-                description: "End-to-end TruthMarket lifecycle on a fresh anvil node.",
-                tags: tags,
-                ipfsHash: IPFS_HASH,
-                claimRulesHash: CLAIM_RULES_HASH,
-                votingPeriod: VOTING_PERIOD,
-                adminTimeout: ADMIN_TIMEOUT,
-                revealPeriod: REVEAL_PERIOD,
-                protocolFeePercent: FEE_PERCENT,
-                minStake: MIN_STAKE,
-                targetJurySize: TARGET_JURY_SIZE,
-                minCommits: MIN_COMMITS,
-                maxCommits: 0,
-                minRevealedJurors: MIN_REVEALED_JURORS
-            })
-        );
-        MarketRegistry marketFactory = new MarketRegistry(
-            IERC20(address(token)),
-            treasury,
-            ITruthMarketRegistry(address(discoveryRegistry)),
-            admin,
-            juryCommitter
-        );
+        TruthMarket implementation = new TruthMarket();
+        MarketRegistry registry = new MarketRegistry(address(implementation));
         for (uint256 i = 0; i < 7; i++) {
             token.transfer(_voterAddr(i), 1000 ether);
         }
         vm.stopBroadcast();
 
-        require(address(token) == TOKEN_ADDR, "token addr drift");
-        require(address(market) == MARKET_ADDR, "market addr drift");
-        require(address(marketFactory) == MARKET_FACTORY_ADDR, "market factory addr drift");
+        vm.startBroadcast(CREATOR_PK);
+        TruthMarket market = TruthMarket(
+            registry.createMarket(
+                MarketRegistry.MarketSpec({
+                    stakeToken: IERC20(address(token)),
+                    juryCommitter: juryCommitter,
+                    swarmReference: SWARM_REFERENCE,
+                    votingPeriod: VOTING_PERIOD,
+                    adminTimeout: ADMIN_TIMEOUT,
+                    revealPeriod: REVEAL_PERIOD,
+                    minStake: MIN_STAKE,
+                    jurySize: TARGET_JURY_SIZE,
+                    minCommits: MIN_COMMITS,
+                    maxCommits: 0,
+                    minRevealedJurors: MIN_REVEALED_JURORS,
+                    creatorBond: 0
+                })
+            )
+        );
+        vm.stopBroadcast();
+
+        vm.writeFile(
+            ADDR_FILE,
+            string.concat(
+                '{"token":"',
+                vm.toString(address(token)),
+                '","market":"',
+                vm.toString(address(market)),
+                '","registry":"',
+                vm.toString(address(registry)),
+                '","implementation":"',
+                vm.toString(address(implementation)),
+                '"}'
+            )
+        );
 
         console2.log("=== Phase: Deploy ===");
         console2.log("Token:                ", address(token));
-        console2.log("Registry:             ", address(discoveryRegistry));
+        console2.log("Registry:             ", address(registry));
+        console2.log("Implementation:       ", address(implementation));
         console2.log("Market:               ", address(market));
-        console2.log("Market factory:       ", address(marketFactory));
-        console2.log("Name:                 ", market.name());
-        console2.log("Description:          ", market.description());
-        console2.log("Tags count:           ", market.getTags().length);
-        console2.log("Treasury:             ", treasury);
-        console2.log("Admin:                ", admin);
+        console2.log("Swarm ref bytes:      ", market.swarmReference().length);
         console2.log("Jury committer:       ", juryCommitter);
         console2.log("Creator:              ", creator);
         console2.log("Voting deadline:      ", market.votingDeadline());
@@ -160,8 +130,9 @@ contract SimulateAnvilScript is Script {
     }
 
     function commit() external {
-        TruthMarket market = TruthMarket(MARKET_ADDR);
-        MockERC20 token = MockERC20(TOKEN_ADDR);
+        (address tokenAddr, address marketAddr,) = _addrs();
+        TruthMarket market = TruthMarket(marketAddr);
+        MockERC20 token = MockERC20(tokenAddr);
 
         console2.log("=== Phase: Commit ===");
         for (uint256 i = 0; i < 7; i++) {
@@ -172,7 +143,8 @@ contract SimulateAnvilScript is Script {
     }
 
     function commitJury() external {
-        TruthMarket market = TruthMarket(MARKET_ADDR);
+        (, address marketAddr,) = _addrs();
+        TruthMarket market = TruthMarket(marketAddr);
         console2.log("=== Phase: CommitJury ===");
 
         vm.startBroadcast(JURY_COMMITTER_PK);
@@ -186,7 +158,8 @@ contract SimulateAnvilScript is Script {
     }
 
     function reveal() external {
-        TruthMarket market = TruthMarket(MARKET_ADDR);
+        (, address marketAddr,) = _addrs();
+        TruthMarket market = TruthMarket(marketAddr);
         console2.log("=== Phase: Reveal ===");
         for (uint256 i = 0; i < 7; i++) {
             _reveal(market, _voterPk(i), 1, _nonce(i), i);
@@ -194,7 +167,8 @@ contract SimulateAnvilScript is Script {
     }
 
     function resolve() external {
-        TruthMarket market = TruthMarket(MARKET_ADDR);
+        (, address marketAddr,) = _addrs();
+        TruthMarket market = TruthMarket(marketAddr);
         console2.log("=== Phase: Resolve ===");
 
         vm.startBroadcast(DEPLOYER_PK);
@@ -256,17 +230,25 @@ contract SimulateAnvilScript is Script {
     }
 
     function printBalances() public view {
-        MockERC20 token = MockERC20(TOKEN_ADDR);
+        (address tokenAddr, address marketAddr,) = _addrs();
+        MockERC20 token = MockERC20(tokenAddr);
         console2.log("=== Final balances ===");
         for (uint256 i = 0; i < 7; i++) {
             console2.log(string.concat("v", vm.toString(i), ":      "), token.balanceOf(_voterAddr(i)));
         }
-        console2.log("treasury: ", token.balanceOf(vm.addr(TREASURY_PK)));
+        console2.log("treasury: ", token.balanceOf(TruthMarket(marketAddr).TREASURY()));
         console2.log("creator:  ", token.balanceOf(vm.addr(CREATOR_PK)));
-        console2.log("market:   ", token.balanceOf(MARKET_ADDR));
+        console2.log("market:   ", token.balanceOf(marketAddr));
     }
 
     // ---------- Helpers ----------
+
+    function _addrs() internal view returns (address tokenAddr, address marketAddr, address registryAddr) {
+        string memory raw = vm.readFile(ADDR_FILE);
+        tokenAddr = vm.parseJsonAddress(raw, ".token");
+        marketAddr = vm.parseJsonAddress(raw, ".market");
+        registryAddr = vm.parseJsonAddress(raw, ".registry");
+    }
 
     function _commit(
         TruthMarket market,

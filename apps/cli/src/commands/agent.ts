@@ -3,6 +3,10 @@ import {
   type ApifyAgentOptions,
 } from "../../../../agents/apify/dist/index.js";
 import { makePublicClient, makeWalletClient } from "../chain/client.js";
+import {
+  assertMarketIntegrityAccepted,
+  verifyMarketIntegrity,
+} from "../chain/market-integrity.js";
 import { writeCreateMarket } from "../chain/registry.js";
 import { type ConfigOverrides, type ResolvedConfig, resolveConfig } from "../config.js";
 import { type OutputContext, emitNdjson, emitResult, promptSecret } from "../io.js";
@@ -11,12 +15,15 @@ import {
   assertCreateMarketAllowed,
   loadPolicy,
 } from "../policy/policy.js";
+import { storeClaimDocument } from "../swarm/claim-doc.js";
 import { loadWallet } from "../wallet/loader.js";
 
 export interface AgentRunOpts
   extends ConfigOverrides,
     PolicyOverrides,
-    ApifyAgentOptions {}
+    ApifyAgentOptions {
+  noSwarmPublish?: boolean;
+}
 
 export async function cmdAgentTick(
   ctx: OutputContext,
@@ -39,7 +46,9 @@ export async function cmdAgentTick(
           `  address:   ${result.marketAddress}\n` +
           `  candidate: ${result.candidateId} (${result.permalink})\n` +
           `  tx:        ${result.txHash}\n` +
-          `  name:      ${result.name}\n`,
+          `  swarm ref: ${result.swarmReference}\n` +
+          `  placeholder: ${result.swarmReferenceIsPlaceholder ? "yes" : "no"}\n` +
+          (result.claimDocumentUrl ? `  claim doc: ${result.claimDocumentUrl}\n` : ""),
       );
     } else {
       process.stdout.write(`skipped: ${result.status} (${result.reason ?? "no reason"})\n`);
@@ -103,8 +112,37 @@ function createAgentDeps(cfg: ResolvedConfig, opts: AgentRunOpts): ApifyAgentDep
       const wallet = await loadWallet(cfg, () => promptSecret("Keystore passphrase: "));
       const publicClient = makePublicClient(cfg);
       const walletClient = makeWalletClient(cfg, wallet.account);
-      return writeCreateMarket(walletClient, publicClient, cfg, spec);
+      const result = await writeCreateMarket(walletClient, publicClient, cfg, spec);
+      const verification = await verifyMarketIntegrity(publicClient, cfg, { market: result.marketAddress });
+      assertMarketIntegrityAccepted(verification);
+      return result;
     },
+    ...(opts.noSwarmPublish
+      ? {}
+      : {
+          publishClaimDocument: async (candidate) => {
+            const draft = candidate.claimRulesDraft;
+            const stored = await storeClaimDocument({
+              title: draft.title,
+              context: [
+                draft.description,
+                "",
+                `YES: ${draft.yesMeaning}`,
+                `NO: ${draft.noMeaning}`,
+                "",
+                `Resolution rules: ${draft.resolutionRules}`,
+                draft.contextSummary ? `Context: ${draft.contextSummary}` : "",
+                draft.sourceUrl ? `Source: ${draft.sourceUrl}` : "",
+              ].filter(Boolean).join("\n"),
+              tags: ["apify", "reddit", candidate.subreddit].slice(0, 5),
+            });
+            return {
+              swarmReference: stored.referenceBytes,
+              reference: stored.reference,
+              url: stored.url,
+            };
+          },
+        }),
   };
 }
 

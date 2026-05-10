@@ -10,6 +10,7 @@ import {
   readStakeToken,
   writeCommitVote,
 } from "../chain/contract.js";
+import { assertConfiguredMarketIntegrity } from "../chain/market-integrity.js";
 import { readAllowance } from "../chain/erc20.js";
 import type { ResolvedConfig } from "../config.js";
 import { CliError } from "../errors.js";
@@ -42,7 +43,7 @@ export interface CommitVoteCoreResult {
 }
 
 /**
- * Single source of truth for the commit-reveal commit step. Shared by the
+ * Shared implementation for the commit-reveal commit step. Used by the
  * non-interactive `vote commit` subcommand and the TUI VoteFlow panel so the
  * policy gate, allowance check, swarm verification, and vault save sequence
  * cannot diverge between surfaces.
@@ -97,10 +98,12 @@ export async function commitVoteCore(
       const referenceDetail = verify.swarmReference ? ` and verified Swarm reference ${verify.swarmReference}` : "";
       throw new CliError(
         "SWARM_HASH_MISMATCH",
-        `local document ${documentPath} (${verify.computed}) does not match on-chain claimRulesHash ${verify.expected}${referenceDetail}`,
+        `local document ${documentPath} (${verify.computed}) does not match the verified Swarm bytes ${verify.expected}${referenceDetail}`,
       );
     }
   }
+
+  await assertConfiguredMarketIntegrity(publicClient, cfg);
 
   const stakeToken = await readStakeToken(publicClient, cfg);
   const allowance = await readAllowance(

@@ -6,7 +6,7 @@ import { bytesToHex, keccak256, stringToHex } from "viem";
 import { makeContentAddressedChunk } from "@truth-market/swarm-verified-fetch";
 import { foundry } from "viem/chains";
 import {
-  swarmReferenceFromIpfsHash,
+  swarmReferenceFromBytes,
   verifyLocalDocument,
   verifyOnchainClaimRulesDocument,
 } from "../src/swarm/verify.js";
@@ -51,15 +51,14 @@ describe("verifyLocalDocument", () => {
 });
 
 describe("verifyOnchainClaimRulesDocument", () => {
-  it("verifies the local document against the on-chain Swarm reference and claimRulesHash", async () => {
+  it("verifies the local document against the on-chain Swarm reference", async () => {
     const doc = new TextEncoder().encode("hello verified swarm");
     const chunk = makeContentAddressedChunk(doc);
     const expected = keccak256(bytesToHex(doc));
     const fp = tempFile(doc);
     const result = await verifyOnchainClaimRulesDocument(
       mockClient({
-        ipfsHash: stringToHex(`bzz://${chunk.reference}`),
-        claimRulesHash: expected,
+        swarmReference: stringToHex(`bzz://${chunk.reference}`),
       }),
       mockCfg(),
       fp,
@@ -88,12 +87,85 @@ describe("verifyOnchainClaimRulesDocument", () => {
     expect(result.chunksVerified).toBe(1);
   });
 
+  it("verifies a local claim document against the on-chain Swarm KV index reference", async () => {
+    const doc = {
+      schema: "truthmarket.claim.v1",
+      title: "Was this the best ETHPrague so far?",
+      context: "YES if selected jurors believe it was the best ETHPrague so far; NO otherwise.",
+      tags: ["ethprague"],
+      createdAt: "2026-05-10T00:00:00.000Z",
+    };
+    const docBytes = new TextEncoder().encode(JSON.stringify(doc));
+    const docChunk = makeContentAddressedChunk(docBytes);
+    const index = {
+      schema: "swarm-kv.index.v1",
+      namespace: "truthmarket:claim:v1",
+      revision: 1,
+      updatedAt: "2026-05-10T00:00:00.000Z",
+      entries: {
+        claim: {
+          key: "claim",
+          reference: docChunk.reference,
+          contentType: "application/json",
+          kind: "json",
+          encoding: "json",
+          encrypted: false,
+          size: docBytes.byteLength,
+          updatedAt: "2026-05-10T00:00:00.000Z",
+          topic: "00",
+          version: 1,
+        },
+      },
+      tombstones: {},
+    };
+    const indexBytes = new TextEncoder().encode(JSON.stringify(index));
+    const indexChunk = makeContentAddressedChunk(indexBytes);
+    const chunks = new Map([
+      [docChunk.reference, docChunk.bytes],
+      [indexChunk.reference, indexChunk.bytes],
+    ]);
+    const fp = tempFile(JSON.stringify(doc, null, 2));
+
+    const result = await verifyOnchainClaimRulesDocument(
+      mockClient({
+        swarmReference: stringToHex(`bzz://${indexChunk.reference}`),
+      }),
+      mockCfg(),
+      fp,
+      {
+        gatewayUrl: "https://gateway.test",
+        fetch: async (input) => {
+          const url = String(input);
+          const found = [...chunks.entries()].find(([reference]) => url.includes(reference));
+          if (!found) throw new Error(`unknown reference in ${url}`);
+          const [, bytes] = found;
+          return {
+            ok: true,
+            status: 200,
+            statusText: "OK",
+            async arrayBuffer() {
+              return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+            },
+            async text() {
+              return "";
+            },
+          };
+        },
+      },
+    );
+
+    expect(result.match).toBe(true);
+    expect(result.mode).toBe("swarm-kv");
+    expect(result.document?.title).toBe(doc.title);
+    expect(result.swarmReference).toBe(`bzz://${indexChunk.reference}`);
+  });
+
   it("decodes raw, hex-text, bzz, and swarm references from on-chain bytes", () => {
     const ref = "a".repeat(64);
-    expect(swarmReferenceFromIpfsHash(`0x${ref}`)).toBe(ref);
-    expect(swarmReferenceFromIpfsHash(stringToHex(ref))).toBe(ref);
-    expect(swarmReferenceFromIpfsHash(stringToHex(`bzz://${ref}`))).toBe(`bzz://${ref}`);
-    expect(swarmReferenceFromIpfsHash(stringToHex(`swarm://${ref}`))).toBe(`bzz://${ref}`);
+    expect(swarmReferenceFromBytes(`0x${ref}`)).toBe(ref);
+    expect(swarmReferenceFromBytes(stringToHex(ref))).toBe(ref);
+    expect(swarmReferenceFromBytes(stringToHex(`bzz://${ref}`))).toBe(`bzz://${ref}`);
+    expect(swarmReferenceFromBytes(stringToHex(`swarm://${ref}`))).toBe(`bzz://${ref}`);
   });
 });
 
@@ -107,14 +179,18 @@ function mockCfg(): ResolvedConfig {
     keystorePath: "keystore.json",
     vaultDir: "vault",
     policyPath: "policy.json",
+    agentStatePath: "agent-state.json",
+    operational: {
+      stakeToken: undefined,
+      juryCommitter: undefined,
+    },
   };
 }
 
-function mockClient(values: { ipfsHash: `0x${string}`; claimRulesHash: `0x${string}` }) {
+function mockClient(values: { swarmReference: `0x${string}` }) {
   return {
     readContract: async ({ functionName }: { functionName: string }) => {
-      if (functionName === "ipfsHash") return values.ipfsHash;
-      if (functionName === "claimRulesHash") return values.claimRulesHash;
+      if (functionName === "swarmReference") return values.swarmReference;
       throw new Error(`unmocked readContract: ${functionName}`);
     },
   } as never;

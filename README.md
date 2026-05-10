@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="brand-mark.svg" alt="TruthMarket" width="120" />
+</p>
+
 # TruthMarket
 
 TruthMarket is a random-jury belief-resolution protocol. Participants stake on immutable YES/NO claims, privately commit votes, SpaceComputer randomness selects a resolving jury, and revealed votes settle the market.

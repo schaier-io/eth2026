@@ -10,12 +10,12 @@ import { TruthMarketRegistry } from "../src/TruthMarketRegistry.sol";
 ///         rebuilding the script.
 ///
 ///         Every list view in the registry is paginated to avoid OOM/gas-bombs
-///         once the registry grows. `listAll`, `listByCreator`, and `listByTag`
+///         once the registry grows. `listAll` and `listByCreator`
 ///         iterate in `PAGE_SIZE` chunks until exhausted; `listPaginated` is the
 ///         single-page form for callers who only want a slice.
 ///
 /// Required env: `REGISTRY_ADDRESS` — the deployed `TruthMarketRegistry`.
-/// Optional env (per sig): `CREATOR`, `TAG`, `OFFSET`, `LIMIT`, `MARKET`,
+/// Optional env (per sig): `CREATOR`, `OFFSET`, `LIMIT`, `MARKET`,
 ///                         `PAGE_SIZE` (default 200).
 contract RegistryScript is Script {
     /// @dev Default chunk size for the streaming list views. Override with
@@ -63,27 +63,6 @@ contract RegistryScript is Script {
         }
     }
 
-    function listByTag() external view {
-        TruthMarketRegistry registry = _registry();
-        string memory tag = vm.envString("TAG");
-        uint256 total = registry.countByTag(tag);
-        uint256 pageSize = _pageSize();
-        console2.log("Registry:", address(registry));
-        console2.log("Tag:     ", tag);
-        console2.log("Markets: ", total);
-        console2.log("");
-
-        uint256 cursor = 0;
-        while (cursor < total) {
-            address[] memory page = registry.marketsByTagPaginated(tag, cursor, pageSize);
-            for (uint256 i = 0; i < page.length; i++) {
-                _logFromInfo(registry, cursor + i, page[i]);
-            }
-            if (page.length == 0) break;
-            cursor += page.length;
-        }
-    }
-
     function listPaginated() external view {
         TruthMarketRegistry registry = _registry();
         uint256 offset = vm.envOr("OFFSET", uint256(0));
@@ -101,8 +80,8 @@ contract RegistryScript is Script {
         }
     }
 
-    /// @notice Detailed read for a single market: registry metadata plus on-chain
-    ///         claim metadata fetched directly from the market.
+    /// @notice Detailed read for a single market: registry metadata plus core
+    ///         market state fetched directly from the market.
     function info() external view {
         TruthMarketRegistry registry = _registry();
         address marketAddr = vm.envAddress("MARKET");
@@ -117,13 +96,7 @@ contract RegistryScript is Script {
         console2.log("Creator:         ", creator);
         console2.log("Registered at:   ", registeredAt);
         console2.log("");
-        console2.log("Name:            ", m.name());
-        console2.log("Description:     ", m.description());
-        string[] memory tags = m.getTags();
-        console2.log("Tag count:       ", tags.length);
-        for (uint256 i = 0; i < tags.length; i++) {
-            console2.log("  tag:           ", tags[i]);
-        }
+        console2.log("Swarm ref bytes: ", m.swarmReference().length);
         console2.log("");
         console2.log("Phase (enum):    ", uint256(m.phase()));
         console2.log("Voting deadline: ", m.votingDeadline());

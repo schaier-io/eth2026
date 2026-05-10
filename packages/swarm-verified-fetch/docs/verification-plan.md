@@ -93,7 +93,7 @@ Primary API:
 
 ```ts
 const response = await verifiedFetch("bzz://<reference>", {
-  expectedHash: claimRulesHash,
+  expectedHash: expectedClaimDocumentHash,
   contentType: "application/json",
   signal: abortController.signal,
   timeoutMs: 10_000
@@ -180,7 +180,7 @@ const chunk = verifySwarmChunk(reference, rawChunkBytes);
 const soc = verifySingleOwnerChunk(socReference, rawSocBytes);
 const feed = verifyFeedUpdate(feedReference, rawSocBytes, { owner, topic, index });
 const bytes = await verifySwarmBytes(rootReference, { chunks });
-const hash = verifyBytesHash(bytes.bytes, claimRulesHash);
+const hash = verifyBytesHash(bytes.bytes, expectedClaimDocumentHash);
 ```
 
 ## Test Plan

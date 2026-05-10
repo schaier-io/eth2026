@@ -1,7 +1,7 @@
 import { makePublicClient } from "../chain/client.js";
 import { type ConfigOverrides, resolveConfig } from "../config.js";
 import { type OutputContext, emitResult } from "../io.js";
-import { readClaimRulesHash, readIpfsHash, verifyOnchainClaimRulesDocument } from "../swarm/verify.js";
+import { readSwarmReference, verifyOnchainClaimRulesDocument } from "../swarm/verify.js";
 
 export async function cmdSwarmShowHash(
   ctx: OutputContext,
@@ -9,12 +9,9 @@ export async function cmdSwarmShowHash(
 ): Promise<void> {
   const cfg = resolveConfig(opts);
   const client = makePublicClient(cfg);
-  const [ipfsHashHex, claimRulesHash] = await Promise.all([
-    readIpfsHash(client, cfg),
-    readClaimRulesHash(client, cfg),
-  ]);
-  emitResult(ctx, { ipfsHashHex, claimRulesHash }, () => {
-    process.stdout.write(`ipfsHash:       ${ipfsHashHex}\nclaimRulesHash: ${claimRulesHash}\n`);
+  const swarmReferenceHex = await readSwarmReference(client, cfg);
+  emitResult(ctx, { swarmReferenceHex }, () => {
+    process.stdout.write(`swarmReference: ${swarmReferenceHex}\n`);
   });
 }
 
@@ -37,9 +34,11 @@ export async function cmdSwarmVerify(
   emitResult(ctx, result, () => {
     process.stdout.write(
       `reference:      ${result.swarmReference}\n` +
-        `expected hash:  ${result.expected}\n` +
-        `computed hash:  ${result.computed}\n` +
-        `remote hash:    ${result.remoteContentHash}\n` +
+        `reference hex:  ${result.swarmReferenceHex}\n` +
+        `mode:           ${result.mode}\n` +
+        (result.document?.title ? `title:          ${result.document.title}\n` : "") +
+        `remote hash:    ${result.expected}\n` +
+        `local hash:     ${result.computed}\n` +
         `chunks:         ${result.chunksVerified}\n` +
         `match:          ${result.match}\n`,
     );

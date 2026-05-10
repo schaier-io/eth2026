@@ -1,6 +1,7 @@
 import { type Address, type Hex, isAddress, isHex } from "viem";
 import { writeRevealVote, writeRevokeStake, writeWithdraw } from "../chain/contract.js";
 import { makePublicClient, makeWalletClient } from "../chain/client.js";
+import { assertConfiguredMarketIntegrity } from "../chain/market-integrity.js";
 import { type ConfigOverrides, resolveConfig } from "../config.js";
 import { CliError } from "../errors.js";
 import { type OutputContext, emitResult, promptSecret } from "../io.js";
@@ -84,6 +85,7 @@ export async function cmdVoteReveal(
   const wallet = await loadWallet(cfg, () => promptSecret("Keystore passphrase: "));
   const publicClient = makePublicClient(cfg);
   const walletClient = makeWalletClient(cfg, wallet.account);
+  await assertConfiguredMarketIntegrity(publicClient, cfg);
 
   const passphrase = await getVaultPassphrase();
   const entry = await loadVaultEntry(cfg, wallet.account.address, passphrase);
@@ -132,6 +134,7 @@ export async function cmdVoteRevoke(
   const wallet = await loadWallet(cfg, () => promptSecret("Keystore passphrase: "));
   const publicClient = makePublicClient(cfg);
   const walletClient = makeWalletClient(cfg, wallet.account);
+  await assertConfiguredMarketIntegrity(publicClient, cfg);
 
   const vote = voteFromString(opts.vote);
   if (!isHex(opts.nonce) || opts.nonce.length !== 66) {
@@ -167,6 +170,7 @@ export async function cmdWithdraw(
   const wallet = await loadWallet(cfg, () => promptSecret("Keystore passphrase: "));
   const publicClient = makePublicClient(cfg);
   const walletClient = makeWalletClient(cfg, wallet.account);
+  await assertConfiguredMarketIntegrity(publicClient, cfg);
 
   const tx = await writeWithdraw(walletClient, publicClient, cfg);
 

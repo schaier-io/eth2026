@@ -27,8 +27,8 @@ This is the entry point for project context. Teammates and agents should use the
 - [ADR 0008](./adr/0008-identity-required-for-sybil-resistance.md): future production jury entry requires identity-backed Sybil resistance.
 - [ADR 0009](./adr/0009-swarm-verification-and-discovery-boundaries.md): separate immutable Swarm verification from mutable KV/feed discovery.
 - [ADR 0010](./adr/0010-agent-policy-heartbeat-and-auto-reveal.md): require explicit agent policy, local reveal vaults, heartbeat monitoring, and agent-side auto-reveal.
-- [ADR 0011](./adr/0011-market-registry.md): introduce a `MarketRegistry` that bakes in operational addresses and exposes a single `createMarket` entry point.
-- [ADR 0012](./adr/0012-apify-agent-market-loop.md): the Apify-powered agent lives in `agents/apify`, is exposed through `truthmarket agent run/tick`, calls the existing web route, dedupes via a local state file, and uses a placeholder ipfsHash until Swarm upload lands.
+- [ADR 0011](./adr/0011-market-registry.md): introduce a `MarketRegistry` minimal-clone factory/discovery index with per-clone market configuration.
+- [ADR 0012](./adr/0012-apify-agent-market-loop.md): the Apify-powered agent lives in `agents/apify`, is exposed through `truthmarket agent run/tick`, calls the existing web route, dedupes via a local state file, and records a Swarm reference for every generated market.
 
 ## Local Skill Provenance
 

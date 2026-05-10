@@ -1,4 +1,5 @@
 import { makePublicClient, makeWalletClient } from "../chain/client.js";
+import { assertConfiguredMarketIntegrity } from "../chain/market-integrity.js";
 import { type ConfigOverrides, resolveConfig } from "../config.js";
 import { CliError } from "../errors.js";
 import { startHeartbeat } from "../heartbeat/watcher.js";
@@ -27,6 +28,7 @@ export async function cmdHeartbeatStart(
 
   const publicClient = makePublicClient(cfg);
   const walletClient = makeWalletClient(cfg, wallet.account);
+  await assertConfiguredMarketIntegrity(publicClient, cfg);
 
   const ac = new AbortController();
   process.on("SIGINT", () => ac.abort());

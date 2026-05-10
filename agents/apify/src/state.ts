@@ -11,8 +11,9 @@ const AgentEntrySchema = z.object({
   candidateId: z.string(),
   marketAddress: z.string(),
   txHash: z.string(),
-  ipfsHash: z.string(),
-  name: z.string(),
+  swarmReference: z.string(),
+  swarmReferenceIsPlaceholder: z.boolean().optional().default(false),
+  title: z.string(),
   createdAt: z.string(),
 });
 
@@ -83,8 +84,9 @@ export function recordSeen(
     candidateId: string;
     marketAddress: Address;
     txHash: Hex;
-    ipfsHash: Hex;
-    name: string;
+    swarmReference: Hex;
+    swarmReferenceIsPlaceholder?: boolean;
+    title: string;
   },
 ): AgentState {
   const next: AgentEntry = {
@@ -92,8 +94,9 @@ export function recordSeen(
     candidateId: entry.candidateId,
     marketAddress: entry.marketAddress,
     txHash: entry.txHash,
-    ipfsHash: entry.ipfsHash,
-    name: entry.name,
+    swarmReference: entry.swarmReference,
+    swarmReferenceIsPlaceholder: entry.swarmReferenceIsPlaceholder ?? false,
+    title: entry.title,
     createdAt: new Date().toISOString(),
   };
   const seen = [next, ...state.seen].slice(0, MAX_ENTRIES);

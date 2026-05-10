@@ -2,6 +2,7 @@ import { formatUnits, maxUint256 } from "viem";
 import { makePublicClient, makeWalletClient } from "../chain/client.js";
 import { readAllowance, readDecimals, readSymbol, writeApprove } from "../chain/erc20.js";
 import { readStakeToken } from "../chain/contract.js";
+import { assertConfiguredMarketIntegrity } from "../chain/market-integrity.js";
 import { type ConfigOverrides, resolveConfig } from "../config.js";
 import { CliError } from "../errors.js";
 import { type OutputContext, emitResult, promptSecret } from "../io.js";
@@ -19,6 +20,7 @@ export async function cmdErc20Approve(
   const wallet = await loadWallet(cfg, () => promptSecret("Keystore passphrase: "));
   const publicClient = makePublicClient(cfg);
   const walletClient = makeWalletClient(cfg, wallet.account);
+  await assertConfiguredMarketIntegrity(publicClient, cfg);
 
   const stakeToken = await readStakeToken(publicClient, cfg);
   let amount: bigint;
@@ -72,6 +74,7 @@ export async function cmdErc20Allowance(
   const cfg = resolveConfig(opts);
   const wallet = await loadWallet(cfg, () => promptSecret("Keystore passphrase: "));
   const publicClient = makePublicClient(cfg);
+  await assertConfiguredMarketIntegrity(publicClient, cfg);
 
   const stakeToken = await readStakeToken(publicClient, cfg);
   const [allowance, decimals, symbol] = await Promise.all([

@@ -20,9 +20,9 @@ export const TRUTHMARKET_ADDRESS: Address =
  * export TM_REGISTRY_ADDRESS to override.
  */
 export const REGISTRY_ADDRESS: Address =
-  "0x0000000000000000000000000000000000000000";
+  "0xa50B3e0Ca53f28Fb8BD0a3e0DdbFbE7fE36047E5";
 
-export const DEFAULT_CHAIN: ChainKey = "baseSepolia";
+export const DEFAULT_CHAIN: ChainKey = "sepolia";
 
 export type ChainKey = "foundry" | "baseSepolia" | "sepolia";
 
@@ -38,6 +38,17 @@ export const DEFAULT_RPC: Record<ChainKey, string> = {
   sepolia: "https://rpc.sepolia.org",
 };
 
+/**
+ * Per-clone defaults used by CLI/agent market creation when a JSON spec does
+ * not include `stakeToken` or `juryCommitter`. The registry does not bake
+ * these globally; each clone stores its own initialized values. Treasury is
+ * hardcoded in TruthMarket.sol.
+ */
+export interface OperationalAddresses {
+  stakeToken: Address | undefined;
+  juryCommitter: Address | undefined;
+}
+
 export interface ResolvedConfig {
   contractAddress: Address;
   registryAddress: Address;
@@ -49,6 +60,7 @@ export interface ResolvedConfig {
   vaultDir: string;
   policyPath: string;
   agentStatePath: string;
+  operational: OperationalAddresses;
 }
 
 export interface ConfigOverrides {
@@ -56,6 +68,8 @@ export interface ConfigOverrides {
   registry?: string;
   chain?: string;
   rpc?: string;
+  stakeToken?: string;
+  juryCommitter?: string;
 }
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
@@ -93,14 +107,31 @@ function parseChainKey(s: string): ChainKey {
   );
 }
 
+function chainKeyFromEnv(): ChainKey {
+  const explicit = process.env.TM_CHAIN;
+  if (explicit) return parseChainKey(explicit);
+
+  switch (process.env.NEXT_PUBLIC_CHAIN_ID) {
+    case "31337":
+      return "foundry";
+    case "84532":
+      return "baseSepolia";
+    case "11155111":
+      return "sepolia";
+    default:
+      return DEFAULT_CHAIN;
+  }
+}
+
 export function resolveConfig(overrides: ConfigOverrides = {}): ResolvedConfig {
-  const chainKey = parseChainKey(
-    overrides.chain ?? process.env.TM_CHAIN ?? DEFAULT_CHAIN,
-  );
+  const chainKey = overrides.chain ? parseChainKey(overrides.chain) : chainKeyFromEnv();
   const chain = CHAINS[chainKey];
 
   const rawAddress =
-    overrides.address ?? process.env.TM_CONTRACT_ADDRESS ?? TRUTHMARKET_ADDRESS;
+    overrides.address ??
+    process.env.TM_CONTRACT_ADDRESS ??
+    process.env.NEXT_PUBLIC_TRUTHMARKET_ADDRESS ??
+    TRUTHMARKET_ADDRESS;
   if (!isAddress(rawAddress)) {
     throw new ConfigError(
       "INVALID_ADDRESS",
@@ -110,7 +141,10 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ResolvedConfig {
   const contractAddress = rawAddress as Address;
 
   const rawRegistry =
-    overrides.registry ?? process.env.TM_REGISTRY_ADDRESS ?? REGISTRY_ADDRESS;
+    overrides.registry ??
+    process.env.TM_REGISTRY_ADDRESS ??
+    process.env.NEXT_PUBLIC_REGISTRY_ADDRESS ??
+    REGISTRY_ADDRESS;
   if (!isAddress(rawRegistry)) {
     throw new ConfigError(
       "INVALID_ADDRESS",
@@ -130,6 +164,17 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ResolvedConfig {
 
   warnIfZeroAddress(contractAddress);
 
+  const operational: OperationalAddresses = {
+    stakeToken: parseOptionalAddress(
+      "stakeToken",
+      overrides.stakeToken ?? process.env.TM_STAKE_TOKEN ?? process.env.NEXT_PUBLIC_STAKE_TOKEN,
+    ),
+    juryCommitter: parseOptionalAddress(
+      "juryCommitter",
+      overrides.juryCommitter ?? process.env.TM_JURY_COMMITTER ?? process.env.NEXT_PUBLIC_JURY_COMMITTER,
+    ),
+  };
+
   const home = process.env.TM_HOME ?? path.join(homedir(), ".truthmarket");
   return {
     contractAddress,
@@ -142,5 +187,14 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ResolvedConfig {
     vaultDir: path.join(home, "vault"),
     policyPath: process.env.TM_POLICY_FILE ?? path.join(home, "policy.json"),
     agentStatePath: process.env.TM_AGENT_STATE_FILE ?? path.join(home, "agent-state.json"),
+    operational,
   };
+}
+
+function parseOptionalAddress(label: string, raw: string | undefined): Address | undefined {
+  if (!raw || raw.trim() === "") return undefined;
+  if (!isAddress(raw)) {
+    throw new ConfigError("INVALID_ADDRESS", `${label} address '${raw}' is not a valid address`);
+  }
+  return raw as Address;
 }

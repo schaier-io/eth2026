@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../../brand-mark.svg" alt="TruthMarket" width="96" />
+</p>
+
 # @truth-market/swarm-kv
 
 A developer-friendly key-value store on Swarm.

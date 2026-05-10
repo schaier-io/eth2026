@@ -20,6 +20,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@truth-market/swarm-kv": "file:../../packages/swarm-kv",
     "@truth-market/swarm-verified-fetch": "file:../../packages/swarm-verified-fetch",
     "commander": "^12.1.0",
     "ink": "^5.0.1",

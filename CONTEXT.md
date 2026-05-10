@@ -49,8 +49,8 @@ Each selected juror contributes one vote (1) to the YES/NO outcome. Stake does n
 _Avoid_: weighted vote, square-root vote, stake-based vote
 
 **Claim metadata**:
-The on-chain `name`, `description`, and up to five short `tags` stored at deployment so the claim is discoverable and self-describing without an off-chain fetch.
-_Avoid_: confusing this with the Swarm/IPFS claim/rules document, which is the authoritative long-form reference
+The Swarm-hosted title, detailed YES/NO context, and optional tags bundled into the immutable claim/rules document. The contract stores only the Swarm/Bee reference.
+_Avoid_: on-chain title/description/tags as canonical market state
 
 **Nonce-leak revocation**:
 The `revokeStake` mechanism. Anyone who can prove knowledge of another voter's nonce during the voting phase can claim half of that voter's stake; the other half accrues to the slashed-stake pool (distributable on Yes/No, creator on Invalid). Disabled after the voting deadline; voters cannot revoke themselves. The 50/50 split also blocks Sybil self-withdraw with no penalty.

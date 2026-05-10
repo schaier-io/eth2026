@@ -4,6 +4,7 @@ import {
   readJurorVotes,
   writeCommitJury,
 } from "../chain/contract.js";
+import { assertConfiguredMarketIntegrity } from "../chain/market-integrity.js";
 import { type ConfigOverrides, resolveConfig } from "../config.js";
 import { type OutputContext, emitResult, promptSecret } from "../io.js";
 import { assertJuryCommitAllowed, loadPolicy } from "../policy/policy.js";
@@ -20,6 +21,7 @@ export async function cmdJuryStatus(
   const cfg = resolveConfig(opts);
   const wallet = await loadWallet(cfg, () => promptSecret("Keystore passphrase: "));
   const client = makePublicClient(cfg);
+  await assertConfiguredMarketIntegrity(client, cfg);
   const jurors = await readJurorVotes(client, cfg);
   const lower = wallet.account.address.toLowerCase();
   const me = jurors.find((j) => j.juror.toLowerCase() === lower) ?? null;
@@ -66,6 +68,7 @@ export async function cmdJuryCommit(
   const wallet = await loadWallet(cfg, () => promptSecret("Keystore passphrase: "));
   const publicClient = makePublicClient(cfg);
   const walletClient = makeWalletClient(cfg, wallet.account);
+  await assertConfiguredMarketIntegrity(publicClient, cfg);
   const beacon = await fetchLatestSpaceComputerBeacon();
 
   const tx = await writeCommitJury(walletClient, publicClient, cfg, {

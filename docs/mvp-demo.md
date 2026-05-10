@@ -32,14 +32,14 @@ npx tsx src/cli.ts dev up --env-out ../../.env
 
 This:
 - Spawns anvil on `127.0.0.1:8545` with 12 funded accounts
-- Runs `SimulateAnvil.deploy()` which deploys `MockERC20`, the discovery `TruthMarketRegistry`, the seed `TruthMarket`, and the `MarketRegistry` market factory at deterministic addresses
+- Runs `SimulateAnvil.deploy()` which deploys `MockERC20`, one `TruthMarket` implementation, the `MarketRegistry` clone factory/discovery index, and a seed market clone
 - Writes `TM_*` and `NEXT_PUBLIC_*` env vars to `.env` at the repo root
 
 Verify the registry is reachable. The CLI walks up from cwd looking for `.env`, so no `source` is needed for `truthmarket *` commands run from inside the repo:
 
 ```sh
 npx tsx src/cli.ts registry info
-# expect: market count: 0
+# expect: total markets: 1 (the seed clone)
 ```
 
 (Forge / cast / shell scripts that aren't dotenv-aware still need `source ../../.env` first.)
@@ -67,7 +67,7 @@ npm run dev
 # Next.js picks up repo-root NEXT_PUBLIC_* values written by dev up.
 ```
 
-Open `http://localhost:3000`. The "Registry markets" panel will show *0 on-chain markets* — that's the empty registry.
+Open `http://localhost:3000`. The "Registry markets" panel will show the seed clone. Agent-created clones appear in the same registry list.
 
 ### 4. Create a market via the agent
 
@@ -84,7 +84,7 @@ For a real Apify run instead, set `APIFY_TOKEN` and `APIFY_REDDIT_ACTOR_ID` in y
 
 ### 5. Vote, reveal, resolve
 
-The seed `TruthMarket` (`0x9fE467...`) was deployed with `jurySize=1, minCommits=7, minRevealedJurors=1`. Use anvil voter accounts 5–11 (already funded with 1000 MockERC20 each) to commit through the CLI, advance time via cast, draw a juror, reveal, and resolve. This is documented per phase in [`contracts/README.md`](../contracts/README.md) under `bin/sim-anvil`.
+The seed `TruthMarket` address is written to `.env` as `TM_CONTRACT_ADDRESS`. It was created as a minimal clone with `jurySize=1, minCommits=7, minRevealedJurors=1`. Use anvil voter accounts 5–11 (already funded with 1000 MockERC20 each) to commit through the CLI, advance time via cast, draw a juror, reveal, and resolve. This is documented per phase in [`contracts/README.md`](../contracts/README.md) under `bin/sim-anvil`.
 
 Agent-created markets default to `jurySize=1, minCommits=7, minRevealedJurors=1` and a 1-hour split window (24m voting / 12m jury / 24m reveal); identical lifecycle, just different parameters.
 
@@ -133,7 +133,7 @@ npx tsx src/cli.ts dev down
 
 ## Known MVP boundaries
 
-- `ipfsHash` is `keccak256(JSON.stringify(claimRulesDraft))` — a placeholder until Swarm upload lands. The agent emits `ipfsHashIsPlaceholder: true` on every spec it builds. See [ADR 0012](./adr/0012-apify-agent-market-loop.md).
-- Voters that require Swarm verification (`policy.requireSwarmVerification: true`) should refuse to commit on agent-created markets until that path is real.
+- Agent-created markets may use a deterministic placeholder `swarmReference` until their Swarm upload path is configured. The agent emits `swarmReferenceIsPlaceholder: true` on those specs. See [ADR 0012](./adr/0012-apify-agent-market-loop.md).
+- Voters that require Swarm verification (`policy.requireSwarmVerification: true`) should refuse to commit on placeholder-reference markets.
 - Agent dedupe is local (`~/.truthmarket/agent-state.json`); running two agents on the same wallet can create duplicates. Single-machine is the MVP boundary.
-- `dev up` always points at the deterministic anvil deployer (`PRIVATE_KEY=0xac09...ff80`); for non-anvil networks, deploy a discovery `TruthMarketRegistry`, deploy `MarketRegistry.s.sol` with `DISCOVERY_REGISTRY`, then set `TM_REGISTRY_ADDRESS`, `TM_DISCOVERY_REGISTRY_ADDRESS`, and `NEXT_PUBLIC_REGISTRY_ADDRESS` by hand.
+- `dev up` always points at the deterministic anvil deployer (`PRIVATE_KEY=0xac09...ff80`) and reads the actual clone/factory addresses from `contracts/.sim-anvil.json`; for non-anvil networks, deploy `MarketRegistry.s.sol`, then set `TM_REGISTRY_ADDRESS`, `NEXT_PUBLIC_REGISTRY_ADDRESS`, and per-clone defaults such as `TM_STAKE_TOKEN` / `NEXT_PUBLIC_STAKE_TOKEN` by hand.
