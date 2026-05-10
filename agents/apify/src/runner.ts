@@ -13,6 +13,7 @@ import type { Address, CreateMarketResult, Hex, MarketSpec, PublishedClaimDocume
 
 export const DEFAULT_INTERVAL_SECONDS = 3600;
 export const DEFAULT_DURATION_SECONDS = 3600;
+export const DEFAULT_CANDIDATE_POOL_SIZE = 8;
 export const DEFAULT_ENDPOINT =
   process.env.TM_APIFY_ENDPOINT ?? "http://localhost:3000/api/apify/generated-markets";
 
@@ -80,7 +81,11 @@ export async function runApifyAgentTick(
     itemsFile: opts.itemsFile,
   });
 
-  const result = await fetchCandidates({ endpoint, items, policy: opts.policy });
+  const result = await fetchCandidates({
+    endpoint,
+    items,
+    policy: policyWithCandidatePool(opts.policy),
+  });
   emitEvent({
     ts: new Date().toISOString(),
     event: "candidates_fetched",
@@ -212,6 +217,16 @@ async function loadItemsFile(itemsFile: string | undefined): Promise<unknown[] |
       `could not parse ${itemsFile}: ${(e as Error).message}`,
     );
   }
+}
+
+function policyWithCandidatePool(policy: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (policy && "maxMarketsCreatedPerRun" in policy) return policy;
+  return {
+    ...(policy ?? {}),
+    // The endpoint only returns this many candidates. The agent still creates
+    // one market per tick, but it needs a wider pool to skip already-seen items.
+    maxMarketsCreatedPerRun: DEFAULT_CANDIDATE_POOL_SIZE,
+  };
 }
 
 async function sleep(ms: number, isStopped: () => boolean): Promise<void> {
