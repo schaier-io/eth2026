@@ -197,7 +197,15 @@ export default async function MarketDetailPage({ params }: { params: Params }) {
         <div>
           <p className="eyebrow">
             <span className={displayPhase.className}>{displayPhase.label}</span>
-            {displayPhase.outcomeLabel ? (
+            {displayPhase.outcomeLabel === "YES" ? (
+              <span className="outcome-pill outcome-yes">
+                <span className="outcome-arrow up" aria-label="Yes">▲</span>
+              </span>
+            ) : displayPhase.outcomeLabel === "NO" ? (
+              <span className="outcome-pill outcome-no">
+                <span className="outcome-arrow down" aria-label="No">▼</span>
+              </span>
+            ) : displayPhase.outcomeLabel ? (
               <span className={`outcome-pill outcome-${displayPhase.outcomeLabel.toLowerCase()}`}>
                 {displayPhase.outcomeLabel}
               </span>
@@ -247,9 +255,13 @@ export default async function MarketDetailPage({ params }: { params: Params }) {
           label="Jury verdict"
           value={
             <>
-              <span className="tally-yes">YES {data.juryYesCount}</span>
+              <span className="tally-yes">
+                <span className="outcome-arrow up" aria-label="Yes">▲</span> {data.juryYesCount}
+              </span>
               <span className="tally-divider"> · </span>
-              <span className="tally-no">NO {data.juryNoCount}</span>
+              <span className="tally-no">
+                <span className="outcome-arrow down" aria-label="No">▼</span> {data.juryNoCount}
+              </span>
             </>
           }
         />

@@ -2387,6 +2387,23 @@ code {
   background: var(--surface-soft);
 }
 
+.outcome-arrow {
+  display: inline-block;
+  font-weight: 900;
+  line-height: 1;
+  font-size: 1em;
+  vertical-align: -0.05em;
+}
+.outcome-arrow.up {
+  color: var(--up-deep);
+}
+.outcome-arrow.down {
+  color: var(--down-deep);
+}
+.vote-dir .outcome-arrow {
+  font-size: 22px;
+}
+
 .pagination {
   display: flex;
   justify-content: center;

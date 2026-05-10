@@ -207,10 +207,25 @@ async function loadTokenMeta(
 }
 
 function PhasePill({ display }: { display: ReturnType<typeof getMarketDisplayPhase> }) {
+  const arrow =
+    display.outcomeLabel === "YES" ? (
+      <span className="outcome-arrow up" aria-label="Yes">▲</span>
+    ) : display.outcomeLabel === "NO" ? (
+      <span className="outcome-arrow down" aria-label="No">▼</span>
+    ) : null;
   return (
     <span className={display.className}>
       {display.label}
-      {display.outcomeLabel ? ` · ${display.outcomeLabel}` : ""}
+      {arrow ? (
+        <>
+          {" · "}
+          {arrow}
+        </>
+      ) : display.outcomeLabel ? (
+        ` · ${display.outcomeLabel}`
+      ) : (
+        ""
+      )}
     </span>
   );
 }

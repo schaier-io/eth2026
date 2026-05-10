@@ -361,7 +361,6 @@ function DirectionSummary({ direction }: { direction: Direction }) {
   return (
     <span className={`direction-summary ${ui.tone}`} aria-label={ui.label}>
       <DirectionMark direction={direction} />
-      <span>{ui.label}</span>
     </span>
   );
 }

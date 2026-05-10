@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { formatUnits, parseUnits, type Address, type Hex } from "viem";
 import {
@@ -371,7 +371,15 @@ function CommitPanel(props: Props) {
 
         <div className="vote-existing">
           <span>
-            Committed vote: <strong>{existing.vote === 1 ? "YES" : "NO"}</strong> · stake{" "}
+            Committed vote:{" "}
+            <strong>
+              {existing.vote === 1 ? (
+                <span className="outcome-arrow up" aria-label="Yes">▲</span>
+              ) : (
+                <span className="outcome-arrow down" aria-label="No">▼</span>
+              )}
+            </strong>{" "}
+            · stake{" "}
             <code>{formatUnits(BigInt(existing.stake), props.decimals)} {props.symbol}</code>
           </span>
           <button type="button" className="vault-download" onClick={() => downloadVaultBackup(existing)}>
@@ -483,16 +491,18 @@ function CommitPanel(props: Props) {
           className={`vote-dir vote-dir-yes ${direction === "Yes" ? "is-active" : ""}`}
           onClick={() => setDirection("Yes")}
           disabled={inputsDisabled}
+          aria-label="Vote yes"
         >
-          YES
+          <span className="outcome-arrow up" aria-hidden="true">▲</span>
         </button>
         <button
           type="button"
           className={`vote-dir vote-dir-no ${direction === "No" ? "is-active" : ""}`}
           onClick={() => setDirection("No")}
           disabled={inputsDisabled}
+          aria-label="Vote no"
         >
-          NO
+          <span className="outcome-arrow down" aria-hidden="true">▼</span>
         </button>
       </div>
 
@@ -599,7 +609,15 @@ function RevealPanel(props: Props) {
         </p>
       ) : null}
       <p>
-        Time to reveal · <strong>{vault.vote === 1 ? "YES" : "NO"}</strong> · stake{" "}
+        Time to reveal ·{" "}
+        <strong>
+          {vault.vote === 1 ? (
+            <span className="outcome-arrow up" aria-label="Yes">▲</span>
+          ) : (
+            <span className="outcome-arrow down" aria-label="No">▼</span>
+          )}
+        </strong>{" "}
+        · stake{" "}
         <code>{formatUnits(BigInt(vault.stake), props.decimals)} {props.symbol}</code>
         {!revealClosed && secondsLeft !== null ? (
           <>
@@ -702,16 +720,24 @@ function withdrawCopy(
   previewVal: bigint,
   decimals: number,
   symbol: string,
-): { headline: string; detail?: string } {
+): { headline: ReactNode; detail?: string } {
   switch (outcome) {
     case 1: // Yes
       return {
-        headline: "Verdict: YES",
+        headline: (
+          <>
+            Verdict: <span className="outcome-arrow up" aria-label="Yes">▲</span>
+          </>
+        ),
         detail: previewVal > 0n ? "your stake + share of the slashed pool" : "no participating stake to claim",
       };
     case 2: // No
       return {
-        headline: "Verdict: NO",
+        headline: (
+          <>
+            Verdict: <span className="outcome-arrow down" aria-label="No">▼</span>
+          </>
+        ),
         detail: previewVal > 0n ? "your stake + share of the slashed pool" : "no participating stake to claim",
       };
     case 3: // Invalid
