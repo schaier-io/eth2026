@@ -7,13 +7,40 @@ This is the entry point for project context. Teammates and agents should use the
 - [Agent Operating Guide](../AGENTS.md): instructions for Codex, Claude, and other agents.
 - [Context](../CONTEXT.md): project language, canonical terms, and resolved ambiguities.
 - [Root README](../README.md): hackathon monorepo overview and workspace map.
-- [Task Plan](../tasks.md): staged implementation and hackathon plan.
+- [Task Board](../tasks.md): compact agent-readable status board for implementation, UI positioning, sponsor integrations, and demo/submission work.
 - [PRD](./random-jury-belief-resolution-prd.md): product requirements for random-jury belief resolution.
 - [Architecture Review](./architecture-review.md): current code gaps and recommended module boundaries.
 - [Swarm Integration Plan](./swarm-integration-plan.md): minimal Swarm build plan for immutable rules, verified fetch, KV discovery, and audit artifacts.
 - [Apify Reddit Agent Market Plan](./apify-reddit-agent-market-plan.md): Apify-powered plan for agent-created markets from viral ambiguous Reddit questions.
 - [Agents](../agents/README.md): root-level agent packages, starting with the Apify market-creation agent.
 - [MVP Live Demo Walkthrough](./mvp-demo.md): end-to-end demo path — deploy registry on anvil, run the agent, vote/reveal/resolve through the web app.
+- [Evidence](./evidence.md): recorded deployment, agent-created market, vote, and frontend evidence from the Sepolia demo.
+
+## Document Inventory
+
+- [Documentation Index](./INDEX.md): this document map.
+- [Task Board](../tasks.md): active status board with done, partly done, not done, and blocked work items.
+- [Evidence](./evidence.md): Sepolia demo proof and transaction references.
+- [MVP Live Demo Walkthrough](./mvp-demo.md): local anvil and web demo steps.
+- [PRD](./random-jury-belief-resolution-prd.md): product requirements and acceptance boundaries.
+- [Architecture Review](./architecture-review.md): implementation status and remaining architecture gaps.
+- [Swarm Integration Plan](./swarm-integration-plan.md): Swarm verification, immutable rules, and discovery plan.
+- [Web App UI](./web-app-ui.md): frontend flows for commit, reveal, dashboard, and local vault behavior.
+- [Apify Reddit Agent Market Plan](./apify-reddit-agent-market-plan.md): Apify market-generation design.
+- [Agent Sample Items](./agent/sample-items.json): offline sample Reddit-style items for agent tick demos.
+- [ADR 0001](./adr/0001-random-jury-belief-resolution.md): product frame.
+- [ADR 0002](./adr/0002-classic-commit-reveal.md): classic commit-reveal.
+- [ADR 0003](./adr/0003-swarm-claim-rules.md): Swarm claim/rules storage.
+- [ADR 0004](./adr/0004-superseded-square-root-weighting.md): superseded weighting decision.
+- [ADR 0005](./adr/0005-spacecomputer-first-sponsor-strategy.md): SpaceComputer integration strategy.
+- [ADR 0006](./adr/0006-count-based-jury-voting.md): count-based jury voting.
+- [ADR 0007](./adr/0007-nonce-leak-revocation.md): nonce leak revocation.
+- [ADR 0008](./adr/0008-identity-required-for-sybil-resistance.md): identity requirement for Sybil resistance.
+- [ADR 0009](./adr/0009-swarm-verification-and-discovery-boundaries.md): Swarm verification/discovery boundaries.
+- [ADR 0010](./adr/0010-agent-policy-heartbeat-and-auto-reveal.md): agent policy, heartbeat, and auto-reveal.
+- [ADR 0011](./adr/0011-market-registry.md): MarketRegistry factory.
+- [ADR 0012](./adr/0012-apify-agent-market-loop.md): Apify-powered agent loop.
+- [ADR 0013](./adr/0013-random-jury-game-positioning.md): random-jury game positioning for landing/app UI copy.
 
 ## Decisions
 
@@ -29,6 +56,7 @@ This is the entry point for project context. Teammates and agents should use the
 - [ADR 0010](./adr/0010-agent-policy-heartbeat-and-auto-reveal.md): require explicit agent policy, local reveal vaults, heartbeat monitoring, and agent-side auto-reveal.
 - [ADR 0011](./adr/0011-market-registry.md): introduce a `MarketRegistry` minimal-clone factory/discovery index with per-clone market configuration.
 - [ADR 0012](./adr/0012-apify-agent-market-loop.md): the Apify-powered agent lives in `agents/apify`, is exposed through `truthmarket agent run/tick`, calls the existing web route, dedupes via a local state file, and records a Swarm reference for every generated market.
+- [ADR 0013](./adr/0013-random-jury-game-positioning.md): position TruthMarket as a random-jury belief game where matching the selected jury outcome is the win condition.
 
 ## Local Skill Provenance
 
