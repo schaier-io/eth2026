@@ -1668,6 +1668,84 @@ code {
   line-height: 1.6;
 }
 
+.agent-countdown {
+  display: grid;
+  grid-template-columns: minmax(170px, auto) minmax(126px, max-content) minmax(180px, auto);
+  align-items: center;
+  gap: 14px;
+  width: min(100%, 720px);
+  margin-top: 24px;
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 20, 34, 0.08);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow-xs);
+  backdrop-filter: blur(8px);
+}
+
+.agent-countdown-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.agent-countdown-kicker {
+  color: var(--pop);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.agent-countdown-copy strong {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.agent-countdown-time {
+  min-width: 112px;
+  justify-self: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--text);
+  color: #fff;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+}
+
+.agent-countdown-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 0;
+}
+
+.agent-countdown-meta div {
+  min-width: 0;
+}
+
+.agent-countdown-meta dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.agent-countdown-meta dd {
+  margin: 3px 0 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
 .page-header-cta {
   position: relative;
   display: inline-flex;
@@ -4152,6 +4230,23 @@ button.primary:active:not(:disabled),
   .page-header-sub {
     font-size: 14px;
     line-height: 1.5;
+  }
+
+  .agent-countdown {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-top: 18px;
+    padding: 14px;
+  }
+
+  .agent-countdown-time {
+    justify-self: stretch;
+    min-width: 0;
+    font-size: 20px;
+  }
+
+  .agent-countdown-meta {
+    grid-template-columns: 1fr 1fr;
   }
 
   .page-header-actions {
