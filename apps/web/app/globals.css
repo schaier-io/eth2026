@@ -1870,7 +1870,6 @@ code {
   font-weight: 800;
 }
 
-.juror-intro-grid,
 .juror-fit-band {
   display: grid;
   grid-template-columns: minmax(240px, 0.78fr) minmax(0, 1.22fr);
@@ -1879,7 +1878,6 @@ code {
   padding: 4px 0;
 }
 
-.juror-intro-grid h2,
 .juror-fit-band h2,
 .juror-section-head h2 {
   margin: 8px 0 0;
@@ -1888,7 +1886,6 @@ code {
   line-height: 1.18;
 }
 
-.juror-intro-grid p,
 .juror-fit-band p {
   margin: 0;
   color: var(--muted-strong);
@@ -1930,21 +1927,6 @@ code {
   gap: 12px;
 }
 
-.juror-review-steps {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.juror-review-steps article {
-  padding: 18px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.68);
-  box-shadow: var(--shadow-xs);
-}
-
-.juror-review-steps span,
 .juror-track-index,
 .juror-slide-number {
   display: inline-grid;
@@ -1957,19 +1939,6 @@ code {
   font-weight: 900;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-}
-
-.juror-review-steps h3 {
-  margin: 14px 0 8px;
-  font-family: var(--font-display), var(--font-sans), system-ui;
-  font-size: 15px;
-}
-
-.juror-review-steps p {
-  margin: 0;
-  color: var(--muted-strong);
-  font-size: 13px;
-  line-height: 1.5;
 }
 
 .juror-section-head {
@@ -3781,6 +3750,43 @@ code {
   font-size: 16px;
   font-weight: 900;
   box-shadow: 0 6px 14px rgba(240, 192, 0, 0.32);
+}
+
+.juror-pres-api-example {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.juror-pres-api-example p {
+  margin: 0;
+  color: var(--pop-deep);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.juror-pres-api-example pre {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: 18px 20px;
+  border: 1px solid rgba(255, 216, 74, 0.16);
+  border-radius: var(--radius);
+  background: #0c1020;
+  color: #f4f7ff;
+  box-shadow: var(--shadow-xs);
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.juror-pres-api-example code {
+  color: inherit;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
 }
 
 /* CTA + QR final slide */
@@ -6933,10 +6939,6 @@ button.primary:active:not(:disabled),
 
 /* Wallet popover: anchor right, but cap width and break out of viewport edges. */
 @media (max-width: 480px) {
-  .juror-review-steps {
-    grid-template-columns: 1fr;
-  }
-
   .wallet-popover {
     position: fixed;
     top: auto;
@@ -7049,11 +7051,6 @@ button.primary:active:not(:disabled),
     font-size: 11px;
   }
 
-  .juror-review-steps {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .juror-intro-grid,
   .juror-fit-band,
   .juror-market-hook,
   .juror-track-row,
@@ -7107,7 +7104,6 @@ button.primary:active:not(:disabled),
     margin-bottom: 12px;
   }
 
-  .juror-intro-grid h2,
   .juror-fit-band h2,
   .juror-section-head h2 {
     font-size: 20px;

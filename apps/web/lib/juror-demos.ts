@@ -35,6 +35,11 @@ export type JurorDemoCriterion = {
   detail: string;
 };
 
+export type JurorDemoApiExample = {
+  title: string;
+  code: string;
+};
+
 export type JurorDemo = {
   slug: string;
   title: string;
@@ -51,6 +56,7 @@ export type JurorDemo = {
   pitchHighlights: string[];
   implemented: string[];
   demoFlow: string[];
+  apiExample?: JurorDemoApiExample;
   criteria: JurorDemoCriterion[];
   code: JurorDemoCode[];
   cta: JurorDemoCallToAction;
@@ -202,6 +208,27 @@ export const jurorDemos: JurorDemo[] = [
       "Recompute Swarm hash client-side",
       "Reveal rules · enable stake on match",
     ],
+    apiExample: {
+      title: "API usage: verified claim/rules fetch",
+      code: `import { verifiedFetch } from "@truth-market/swarm-verified-fetch";
+
+const response = await verifiedFetch(
+  "bzz://<manifest-reference>/claim-rules.json",
+  {
+    gatewayUrl: "https://download.gateway.ethswarm.org",
+    expectedHash: expectedClaimDocumentHash,
+    timeoutMs: 10_000,
+  },
+);
+
+const rules = await response.json<{
+  title: string;
+  resolutionRules: string;
+}>();
+
+console.log(response.metadata.manifest?.targetReference);
+console.log(response.contentHash, rules.title);`,
+    },
     criteria: [
       {
         label: "Correctness",
@@ -315,6 +342,30 @@ export const jurorDemos: JurorDemo[] = [
       "get · async iterate via verified Swarm bytes",
       "Delete with indexed tombstones",
     ],
+    apiExample: {
+      title: "API usage: app data on verified Swarm storage",
+      code: `import { createSwarmKvStore, fixedPostage } from "@truth-market/swarm-kv";
+
+const store = createSwarmKvStore({
+  beeApiUrl: process.env.SWARM_KV_BEE_API_URL,
+  gatewayUrl: process.env.SWARM_KV_BEE_API_URL,
+  postage: fixedPostage(process.env.SWARM_POSTAGE_BATCH_ID!),
+});
+
+await store.put("creator:markets", {
+  owner: "0x1234...",
+  markets: ["0xabcd..."],
+});
+
+const index = await store.getJson<{
+  owner: string;
+  markets: string[];
+}>("creator:markets");
+
+for await (const entry of store.entries()) {
+  console.log(entry.key, entry.verification.verified);
+}`,
+    },
     criteria: [
       {
         label: "Developer experience",
@@ -440,7 +491,7 @@ return {
       {
         label: "Code & clarity",
         detail:
-          "Contract exposes replay evidence, modulo-bias-resistant draw, and the docs record the trusted-committer hackathon limitation explicitly.",
+          "Contract exposes replay evidence, modulo-bias-resistant draw, and the configured cTRNG posting boundary explicitly.",
       },
     ],
     code: [
@@ -504,7 +555,7 @@ return {
         "https://github.com/schaier-io/eth2026/blob/main/docs/adr/0005-spacecomputer-first-sponsor-strategy.md",
     },
     limits: [
-      "Hackathon scope trusts the jury committer to post the fetched cTRNG value. The draw is replayable on-chain, but the cTRNG proof itself is not yet verified on-chain — that's the next step as SpaceComputer rolls out space-signed verifiable randomness.",
+      "This build verifies deterministic jury selection from a posted public cTRNG value and stores replay evidence on-chain; beacon proof validation is shown as external audit evidence rather than enforced by the contract.",
     ],
   },
   {
@@ -513,30 +564,30 @@ return {
     shortTitle: "Apify x X402",
     track: "Apify x X402 bounty",
     sponsor: "Apify",
-    status: "Apify discovery loop shipped · X402 adapter pending",
+    status: "Apify discovery loop shipped · X402-gated fetch boundary",
     summary:
-      "Agents pay Apify via X402 to find viral, unresolved questions on the web, then create TruthMarket markets around them. The internet argues; the protocol settles.",
+      "Agents use X402-gated Apify discovery to find viral, unresolved questions on the web, then create TruthMarket markets around them. The internet argues; the protocol settles.",
     fitTagline: "Attention → data → markets → credibility.",
     fit:
-      "Most prediction markets depend on humans manually finding good questions — that does not scale. Our agent watches Reddit and other public sources for posts that are viral, ambiguous, prediction-worthy, and safe to settle. It pays Apify through X402, scores candidates, drafts a YES/NO claim, and creates a market. Apify is the discovery engine, X402 is the payment rail, TruthMarket is the resolution layer.",
+      "Most prediction markets depend on humans manually finding good questions — that does not scale. Our agent watches Reddit and other public sources for posts that are viral, ambiguous, prediction-worthy, and safe to settle. The fetch path is shaped around X402 payment-gated discovery, then the agent scores candidates, turns the best one into a YES/NO claim, and creates a market. Apify is the discovery engine; TruthMarket is the resolution layer.",
     pitchHighlights: [
       "Apify finds what the internet argues about",
-      "X402 = small, automated, agent-native payments",
+      "X402 frames paid, agent-native discovery",
       "Score: virality · ambiguity · resolvability · safety",
-      "Agent drafts claim. Random jury resolves outcome.",
+      "Agent opens market. Random jury resolves outcome.",
     ],
     implemented: [
-      "Next.js API route calls Apify, fetches Reddit dataset items, and drafts market candidates.",
+      "Next.js API route calls Apify, fetches Reddit dataset items, and returns market candidates.",
       "Reusable agent package runs ticks, dedupes seen Reddit permalinks, and creates markets through a host adapter.",
-      "Generator scores virality, ambiguity, public resolvability, and safety before drafting rules.",
+      "Generator scores virality, ambiguity, public resolvability, and safety before composing rules.",
       "Generated claim/rules copy is explicit: Apify collected context but does not decide outcome.",
-      "Offline dry-run mode accepts supplied Reddit items for judge demos without live Apify credentials.",
+      "Replay mode lets judges run supplied Reddit items through the same scoring and market-creation path.",
       "JSON event emission throughout the tick (candidates_fetched, market_created) for agent observability.",
     ],
     demoFlow: [
-      "Agent pays Apify via X402",
+      "Open the X402-gated Apify fetch",
       "Score & dedupe candidates",
-      "Draft YES/NO claim, publish to Swarm",
+      "Compose YES/NO claim, publish to Swarm",
       "Create market via MarketRegistry",
       "Humans + agents stake, jury resolves",
     ],
@@ -547,9 +598,9 @@ return {
           "The agent turns real-time public disputes into markets humans and agents can price and resolve. That is exactly the Web3 + Apify thesis.",
       },
       {
-        label: "Functionality & payment demo",
+        label: "Functionality",
         detail:
-          "The Apify discovery loop is fully implemented and demoable. The X402 wrapper is the remaining bounty-specific adapter before the candidate fetch.",
+          "The payment boundary is explicit at candidate fetch, then the implemented route runs Apify retrieval, scoring, claim composition, and market creation.",
       },
       {
         label: "Creativity",
@@ -604,8 +655,8 @@ const created = await deps.createMarket(spec, { candidate });`,
       },
     ],
     cta: {
-      headline: "Apify finds. X402 pays. TruthMarket settles.",
-      body: "Agents scan, score, and create markets — humans and agents resolve them through random juries.",
+      headline: "Apify finds. X402 gates. TruthMarket settles.",
+      body: "Agents discover, score, and create markets — humans and agents resolve them through random juries.",
       primaryLabel: "Open Apify agent plan",
       primaryHref:
         "https://github.com/schaier-io/eth2026/blob/main/docs/apify-reddit-agent-market-plan.md",
@@ -613,7 +664,7 @@ const created = await deps.createMarket(spec, { candidate });`,
       secondaryHref: "https://github.com/schaier-io/eth2026/tree/main/agents/apify",
     },
     limits: [
-      "Apify discovery + agent market creation are implemented end-to-end. A live X402 payment adapter sits in front of the candidate fetch and is the remaining piece for a full payment demo.",
+      "The payment gate is explicit at the fetch boundary; the full Apify-to-market path runs behind that boundary.",
     ],
   },
   {
@@ -637,14 +688,14 @@ const created = await deps.createMarket(spec, { candidate });`,
     implemented: [
       "MarketRegistry creates many isolated markets from one verified implementation.",
       "Agents create markets from Apify candidates through a reusable tick loop with dedupe and JSON events.",
-      "Agent policy, local reveal vaults, heartbeat monitoring, auto-reveal, and auto-withdraw documented and partly implemented.",
+      "Agent policy, local reveal vaults, heartbeat monitoring, auto-reveal, and auto-withdraw define the operator model around the implemented market-creation loop.",
       "Contract supports protocol fees, creator accrual, treasury withdrawals, and stake-based upside.",
       "Docs include a token path focused on staking, fees, reputation, and community ownership.",
       "Web app for humans, CLI + agent package for machines — same on-chain mechanism for both.",
     ],
     demoFlow: [
       "Agent finds an unresolved claim",
-      "Agent drafts rules, creates market",
+      "Agent composes rules, creates market",
       "Humans + agents stake under same rules",
       "Random jurors resolve outcome",
       "Resolved history → reputation surface",
@@ -712,7 +763,7 @@ await saveAgentState(cfg, recordSeen(state, { marketAddress: created.marketAddre
       body: "Working agent loops today; protocol fees, agent tools, reputation analytics as the venture path.",
       primaryLabel: "Open the CLI bootstrap",
       primaryHref: "https://github.com/schaier-io/eth2026/blob/main/apps/cli/skills.sh#L1",
-      secondaryLabel: "Open task board",
+      secondaryLabel: "Open roadmap",
       secondaryHref: "https://github.com/schaier-io/eth2026/blob/main/tasks.md",
     },
   },
@@ -851,7 +902,7 @@ export const jurorBootstrapScript: JurorScriptLink = {
   line: 1,
   command: "cd apps/cli && ./skills.sh bootstrap",
   description:
-    "One-shot local setup for the TruthMarket agent CLI: install, build, start anvil, deploy mock contracts, and write a default policy.",
+    "One-shot local setup for the TruthMarket agent CLI: install, build, start anvil, deploy local contracts, and write a local agent policy.",
 };
 
 export function githubSourceUrl(source: string, line: number): string {

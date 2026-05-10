@@ -20,10 +20,10 @@ The Solidity core matches the current random-jury belief-resolution model:
 
 Market parameters are locked in the clone initializer. `MarketRegistry` deploys EIP-1167 minimal clones from one `TruthMarket` implementation, but every clone stores its own stake token, jury committer, creator, deadlines, and claim/rules reference.
 
-Two audit-noted behaviors are intentional for the hackathon scope:
+Two audit-noted behaviors are explicit demo boundaries:
 
 - The current jury draw is address-based and therefore not Sybil-resistant. Future production markets must add identity-backed or eligibility-backed jury entry before one-juror-one-vote resolution is treated as robust; see [ADR 0008](./adr/0008-identity-required-for-sybil-resistance.md).
-- `juryCommitter` is trusted to post the SpaceComputer cTRNG value, beacon metadata, and an audit hash. The jury draw is on-chain and replayable, and the contract exposes `randomnessHash` plus `getRandomnessEvidence`, but the posted randomness is not yet verified on-chain; see [ADR 0005](./adr/0005-spacecomputer-first-sponsor-strategy.md).
+- `juryCommitter` posts the SpaceComputer cTRNG value, beacon metadata, and audit hash. The contract performs the jury draw on-chain, stores `randomnessHash`, and exposes `getRandomnessEvidence` so indexers and judges can replay the exact draw against the public beacon evidence; see [ADR 0005](./adr/0005-spacecomputer-first-sponsor-strategy.md).
 - `minRevealedJurors` is configurable and may be below strict majority. This is a liveness/market-quality parameter disclosed in the claim rules, not a hardcoded security invariant; see [ADR 0006](./adr/0006-count-based-jury-voting.md).
 
 The code intentionally remains one contract for hackathon speed, but the internals are separated around commitment, reveal accounting, jury outcome, settlement, and payout.

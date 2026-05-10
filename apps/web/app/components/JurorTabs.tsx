@@ -44,9 +44,9 @@ export function JurorTabs({
           className={`juror-tab ${tab === "implementation" ? "is-active" : ""}`}
           onClick={() => setTab("implementation")}
         >
-          <span className="juror-tab-eyebrow">Default</span>
-          <span className="juror-tab-title">Judging</span>
-          <span className="juror-tab-meta">Proof &middot; criteria &middot; code &middot; install</span>
+          <span className="juror-tab-eyebrow">Build proof</span>
+          <span className="juror-tab-title">Evidence</span>
+          <span className="juror-tab-meta">Build proof &middot; rubric &middot; code &middot; runbook</span>
         </button>
         <button
           type="button"
@@ -58,9 +58,9 @@ export function JurorTabs({
           className={`juror-tab ${tab === "presentation" ? "is-active" : ""}`}
           onClick={() => setTab("presentation")}
         >
-          <span className="juror-tab-eyebrow">Pitch mode</span>
-          <span className="juror-tab-title">Presentation</span>
-          <span className="juror-tab-meta">{presentationSlideCount} slides &middot; QR last</span>
+          <span className="juror-tab-eyebrow">Judge story</span>
+          <span className="juror-tab-title">Story deck</span>
+          <span className="juror-tab-meta">{presentationSlideCount} crisp slides</span>
         </button>
       </div>
 

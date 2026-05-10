@@ -230,9 +230,9 @@ contract TruthMarket is ReentrancyGuard {
     }
 
     /// @dev SpaceComputer randomness evidence used for the jury draw. The contract
-    ///      cannot fetch IPFS/IPNS, so the trusted jury committer posts the cTRNG value
-    ///      and the beacon/audit references it fetched off-chain. `randomnessHash` is
-    ///      computed by the contract from the posted cTRNG seed.
+    ///      cannot fetch IPFS/IPNS, so the configured jury committer posts the cTRNG
+    ///      value plus the public beacon/audit references. `randomnessHash` is computed
+    ///      by the contract from that cTRNG seed, making the draw replayable.
     struct RandomnessEvidence {
         uint256 randomness;
         bytes32 randomnessHash;

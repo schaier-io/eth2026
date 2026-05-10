@@ -31,14 +31,43 @@ export function PresentationDeck({
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const setSlideFromHash = () => {
+      const hash = window.location.hash.replace(/^#/, "");
+      if (!hash) return;
+      const nextIndex = slides.findIndex(
+        (slide) => hash === slide.id || hash === `juror-deck-slide-${slide.id}`,
+      );
+      if (nextIndex < 0) return;
+
+      setIndex(nextIndex);
+      window.requestAnimationFrame(() => {
+        document
+          .getElementById(`juror-deck-slide-${slides[nextIndex].id}`)
+          ?.scrollIntoView({ block: "start" });
+      });
+    };
+
+    setSlideFromHash();
+    window.addEventListener("hashchange", setSlideFromHash);
+    return () => window.removeEventListener("hashchange", setSlideFromHash);
+  }, [slides]);
+
+  useEffect(() => {
     if (!storageKey || typeof window === "undefined") return;
+    const hash = window.location.hash.replace(/^#/, "");
+    const hashMatchesSlide = slides.some(
+      (slide) => hash === slide.id || hash === `juror-deck-slide-${slide.id}`,
+    );
+    if (hashMatchesSlide) return;
     const saved = sessionStorage.getItem(storageKey);
     if (saved == null) return;
     const n = Number(saved);
     if (Number.isFinite(n) && n >= 0 && n < slides.length) {
       setIndex(n);
     }
-  }, [storageKey, slides.length]);
+  }, [storageKey, slides]);
 
   useEffect(() => {
     if (!storageKey || typeof window === "undefined") return;

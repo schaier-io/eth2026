@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   if (!demo) return {};
 
   return {
-    title: `${demo.shortTitle} - TruthMarket juror demo`,
+    title: `${demo.shortTitle} - TruthMarket judge guide`,
     description: demo.summary,
   };
 }
@@ -42,7 +42,7 @@ export default async function JurorDemoPage({ params }: { params: Params }) {
   return (
     <main className="page-shell juror-detail-page">
       <Link href="/jurors" className="back-link">
-        Back to juror demos
+        Back to judge guide
       </Link>
 
       <section className="page-header juror-detail-hero">
@@ -63,7 +63,7 @@ export default async function JurorDemoPage({ params }: { params: Params }) {
             <span className="juror-detail-meta-value">{demo.code.length}</span>
           </div>
           <div className="juror-detail-meta-item">
-            <span className="juror-detail-meta-label">Demo steps</span>
+            <span className="juror-detail-meta-label">Flow steps</span>
             <span className="juror-detail-meta-value">{demo.demoFlow.length}</span>
           </div>
           <div className="juror-detail-meta-item">
@@ -185,7 +185,7 @@ function JudgingView({ demo }: { demo: JurorDemo }) {
             <h2>Two published packages, one bootstrap script</h2>
             <p className="juror-section-sub">
               The Swarm packages are live on npm. The CLI script installs, builds, starts anvil,
-              deploys mock contracts, and writes a default policy — full local stack in one command.
+              deploys local contracts, and writes a local agent policy — full stack in one command.
             </p>
           </div>
         </header>
@@ -224,11 +224,11 @@ function JudgingView({ demo }: { demo: JurorDemo }) {
           <header className="juror-section-card-head">
             <span className="juror-section-step juror-section-step-warn">!</span>
             <div>
-              <p className="eyebrow">Honest scope</p>
-              <h2>What we are not claiming</h2>
+              <p className="eyebrow">Verification boundary</p>
+              <h2>What judges can rely on</h2>
               <p className="juror-section-sub">
-                Hackathon-honest: here is exactly where the implementation stops and what would
-                land next.
+                Clear separation between implemented behavior, app or contract verification,
+                and external evidence supplied for review.
               </p>
             </div>
           </header>
@@ -250,6 +250,7 @@ type PresentationSlide = {
   lede?: string;
   kind: "fit" | "flow" | "limits" | "cta";
   bullets?: string[];
+  apiExample?: JurorDemo["apiExample"];
 };
 
 function buildPresentationSlides(demo: JurorDemo): PresentationSlide[] {
@@ -266,17 +267,18 @@ function buildPresentationSlides(demo: JurorDemo): PresentationSlide[] {
 
   slides.push({
     number: "02",
-    eyebrow: "Demo flow",
-    title: "Show, don't tell",
+    eyebrow: "Protocol path",
+    title: "The mechanism in motion",
     kind: "flow",
     bullets: demo.demoFlow,
+    apiExample: demo.apiExample,
   });
 
   if (demo.limits?.length) {
     slides.push({
       number: "03",
-      eyebrow: "Honest scope",
-      title: "What not to overclaim",
+      eyebrow: "Verification boundary",
+      title: "What judges can rely on",
       kind: "limits",
       bullets: demo.limits,
     });
@@ -284,7 +286,7 @@ function buildPresentationSlides(demo: JurorDemo): PresentationSlide[] {
 
   slides.push({
     number: String(slides.length + 1).padStart(2, "0"),
-    eyebrow: "Take it with you",
+    eyebrow: "Close the loop",
     title: demo.cta.headline,
     lede: demo.cta.body,
     kind: "cta",
@@ -344,6 +346,14 @@ function PresentationView({
               <li key={b}>{b}</li>
             ))}
           </ol>
+          {slide.apiExample ? (
+            <div className="juror-pres-api-example">
+              <p>{slide.apiExample.title}</p>
+              <pre>
+                <code>{slide.apiExample.code}</code>
+              </pre>
+            </div>
+          ) : null}
         </>
       );
     } else if (slide.kind === "limits" && slide.bullets) {
@@ -379,14 +389,14 @@ function PresentationView({
             href={publicPresentationUrl}
             target="_blank"
             rel="noreferrer"
-            aria-label={`Open ${demo.shortTitle} presentation at truth-market.xyz`}
+            aria-label={`Open ${demo.shortTitle} judge story at truth-market.xyz`}
           >
-            <span className="juror-qr-kicker">Scan &middot; share &middot; revisit</span>
+            <span className="juror-qr-kicker">Share the track</span>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={qrCodeSrc} alt={`QR code linking to ${publicPresentationLabel}`} />
             <span className="juror-qr-url">{publicPresentationLabel}</span>
             <span className="juror-qr-note">
-              Opens this exact subpage once the site is deployed.
+              Opens this exact judge track.
             </span>
           </a>
         </div>
@@ -406,7 +416,7 @@ function PresentationView({
   return (
     <PresentationDeck
       slides={deckSlides}
-      ariaLabel={`${demo.shortTitle} presentation`}
+      ariaLabel={`${demo.shortTitle} judge story`}
       className="juror-deck-track"
       storageKey={`truthmarket:juror-deck-${demo.slug}`}
     />

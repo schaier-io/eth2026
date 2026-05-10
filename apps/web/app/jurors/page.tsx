@@ -5,9 +5,9 @@ import SplitText from "../components/reactbits/SplitText";
 import { PresentationDeck, type DeckSlide } from "../components/PresentationDeck";
 
 export const metadata: Metadata = {
-  title: "Juror demos - TruthMarket",
+  title: "Judge guide - TruthMarket",
   description:
-    "Judge-facing demo pages for TruthMarket bounty tracks, integrations, code highlights, and fit.",
+    "Judge-facing guide for TruthMarket sponsor tracks, integration proof, code receipts, and pitch flow.",
 };
 
 const SPONSOR_ACCENT: Record<string, string> = {
@@ -112,15 +112,15 @@ export default function JurorsPage() {
   return (
     <main className="page-shell jurors-page">
       <section className="page-header juror-hero juror-hero-v2">
-        <p className="eyebrow">Juror presentation guide</p>
+        <p className="eyebrow">Hackathon judge guide</p>
         <h1>Pick a sponsor. Judge in five minutes.</h1>
         <p className="page-header-sub">
-          Every track opens on a Judging view (proof, criteria, code, install). Flip to the
-          Presentation deck for a paced pitch &mdash; QR + share live on the last slide.
+          Every track has an evidence view for proof, rubric, code, and setup, plus a
+          paced story deck for the actual judge conversation.
         </p>
         <div className="juror-hero-cta">
-          <Link href="/" className="page-header-cta">
-            Try a live market
+          <Link href="#juror-deck-slide-root-06" className="page-header-cta">
+            Pick a sponsor
           </Link>
           <a
             href="https://github.com/schaier-io/eth2026/blob/main/CONTEXT.md"
@@ -139,22 +139,9 @@ export default function JurorsPage() {
         </div>
       </section>
 
-      <section className="juror-intro-grid" aria-label="What jurors can inspect">
+      <section className="juror-market-hook" aria-label="Open the live TruthMarket flow">
         <div>
-          <p className="eyebrow">Opening frame</p>
-          <h2>Prediction markets for questions normal oracles cannot answer.</h2>
-        </div>
-        <p>
-          TruthMarket is for probabilistic, subjective, or hard-to-verify claims.
-          The product promise is process: immutable claim/rules documents,
-          private committed votes, public randomness, selected jurors,
-          count-based reveals, slashing, and pull-pattern payouts.
-        </p>
-      </section>
-
-      <section className="juror-market-hook" aria-label="Try TruthMarket yourself">
-        <div>
-          <p className="eyebrow">Or try it yourself</p>
+          <p className="eyebrow">Live mechanism</p>
           <h2>Open a market and feel the mechanism before the pitch.</h2>
           <p>
             Start from the live market surface: inspect the claim, read the
@@ -172,33 +159,10 @@ export default function JurorsPage() {
         </div>
       </section>
 
-      <section className="juror-review-steps" aria-label="Review steps">
-        <article>
-          <span>01</span>
-          <h3>Pick a track</h3>
-          <p>Choose the sponsor lens a judge cares about.</p>
-        </article>
-        <article>
-          <span>02</span>
-          <h3>Read the root story</h3>
-          <p>Start with the all-tracks deck before diving into proof.</p>
-        </article>
-        <article>
-          <span>03</span>
-          <h3>Inspect evidence</h3>
-          <p>Each track has implementation, demo path, criteria, code, and install proof.</p>
-        </article>
-        <article>
-          <span>04</span>
-          <h3>Run the flow</h3>
-          <p>Use the live market surface after the narrative is clear.</p>
-        </article>
-      </section>
-
       <section className="juror-root-presentation" aria-labelledby="root-pitch-title">
         <div className="juror-section-head juror-root-presentation-head">
           <div>
-            <p className="eyebrow">Root presentation</p>
+            <p className="eyebrow">All-tracks story</p>
             <SplitText
               text="The all-tracks story judges should remember"
               id="root-pitch-title"
@@ -212,12 +176,12 @@ export default function JurorsPage() {
               to={{ opacity: 1, y: 0, filter: "blur(0px)" }}
             />
             <p className="juror-root-sub">
-              Six slides, one breath. End on a sponsor grid &mdash; open any track or jump
-              straight to its judging criteria.
+              Six short slides, one memorable story. End on the sponsor stack, then jump
+              into the track a judge cares about.
             </p>
           </div>
-          <Link href="/" className="juror-inline-link">
-            Open live markets &rarr;
+          <Link href="#juror-deck-slide-root-06" className="juror-inline-link">
+            Pick a sponsor track &rarr;
           </Link>
         </div>
 
@@ -255,11 +219,11 @@ export default function JurorsPage() {
                     {keywords}
                   </div>
                   <div className="juror-deck-hero-video">
-                    <p className="juror-deck-hero-video-label">Watch the demo</p>
+                    <p className="juror-deck-hero-video-label">Mechanism walkthrough</p>
                     <div className="juror-video-frame">
                       <iframe
                         src="https://www.youtube.com/embed/IiOAxkoWmYs?rel=0&modestbranding=1"
-                        title="TruthMarket demo video"
+                        title="TruthMarket mechanism walkthrough"
                         loading="lazy"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                         referrerPolicy="strict-origin-when-cross-origin"
@@ -295,15 +259,15 @@ export default function JurorsPage() {
             {
               id: "root-06",
               number: "06",
-              eyebrow: "Go into the details",
-              title: "The sponsor stack — pick a lens.",
+              eyebrow: "Choose the lens",
+              title: "The sponsor stack — one protocol, many proof paths.",
               kind: "stack",
               body: (
                 <div className="juror-deck-stack-wrap">
                   <div className="juror-deck-stack-copy">
                     <p className="juror-pres-slide-lede">
                       Same flow the protocol runs at execution time. Open any track for
-                      the full pitch, or jump straight to the judging criteria card.
+                      the focused story, or jump straight to its rubric evidence.
                     </p>
                     <ol className="juror-deck-stack-list">
                       {ROOT_TRACK_ORDER.map((slug) => {
@@ -333,7 +297,7 @@ export default function JurorsPage() {
                                 href={`/jurors/${slug}#judging-criteria`}
                                 className="juror-deck-stack-secondary"
                               >
-                                Judging criteria &rarr;
+                                Rubric evidence &rarr;
                               </Link>
                             </div>
                           </li>
@@ -346,9 +310,9 @@ export default function JurorsPage() {
                     href="https://www.truth-market.xyz/jurors"
                     target="_blank"
                     rel="noreferrer"
-                    aria-label="Open the juror presentation guide at truth-market.xyz"
+                    aria-label="Open the judge guide at truth-market.xyz"
                   >
-                    <span className="juror-qr-kicker">Scan &middot; share &middot; revisit</span>
+                    <span className="juror-qr-kicker">Share the guide</span>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src="/juror-qr/index.svg"
@@ -356,7 +320,7 @@ export default function JurorsPage() {
                     />
                     <span className="juror-qr-url">www.truth-market.xyz/jurors</span>
                     <span className="juror-qr-note">
-                      Carries the whole judging surface. Scan to revisit any track later.
+                      Opens the full judge guide for every sponsor track.
                     </span>
                   </a>
                 </div>
