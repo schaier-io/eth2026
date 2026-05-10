@@ -41,6 +41,7 @@ This is the entry point for project context. Teammates and agents should use the
 - [ADR 0011](./adr/0011-market-registry.md): MarketRegistry factory.
 - [ADR 0012](./adr/0012-apify-agent-market-loop.md): Apify-powered agent loop.
 - [ADR 0013](./adr/0013-random-jury-game-positioning.md): random-jury game positioning for landing/app UI copy.
+- [ADR 0014](./adr/0014-apify-reddit-generator-genre.md): pivot the Apify Reddit generator to authenticity-disputed subs and the trudax actor schema.
 
 ## Decisions
 
@@ -57,6 +58,7 @@ This is the entry point for project context. Teammates and agents should use the
 - [ADR 0011](./adr/0011-market-registry.md): introduce a `MarketRegistry` minimal-clone factory/discovery index with per-clone market configuration.
 - [ADR 0012](./adr/0012-apify-agent-market-loop.md): the Apify-powered agent lives in `agents/apify`, is exposed through `truthmarket agent run/tick`, calls the existing web route, dedupes via a local state file, and records a Swarm reference for every generated market.
 - [ADR 0013](./adr/0013-random-jury-game-positioning.md): position TruthMarket as a random-jury belief game where matching the selected jury outcome is the win condition.
+- [ADR 0014](./adr/0014-apify-reddit-generator-genre.md): default the Apify Reddit generator to authenticity-disputed subs (`IsItBullshit, IsItAI, Scams, nottheonion, quityourbullshit`) and emit the `trudax/reddit-scraper-lite` input schema.
 
 ## Local Skill Provenance
 

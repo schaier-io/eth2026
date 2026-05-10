@@ -149,11 +149,11 @@ export const DEFAULT_GENERATOR_POLICY: Required<Omit<GeneratorPolicy, "apify" | 
   maxOpenGeneratedMarkets: 3,
   requireHumanReviewForCreatedMarkets: false,
   allowedSources: ["reddit"],
-  allowedSubreddits: ["AskReddit", "NoStupidQuestions", "OutOfTheLoop", "technology"],
-  blockedSubreddits: ["medical", "legaladvice"],
-  keywords: ["real", "fake", "scam", "true", "AI", "proof", "rumor"],
-  minRedditScore: 100,
-  minCommentCount: 25,
+  allowedSubreddits: ["IsItBullshit", "IsItAI", "Scams", "nottheonion", "quityourbullshit"],
+  blockedSubreddits: ["medical", "legaladvice", "relationships", "AmItheAsshole", "AITAH"],
+  keywords: ["real", "fake", "scam", "true", "AI", "proof", "rumor", "shopped", "staged", "deepfake", "verified", "evidence", "source"],
+  minRedditScore: 25,
+  minCommentCount: 15,
   minAmbiguityScore: 0.65,
   stake: "100000000000000000",
   marketDefaults: TIMING_MODES["live-mini"].marketDefaults,
@@ -176,6 +176,14 @@ const AMBIGUITY_TERMS = [
   "confirmed",
   "is this",
   "did this",
+  "shopped",
+  "staged",
+  "deepfake",
+  "verified",
+  "evidence",
+  "source?",
+  "cgi",
+  "actually happened",
 ];
 
 const REJECT_TERMS = [
@@ -277,14 +285,21 @@ export function buildApifyInput(policy: GeneratorPolicy = {}) {
   const withDefaults = policyWithDefaults(policy);
   if (policy.apify?.input) return policy.apify.input;
 
+  // Shape matches `trudax/reddit-scraper-lite` (the actor pinned by APIFY_REDDIT_ACTOR_ID
+  // in the demo env). See ADR 0014 for the genre/scoring pivot.
   return {
-    urls: withDefaults.allowedSubreddits.map((subreddit) => `https://www.reddit.com/r/${normalizeSubreddit(subreddit)}/hot/`),
+    startUrls: withDefaults.allowedSubreddits.map((subreddit) => ({
+      url: `https://www.reddit.com/r/${normalizeSubreddit(subreddit)}/hot/`,
+    })),
+    skipComments: false,
+    skipUserPosts: true,
+    skipCommunity: true,
+    searchPosts: false,
     sort: "hot",
-    maxPostsPerSource: policy.apify?.maxItems ?? 20,
-    includeComments: true,
-    maxCommentsPerPost: 50,
-    commentDepth: 2,
-    filterKeywords: withDefaults.keywords,
+    includeNSFW: false,
+    maxItems: policy.apify?.maxItems ?? 20,
+    maxPostCount: 5,
+    maxComments: 15,
   };
 }
 
@@ -386,7 +401,14 @@ export function generateMarketCandidates(items: unknown[], policy: GeneratorPoli
   const withDefaults = policyWithDefaults(policy);
   const timing = timingForPolicy(withDefaults);
   const now = new Date().toISOString();
-  const normalized = items.map(normalizeRedditItem);
+  // trudax mixes posts and comments in the same dataset; markets are post-shaped
+  // only (a comment body promoted to a market title produces nonsense claims).
+  const normalized = items
+    .map((value, index) => normalizeRedditItem(value, index))
+    .filter((item) => {
+      const dt = asRecord(item.raw).dataType;
+      return typeof dt !== "string" || dt.toLowerCase() === "post";
+    });
   const rejected: Array<{ id: string; title: string; reason: string; score: CandidateScore }> = [];
   const candidates: GeneratedMarketCandidate[] = [];
 

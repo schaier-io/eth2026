@@ -2,8 +2,8 @@
   {
     "id": "demo-1",
     "title": "Is this front-page screenshot real or fake?",
-    "permalink": "https://reddit.com/r/AskReddit/comments/demo-1",
-    "subreddit": "AskReddit",
+    "permalink": "https://reddit.com/r/IsItBullshit/comments/demo-1",
+    "subreddit": "IsItBullshit",
     "author": "demo-mod",
     "score": 1287,
     "numComments": 412,
@@ -13,34 +13,34 @@
   {
     "id": "demo-2",
     "title": "Is this clip from the town hall actually authentic, or has it been edited?",
-    "permalink": "https://reddit.com/r/OutOfTheLoop/comments/demo-2",
-    "subreddit": "OutOfTheLoop",
+    "permalink": "https://reddit.com/r/IsItAI/comments/demo-2",
+    "subreddit": "IsItAI",
     "author": "demo-mod",
     "score": 1843,
     "numComments": 712,
-    "selftext": "Some commenters say the clip is real and confirmed by the official video. Others say it's fake — edited and out of context. Is this clip authentic? Selected jurors compare against the full video and call it.",
+    "selftext": "Some commenters say the clip is real and confirmed by the official video. Others say it's fake — edited, deepfake, or out of context. Is this clip authentic? Selected jurors compare against the full video and call it.",
     "createdAt": "2026-05-09T16:00:00Z"
   },
   {
     "id": "demo-3",
     "title": "Did this technology launch actually hit 80% positive Steam reviews, or is the number being faked?",
-    "permalink": "https://reddit.com/r/technology/comments/demo-3",
-    "subreddit": "technology",
+    "permalink": "https://reddit.com/r/Scams/comments/demo-3",
+    "subreddit": "Scams",
     "author": "demo-mod",
     "score": 962,
     "numComments": 245,
-    "selftext": "Reviewers say the score is real and credible. Others claim it's a fake bot-driven number. I disagree with both takes — selected jurors should pull up the Steam page tomorrow and confirm what's true.",
+    "selftext": "Reviewers say the score is real and credible. Others claim it's a fake bot-driven number, possibly a scam. Source? Proof? Selected jurors should pull up the Steam page tomorrow and confirm what's true.",
     "createdAt": "2026-05-09T14:00:00Z"
   },
   {
     "id": "demo-4",
     "title": "Is the receipt photo on the front page real or a hoax?",
-    "permalink": "https://reddit.com/r/NoStupidQuestions/comments/demo-4",
-    "subreddit": "NoStupidQuestions",
+    "permalink": "https://reddit.com/r/quityourbullshit/comments/demo-4",
+    "subreddit": "quityourbullshit",
     "author": "demo-mod",
     "score": 8423,
     "numComments": 1284,
-    "selftext": "Receipt photo with store name visible and totals matching the menu. Some say it's authentic; others say it's fake or a scam. Source? Proof? Selected jurors review the image and the linked menu, then decide is this credible.",
+    "selftext": "Receipt photo with store name visible and totals matching the menu. Some say it's authentic; others say it's a fake callout or scam. Source? Proof? Selected jurors review the image and the linked menu, then decide is this credible.",
     "createdAt": "2026-05-09T15:30:00Z"
   }
 ]
