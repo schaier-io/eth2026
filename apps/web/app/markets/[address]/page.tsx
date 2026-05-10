@@ -28,6 +28,10 @@ function fmtTimestamp(epoch: bigint | undefined): string {
   return new Date(Number(epoch) * 1000).toISOString().replace("T", " ").slice(0, 19) + " UTC";
 }
 
+function claimDocumentApiUrl(reference: Hex): string {
+  return `/api/swarm/claim-doc?reference=${encodeURIComponent(reference)}`;
+}
+
 interface MarketView {
   contractId: `0x${string}`;
   contractVersion: number;
@@ -143,7 +147,7 @@ async function loadMarket(address: Address): Promise<MarketView | null> {
     title: claim.document?.title ?? "(claim unavailable)",
     context: claim.document?.context ?? "",
     tags: claim.document?.tags ?? [],
-    claimUrl: claim.url,
+    claimUrl: claimDocumentApiUrl(core[2]),
     claimVerified: claim.verified,
     claimError: claim.error,
     phase: Number(core[3]),
