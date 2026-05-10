@@ -88,7 +88,7 @@ export function referenceToRoot(reference: string | null): string | null {
 
 export function referenceUrl(reference: string | null, gatewayUrl = getSwarmGatewayUrl()): string | null {
   const root = referenceToRoot(reference);
-  return root ? `${gatewayUrl.replace(/\/$/, "")}/bzz/${root}/` : null;
+  return root ? `${gatewayUrl.replace(/\/$/, "")}/bytes/${root}` : null;
 }
 
 export async function storeClaimDocument(input: {
@@ -124,7 +124,7 @@ export async function storeClaimDocument(input: {
     namespace: CLAIM_DOCUMENT_NAMESPACE,
   });
 
-  await store.put("claim", document as unknown as JsonValue, { timeoutMs });
+  const claimPut = await store.put("claim", document as unknown as JsonValue, { timeoutMs });
   await store.put("title", document.title, { timeoutMs });
 
   if (!store.indexReference) throw new Error("Swarm KV write completed without an index reference.");
@@ -134,7 +134,7 @@ export async function storeClaimDocument(input: {
     document,
     reference,
     referenceBytes: encodeSwarmReference(reference),
-    url: referenceUrl(reference, gatewayUrl) ?? reference,
+    url: referenceUrl(claimPut.reference, gatewayUrl) ?? referenceUrl(reference, gatewayUrl) ?? reference,
   };
 }
 
@@ -143,10 +143,10 @@ export async function loadClaimDocument(referenceBytes: Hex | string | undefined
   const timeoutMs = getSwarmTimeoutMs();
   const reference = decodeSwarmReference(referenceBytes);
   const rootReference = referenceToRoot(reference);
-  const url = referenceUrl(reference, gatewayUrl);
+  const indexUrl = referenceUrl(reference, gatewayUrl);
 
   if (!rootReference) {
-    return { document: null, reference, gatewayUrl, url, verified: false, error: "Missing or invalid Swarm reference." };
+    return { document: null, reference, gatewayUrl, url: indexUrl, verified: false, error: "Missing or invalid Swarm reference." };
   }
 
   try {
@@ -157,29 +157,35 @@ export async function loadClaimDocument(referenceBytes: Hex | string | undefined
       timeoutMs,
       namespace: CLAIM_DOCUMENT_NAMESPACE,
     });
-    const document = await store.getJson<ClaimDocument>("claim", { timeoutMs });
-    if (isClaimDocument(document)) {
-      return { document, reference, gatewayUrl, url, verified: true };
-    }
-
-    const title = await store.getString("title", { timeoutMs });
-    if (title) {
+    const claimResult = await store.get<ClaimDocument>("claim", { timeoutMs });
+    if (claimResult?.kind === "json" && isClaimDocument(claimResult.value)) {
       return {
-        document: { schema: CLAIM_DOCUMENT_SCHEMA, title, context: "", tags: [], createdAt: "" },
+        document: claimResult.value,
         reference,
         gatewayUrl,
-        url,
+        url: referenceUrl(claimResult.reference, gatewayUrl) ?? indexUrl,
         verified: true,
       };
     }
 
-    return { document: null, reference, gatewayUrl, url, verified: false, error: "Claim document is missing." };
+    const titleResult = await store.get("title", { timeoutMs });
+    if (titleResult?.kind === "string" && titleResult.value) {
+      return {
+        document: { schema: CLAIM_DOCUMENT_SCHEMA, title: titleResult.value, context: "", tags: [], createdAt: "" },
+        reference,
+        gatewayUrl,
+        url: referenceUrl(titleResult.reference, gatewayUrl) ?? indexUrl,
+        verified: true,
+      };
+    }
+
+    return { document: null, reference, gatewayUrl, url: indexUrl, verified: false, error: "Claim document is missing." };
   } catch (err) {
     return {
       document: null,
       reference,
       gatewayUrl,
-      url,
+      url: indexUrl,
       verified: false,
       error: err instanceof Error ? err.message : String(err),
     };

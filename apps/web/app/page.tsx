@@ -3,6 +3,7 @@ import { formatUnits, type Address, type Hex } from "viem";
 import { TimeAgo } from "./components/TimeAgo";
 import { SourcifyBadge } from "./components/SourcifyBadge";
 import { SwarmBadge } from "./components/SwarmBadge";
+import { AgentMarketCountdown } from "./components/AgentMarketCountdown";
 import { truthMarketRegistryAbi, registryAddress } from "../lib/registry";
 import { erc20Abi, truthMarketAbi, TRUTH_MARKET_CONTRACT_ID } from "../lib/truthmarket";
 import { getChainId, getPublicClient } from "../lib/server/viem";
@@ -207,10 +208,25 @@ async function loadTokenMeta(
 }
 
 function PhasePill({ display }: { display: ReturnType<typeof getMarketDisplayPhase> }) {
+  const arrow =
+    display.outcomeLabel === "YES" ? (
+      <span className="outcome-arrow up" aria-label="Yes">▲</span>
+    ) : display.outcomeLabel === "NO" ? (
+      <span className="outcome-arrow down" aria-label="No">▼</span>
+    ) : null;
   return (
     <span className={display.className}>
       {display.label}
-      {display.outcomeLabel ? ` · ${display.outcomeLabel}` : ""}
+      {arrow ? (
+        <>
+          {" · "}
+          {arrow}
+        </>
+      ) : display.outcomeLabel ? (
+        ` · ${display.outcomeLabel}`
+      ) : (
+        ""
+      )}
     </span>
   );
 }
@@ -262,19 +278,20 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
         </p>
         <h1>
           {total === 0n
-            ? "Bet on what's true."
-            : `${total.toString()} ${total === 1n ? "claim" : "claims"} on the line.`}
+            ? "Bet on the jury."
+            : `${total.toString()} ${total === 1n ? "market" : "markets"} on the board.`}
         </h1>
         <p className="page-header-sub">
-          Pick a side. Post a stake. A random jury rules — winners take the slashed pool.
+          Pick a side. Post a stake. A random jury resolves the market, and matching voters share the slashed pool.
           Refreshed live from chain every {revalidate}s.
         </p>
+        <AgentMarketCountdown intervalSeconds={3600} marketDurationSeconds={3600} />
         <div className="page-header-actions">
           <Link href="/deploy" className="page-header-cta">
-            Launch a claim →
+            Launch a market →
           </Link>
           <Link href="/my-markets" className="page-header-cta page-header-cta-ghost">
-            Your claims
+            Your markets
           </Link>
         </div>
       </section>
@@ -283,7 +300,7 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
         <section className="empty-state">
           <h2>The board is empty.</h2>
           <p>
-            Be the first to put truth on the line. <Link href="/deploy">Launch a claim →</Link>
+            Be the first to stake on a random-jury resolution. <Link href="/deploy">Launch a market →</Link>
           </p>
           {hiddenCount > 0 ? (
             <p className="muted" style={{ fontSize: 12 }}>

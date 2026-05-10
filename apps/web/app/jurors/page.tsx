@@ -55,8 +55,8 @@ export default function JurorsPage() {
           <Link href="/" className="page-header-cta">
             Try a market yourself
           </Link>
-          <Link href="/demo" className="page-header-cta page-header-cta-ghost">
-            Open guided demo
+          <Link href="/deploy" className="page-header-cta page-header-cta-ghost">
+            Launch a market
           </Link>
         </div>
       </section>
@@ -79,8 +79,8 @@ export default function JurorsPage() {
         </article>
         <article>
           <span>04</span>
-          <h3>Run the demo</h3>
-          <p>Use the live demo page after the track narrative is clear.</p>
+          <h3>Run the flow</h3>
+          <p>Use the live market surface after the track narrative is clear.</p>
         </article>
       </section>
 
@@ -90,8 +90,8 @@ export default function JurorsPage() {
             <p className="eyebrow">Chapters</p>
             <h2>Select a presentation</h2>
           </div>
-          <Link href="/demo" className="juror-inline-link">
-            Open live demo
+          <Link href="/" className="juror-inline-link">
+            Open live markets
           </Link>
         </div>
 

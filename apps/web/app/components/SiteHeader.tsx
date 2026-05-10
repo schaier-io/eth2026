@@ -18,7 +18,6 @@ export function SiteHeader() {
           <NavLink href="/">Markets</NavLink>
           <NavLink href="/my-markets">Yours</NavLink>
           <NavLink href="/deploy">Launch</NavLink>
-          <NavLink href="/demo">Demo</NavLink>
           <NavLink href="/jurors">Jurors</NavLink>
         </nav>
         <div className="site-header-meta">

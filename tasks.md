@@ -6,7 +6,7 @@ fact-checker, not an oracle, and not an external truth source.
 Use this file as the active agent work board. Keep each item short, mark status
 with the boxes below, and move finished implementation facts into `Done`.
 
-Last reviewed: 2026-05-10 Europe/Prague.
+Last reviewed: 2026-05-10 Europe/Prague (Swarm/Sourcify verification link fix).
 
 ## Status Legend
 
@@ -21,7 +21,7 @@ Last reviewed: 2026-05-10 Europe/Prague.
 - [x] CLI can create markets, commit/reveal/withdraw, fetch SpaceComputer randomness, verify Swarm rules, and run a foreground heartbeat.
 - [x] Web app can list registry markets, launch claim/rules documents to Swarm, open market details, commit/reveal/withdraw, and show jury/randomness receipts.
 - [~] Product copy is still behind ADR 0013; several screens still say "truth", "claim", or "verdict" instead of the random-jury belief-game frame.
-- [~] Swarm verification is visible in UI and enforceable by CLI policy, but the browser commit flow still does not hard-block unverified rules.
+- [~] Swarm verification is visible in UI and enforceable by CLI policy; badge links now open verified claim JSON, but the browser commit flow still does not hard-block unverified rules.
 - [~] Sepolia evidence exists for deployment, agent market creation, and one commit; full live lifecycle evidence is still missing.
 
 ## Do Not Regress
@@ -52,7 +52,15 @@ Last reviewed: 2026-05-10 Europe/Prague.
 - [x] Creator bond gating is implemented: voters wait until the creator posts the bond; bond joins winner payouts on Yes/No and returns on Invalid.
 - [x] CLI policy, encrypted local reveal vault, heartbeat, and browser local reveal vault exist.
 - [x] Apify agent runtime exists in `agents/apify` with `agent tick` and `agent run` adapters in the CLI.
+- [x] Apify Reddit generator targets authenticity-disputed subs and the `trudax/reddit-scraper-lite` input schema; live runs surface real candidates (ADR 0014).
 - [x] Local MVP walkthrough and Sepolia deployment evidence are documented.
+- [x] Web app defaults to Sepolia (chain id 11155111) instead of Foundry across `lib/server/viem.ts`, `lib/wagmi.ts`, `WalletPill`, `my-markets`, and `deploy`; chain pill and footer now read "Sepolia"; repo-root `/.env` aligned with the Sepolia registry from `f0114db` (`0xbDdC1066…7595517`), Sepolia stake token, and `NEXT_PUBLIC_JURY_COMMITTER` / `NEXT_PUBLIC_SWARM_GATEWAY_URL`.
+- [x] Outcome labels render as green ▲ / red ▼ (with `outcome-arrow up|down` spans, `aria-label` preserved) on home phase pill, market-detail outcome pill + jury verdict tally, and the VotePanel commit buttons / committed-vote line / reveal-time line / verdict headline.
+- [x] Wallet connectors restored: `@metamask/connect-evm`, `@coinbase/wallet-sdk`, and `@walletconnect/ethereum-provider` were declared in `package.json` but missing from `node_modules`; `npm install` re-hydrated 368 packages so MetaMask SDK + Coinbase Wallet picker work (WalletConnect still needs a `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`).
+- [x] Swarm verified badges now route through `/api/swarm/claim-doc?reference=...`, which verifies the contract-stored KV reference and exposes the resolved `/bytes/<claim-json-reference>` URL instead of opening the gateway's 404-prone `/bzz/<kv-index>/` route.
+- [x] Sourcify verification route and badge resolve for the Sepolia registry implementation (`0x8179...8a7F`), with clone bytecode checked before showing "Sourcify verified".
+- [x] Home page now displays the hourly Apify Reddit agent countdown and states the generated market cadence/lifetime as 60 min / 60 min.
+- [x] Standalone `/demo` SPA route removed; brand assets and shared app styling remain.
 
 ## 1. Product And UI Reframe
 
@@ -68,7 +76,7 @@ jury's resolution, not objective truth.
 - [~] Add examples for agent rubric review, DAO decisions, moderation appeals, creator contests, and community preference.
 - [~] Stake screen says users are staking on the selected jury resolution.
 - [~] Stake screen shows jury size, minimum revealed jurors, and selected-juror full-stake penalty before commit.
-- [ ] Result screens say "Jury resolved YES/NO" and "matched/missed jury".
+- [~] Result screens say "Jury resolved YES/NO" and "matched/missed jury" — visible YES/NO text is now a green ▲ / red ▼ glyph (with `aria-label`); the "matched / missed jury" framing is still pending.
 - [ ] Result screens avoid "right", "wrong", "true", or "false" framing.
 
 Acceptance:
@@ -89,13 +97,14 @@ staking.
 - [x] Upload claim/rules JSON to Swarm during web, CLI registry, and default agent market creation.
 - [x] Store the returned Swarm reference in the market spec.
 - [~] Display the Swarm reference and gateway URL before deployment/signing.
-- [~] Fetch by reference in the UI/agent and verify bytes against the contract-stored reference.
+- [x] Fetch by reference in the UI/CLI and verify bytes against the contract-stored reference.
+- [x] Market detail Swarm badge opens the verified claim JSON via the gateway `/bytes/<reference>` endpoint, not the KV index root.
 - [~] Block commit when fetched rules cannot be verified from the contract-stored Swarm reference.
 - [x] Keep Swarm feeds/KV discovery-only; never use mutable data as canonical market rules.
 
 Acceptance:
 
-- [ ] A voter can read the immutable claim/rules document before commit.
+- [x] A voter can read the immutable claim/rules document before commit.
 - [~] UI/agent refuses to commit if the document cannot be verified from the contract-stored Swarm reference.
 - [x] Rules cannot be quietly changed after market creation.
 
@@ -182,6 +191,8 @@ assembling low-level pieces.
 - [~] Write first persona demo: Reddit ambiguity agent creates a market, commits, reveals, and withdraws.
 - [x] Add `truthmarket agent tick` and `truthmarket agent run` with local dedupe state.
 - [x] Add local policy gates for create-market, max stake, Swarm verification, and jury commit.
+- [x] Pivot Apify Reddit generator to authenticity-disputed subs (`IsItBullshit, IsItAI, Scams, nottheonion, quityourbullshit`), emit the `trudax/reddit-scraper-lite` input schema, and filter dataset items to `dataType: "post"` so comment bodies do not become market titles (ADR 0014).
+- [x] Refresh `docs/agent/sample-items.json` so the offline `agent tick --items-file` demo passes the new allowlist.
 - [x] Keep vote nonce and reveal data in local vault/browser storage, not Swarm.
 
 Acceptance:
@@ -249,6 +260,7 @@ Goal: Ship a judge-legible demo that makes the random jury mechanism obvious.
 - [~] README explains trust model and limitations.
 - [x] Sepolia deployment addresses, transactions, agent-created market, and first commit are recorded in `docs/evidence.md`.
 - [x] Local anvil MVP walkthrough is documented in `docs/mvp-demo.md`.
+- [ ] Surface periodic Apify market creation in the web app: status panel reading `~/.truthmarket/agent-state.json` (Apify run id, candidate, market address, tx hash, timestamps) plus an activity feed so judges can see the agent creating dynamic markets over time.
 
 Judging beats:
 

@@ -147,8 +147,8 @@ export const jurorDemos: JurorDemo[] = [
       headline: "Use TruthMarket where communities need a fair process, not one final authority.",
       body:
         "For this track, walk judges from a disputed social-impact claim to locked rules, private commitments, selected jurors, and settlement.",
-      primaryLabel: "Open the live demo",
-      primaryHref: "/demo",
+      primaryLabel: "Open live markets",
+      primaryHref: "/",
       secondaryLabel: "Review the protocol context",
       secondaryHref: "https://github.com/schaier-io/eth2026/blob/main/CONTEXT.md",
     },
@@ -454,8 +454,8 @@ return {
       headline: "Run the jury draw and show randomness as the fairness engine.",
       body:
         "For this track, make SpaceComputer the turning point: hidden commitments are locked, cTRNG arrives, selected jurors appear, and reveal begins.",
-      primaryLabel: "Open the live demo",
-      primaryHref: "/demo",
+      primaryLabel: "Open live markets",
+      primaryHref: "/",
       secondaryLabel: "Open SpaceComputer ADR",
       secondaryHref: "https://github.com/schaier-io/eth2026/blob/main/docs/adr/0005-spacecomputer-first-sponsor-strategy.md",
     },

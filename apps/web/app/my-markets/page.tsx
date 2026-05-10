@@ -13,7 +13,7 @@ import { TRUTH_MARKET_CONTRACT_ID, truthMarketAbi } from "../../lib/truthmarket"
 import { getMarketDisplayPhase } from "../../lib/market-phase";
 import type { ContractVerification } from "../../lib/contract-verification";
 
-const DEFAULT_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 31337);
+const DEFAULT_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 11155111);
 
 type FieldName =
   | "CONTRACT_ID"

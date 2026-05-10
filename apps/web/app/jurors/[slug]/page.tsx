@@ -70,8 +70,8 @@ export default async function JurorDemoPage({ params }: { params: Params }) {
           >
             Try at truth-market.xyz
           </a>
-          <Link href="/demo" className="page-header-cta page-header-cta-ghost">
-            Open local demo
+          <Link href="/" className="page-header-cta page-header-cta-ghost">
+            Open live markets
           </Link>
           <Link href="/jurors" className="page-header-cta page-header-cta-ghost">
             Select another track
