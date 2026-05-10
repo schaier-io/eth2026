@@ -23,6 +23,8 @@ export interface ApifyAgentOptions {
   minCommits?: number;
   minRevealedJurors?: number;
   endpoint?: string;
+  /** Optional policy override passed to the web generator endpoint. */
+  policy?: Record<string, unknown>;
   /** If set, the spec uses this minStake instead of the candidate's stake hint. */
   minStake?: string;
   /** Run a single iteration and exit. */
@@ -78,7 +80,7 @@ export async function runApifyAgentTick(
     itemsFile: opts.itemsFile,
   });
 
-  const result = await fetchCandidates({ endpoint, items });
+  const result = await fetchCandidates({ endpoint, items, policy: opts.policy });
   emitEvent({
     ts: new Date().toISOString(),
     event: "candidates_fetched",

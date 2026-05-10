@@ -11,9 +11,9 @@ const AgentEntrySchema = z.object({
   candidateId: z.string(),
   marketAddress: z.string(),
   txHash: z.string(),
-  swarmReference: z.string(),
+  swarmReference: z.string().optional().default(""),
   swarmReferenceIsPlaceholder: z.boolean().optional().default(false),
-  title: z.string(),
+  title: z.string().optional().default("(untitled generated market)"),
   createdAt: z.string(),
 });
 
