@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { jurorDemos } from "../../lib/juror-demos";
+import { DeckSlideLink } from "../components/DeckSlideLink";
 import SplitText from "../components/reactbits/SplitText";
 import { PresentationDeck, type DeckSlide } from "../components/PresentationDeck";
 
@@ -119,9 +120,9 @@ export default function JurorsPage() {
           paced story deck for the actual judge conversation.
         </p>
         <div className="juror-hero-cta">
-          <Link href="#juror-deck-slide-root-06" className="page-header-cta">
-            Pick a sponsor
-          </Link>
+          <DeckSlideLink href="#juror-deck-slide-root-06" className="page-header-cta">
+            See tracks
+          </DeckSlideLink>
           <a
             href="https://github.com/schaier-io/eth2026/blob/main/CONTEXT.md"
             className="page-header-cta page-header-cta-ghost"
@@ -180,9 +181,9 @@ export default function JurorsPage() {
               into the track a judge cares about.
             </p>
           </div>
-          <Link href="#juror-deck-slide-root-06" className="juror-inline-link">
-            Pick a sponsor track &rarr;
-          </Link>
+          <DeckSlideLink href="#juror-deck-slide-root-06" className="juror-inline-link">
+            See tracks &rarr;
+          </DeckSlideLink>
         </div>
 
         <PresentationDeck
