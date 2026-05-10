@@ -267,6 +267,10 @@ export default function DeployPage() {
   }
 
   async function onAgentLaunch() {
+    if (!stakeTokenAddr) {
+      setStatus({ kind: "error", message: "Pick a token first." });
+      return;
+    }
     if (!isConnected || !address) {
       setStatus({ kind: "error", message: "Wallet first." });
       return;
@@ -286,7 +290,12 @@ export default function DeployPage() {
       const options = await fetchApifyAgentOptions();
       setAgentOptions(options);
       setAgentStep("options");
-      setStatus({ kind: "success", message: `Agent found ${options.length} market option${options.length === 1 ? "" : "s"}. Pick one to launch.` });
+      const [best] = options;
+      setStatus({
+        kind: "info",
+        message: `Agent picked "${best.claimRulesDraft.title}". Preparing launch...`,
+      });
+      await launchAgentCandidate(best);
     } catch (err) {
       setAgentStep("error");
       setStatus({ kind: "error", message: errorMessage(err) });
@@ -413,7 +422,7 @@ export default function DeployPage() {
           <p className="eyebrow">Apify Reddit agent</p>
           <h2>Auto create from live Reddit disputes.</h2>
           <p className="muted">
-            Fetches Apify data, asks the LLM curator for options, then you choose which market to launch.
+            Fetches Apify data, picks the strongest scored market, then opens your wallet to launch.
           </p>
           {agentCandidateTitle ? <p className="agent-launch-picked">Picked: {agentCandidateTitle}</p> : null}
         </div>
@@ -422,7 +431,7 @@ export default function DeployPage() {
             type="button"
             className="agent-launch-button"
             onClick={onAgentLaunch}
-            disabled={!formReady || busy || agentBusy}
+            disabled={!stakeTokenAddr || busy || agentBusy}
           >
             {agentBusy ? agentStepLabel(agentStep) : "Auto create market"}
           </button>
@@ -441,7 +450,7 @@ export default function DeployPage() {
               <AgentOptionCard
                 key={candidate.id}
                 candidate={candidate}
-                disabled={!formReady || busy || agentBusy}
+                disabled={!stakeTokenAddr || busy || agentBusy}
                 onLaunch={() => launchAgentCandidate(candidate)}
               />
             ))}
@@ -869,6 +878,16 @@ interface ApifyGeneratedCandidate {
   id: string;
   subreddit: string;
   stake: string;
+  timing?: {
+    votingPeriodSeconds?: number;
+    juryCommitTimeoutSeconds?: number;
+    revealPeriodSeconds?: number;
+    marketDefaults?: {
+      jurySize?: number;
+      minCommits?: number;
+      minRevealedJurors?: number;
+    };
+  };
   curation?: {
     rationale: string;
     confidence: number;
@@ -915,10 +934,21 @@ async function fetchApifyAgentOptions(): Promise<ApifyGeneratedCandidate[]> {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      curateWithLlm: true,
+      curateWithLlm: false,
       maxOptions: 5,
+      waitForFinishSeconds: 15,
+      pollAttempts: 2,
       policy: {
+        mode: "demo-fast",
         maxMarketsCreatedPerRun: 8,
+        minRedditScore: 5,
+        minCommentCount: 2,
+        minAmbiguityScore: 0.1,
+        apify: {
+          maxItems: 10,
+          waitForFinishSeconds: 15,
+          pollAttempts: 2,
+        },
         marketDefaults: {
           jurySize: 1,
           minCommits: 1,
@@ -941,6 +971,7 @@ async function fetchApifyAgentOptions(): Promise<ApifyGeneratedCandidate[]> {
 function specFromAgentCandidate(candidate: ApifyGeneratedCandidate, decimals: number): ValidatedSpec {
   const draft = candidate.claimRulesDraft;
   const minStakeRaw = formatUnits(BigInt(candidate.stake), decimals);
+  const defaults = candidate.timing?.marketDefaults;
   return {
     name: draft.title,
     description: [
@@ -954,15 +985,20 @@ function specFromAgentCandidate(candidate: ApifyGeneratedCandidate, decimals: nu
       draft.sourceUrl ? `Source: ${draft.sourceUrl}` : "",
     ].filter(Boolean).join("\n"),
     tags: ["apify", "reddit", candidate.subreddit].filter(Boolean).slice(0, 5),
-    votingMinutes: 24n,
-    adminMinutes: 12n,
-    revealMinutes: 24n,
+    votingMinutes: secondsToWholeMinutes(candidate.timing?.votingPeriodSeconds, 5),
+    adminMinutes: secondsToWholeMinutes(candidate.timing?.juryCommitTimeoutSeconds, 2),
+    revealMinutes: secondsToWholeMinutes(candidate.timing?.revealPeriodSeconds, 5),
     minStakeRaw,
     creatorBondRaw: "",
-    jurySize: 1,
-    minCommits: 1,
-    minRevealedJurors: 1,
+    jurySize: defaults?.jurySize ?? 1,
+    minCommits: defaults?.minCommits ?? 1,
+    minRevealedJurors: defaults?.minRevealedJurors ?? 1,
   };
+}
+
+function secondsToWholeMinutes(seconds: number | undefined, fallbackMinutes: number): bigint {
+  if (!Number.isFinite(seconds) || !seconds || seconds <= 0) return BigInt(fallbackMinutes);
+  return BigInt(Math.max(1, Math.ceil(seconds / 60)));
 }
 
 function validate(form: FormState): { ok: boolean; errors: string[]; spec: ValidatedSpec | null } {
