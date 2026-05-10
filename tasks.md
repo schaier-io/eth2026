@@ -55,11 +55,12 @@ Last reviewed: 2026-05-10 Europe/Prague (Swarm/Sourcify verification link fix).
 - [x] Apify Reddit generator targets authenticity-disputed subs and the `trudax/reddit-scraper-lite` input schema; live runs surface real candidates (ADR 0014).
 - [x] Local MVP walkthrough and Sepolia deployment evidence are documented.
 - [x] Web app defaults to Sepolia (chain id 11155111) instead of Foundry across `lib/server/viem.ts`, `lib/wagmi.ts`, `WalletPill`, `my-markets`, and `deploy`; chain pill and footer now read "Sepolia"; repo-root `/.env` aligned with the Sepolia registry from `f0114db` (`0xbDdC1066…7595517`), Sepolia stake token, and `NEXT_PUBLIC_JURY_COMMITTER` / `NEXT_PUBLIC_SWARM_GATEWAY_URL`.
-- [x] Outcome labels render as green ▲ / red ▼ (with `outcome-arrow up|down` spans, `aria-label` preserved) on home phase pill, market-detail outcome pill + jury verdict tally, and the VotePanel commit buttons / committed-vote line / reveal-time line / verdict headline; demo `DirectionSummary` strips the visible "Upward signal / Downward signal" copy to triangle-only.
+- [x] Outcome labels render as green ▲ / red ▼ (with `outcome-arrow up|down` spans, `aria-label` preserved) on home phase pill, market-detail outcome pill + jury verdict tally, and the VotePanel commit buttons / committed-vote line / reveal-time line / verdict headline.
 - [x] Wallet connectors restored: `@metamask/connect-evm`, `@coinbase/wallet-sdk`, and `@walletconnect/ethereum-provider` were declared in `package.json` but missing from `node_modules`; `npm install` re-hydrated 368 packages so MetaMask SDK + Coinbase Wallet picker work (WalletConnect still needs a `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`).
 - [x] Swarm verified badges now route through `/api/swarm/claim-doc?reference=...`, which verifies the contract-stored KV reference and exposes the resolved `/bytes/<claim-json-reference>` URL instead of opening the gateway's 404-prone `/bzz/<kv-index>/` route.
 - [x] Sourcify verification route and badge resolve for the Sepolia registry implementation (`0x8179...8a7F`), with clone bytecode checked before showing "Sourcify verified".
 - [x] Home page now displays the hourly Apify Reddit agent countdown and states the generated market cadence/lifetime as 60 min / 60 min.
+- [x] Standalone `/demo` SPA route removed; brand assets and shared app styling remain.
 
 ## 1. Product And UI Reframe
 
