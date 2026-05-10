@@ -220,7 +220,7 @@ export default function JurorsPage() {
                     <p className="juror-deck-hero-video-label">Mechanism walkthrough</p>
                     <div className="juror-video-frame">
                       <iframe
-                        src="https://www.youtube.com/embed/IiOAxkoWmYs?rel=0&modestbranding=1"
+                        src="https://www.youtube-nocookie.com/embed/IiOAxkoWmYs?rel=0&modestbranding=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&playsinline=1"
                         title="TruthMarket mechanism walkthrough"
                         loading="lazy"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
