@@ -35,16 +35,7 @@ Avoid this language unless discussing rejected alternatives:
 
 ## Local Skills
 
-Some earlier planning used local design skills such as:
-
-- `grill-me`
-- `to-prd`
-- `improve-codebase-architecture`
-- `domain-model`
-
-Those skills are not required to work on this repo. Their outputs have been copied into versioned documentation. Do not assume a teammate has the same local skills installed.
-
-If an agent does have similar skills available, it may use them, but repo files are authoritative.
+Local design skills are optional. Their outputs live in the versioned docs above. If an agent has similar skills, it may use them, but repo files are authoritative.
 
 ## Implementation Guardrails
 
@@ -67,6 +58,6 @@ The Solidity contract is aligned with the current PRD model:
 - selected jurors who fail to reveal forfeit their full stake (~5× the normal slash);
 - risked-stake-weighted reward distribution to winning revealers;
 - treasury fee on Yes/No → `treasuryAccrued`; Invalid-path juror penalty → `creatorAccrued`; both pull-pattern;
-- on-chain claim metadata (name, description, ≤5 tags) stored at deployment;
+- claim metadata (title, YES/NO context, optional tags) lives in the Swarm claim/rules document; the contract stores only `swarmReference`;
 - nonce-leak revocation (`revokeStake`) callable in voting phase only — see [ADR 0007](./docs/adr/0007-nonce-leak-revocation.md);
 - no fact-checker/oracle wording in contract or events.
