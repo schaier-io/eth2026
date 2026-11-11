@@ -18,7 +18,7 @@ curl -L https://foundry.paradigm.xyz | bash && foundryup
 (cd apps/cli && npm install)
 
 # Web deps
-(cd apps/web && npm install)
+(cd apps/web && pnpm install)
 ```
 
 ## Run the demo

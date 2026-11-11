@@ -35,7 +35,7 @@ The active UI is the Next.js app in `apps/web`:
 
 ```bash
 cd apps/web
-npm install
+pnpm install
 npm run dev
 ```
 
