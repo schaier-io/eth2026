@@ -106,7 +106,7 @@ node dist/cli.js --help
 
 Requirements:
 
-- Node 20+
+- Node ^22.18, ^24.11 or 26+ (building the linked `packages/swarm-kv` and `packages/swarm-verified-fetch` needs tsup 9)
 - For `truthmarket dev *` and `skills.sh`: [Foundry](https://book.getfoundry.sh/getting-started/installation) (`anvil`, `forge`, `cast` on PATH).
 
 If you'd rather not run `skills.sh`, the equivalent low-level flow is:

@@ -17,7 +17,7 @@
     "typecheck": "npm run build:agents && tsc -p tsconfig.json --noEmit"
   },
   "engines": {
-    "node": ">=20.19"
+    "node": "^22.18.0 || ^24.11.0 || >=26.0.0"
   },
   "dependencies": {
     "@truth-market/swarm-kv": "file:../../packages/swarm-kv",
