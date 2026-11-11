@@ -35,8 +35,8 @@ The active UI is the Next.js app in `apps/web`:
 
 ```bash
 cd apps/web
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 The legacy static prototype was removed so the app surface stays TypeScript/React and shares the wallet/contract integration path.
